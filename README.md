@@ -124,6 +124,15 @@ This prints what it *would* do (buy/sell/hold) based on today's real
 price data and your actual paper account position, but doesn't place an
 order yet. Run it a few times on different days to get a feel for it.
 
+`--ticker` takes one or more symbols, space-separated:
+```bash
+python live_trade.py --ticker SPY AAPL QQQ --strategy rule_based
+```
+Each ticker gets its own independent buy/sell/hold decision. If more than
+one signals BUY in the same run, available cash is split evenly across
+them rather than the first one spending the whole account (pass
+`--max-notional 1000` to additionally cap the dollar amount per buy).
+
 ### 4. Let it actually place paper orders
 
 ```bash
@@ -144,11 +153,11 @@ close (4pm ET / 3:55pm ET), on whatever machine you leave running:
 ```bash
 crontab -e
 # Add a line like this (adjust the path and time; cron uses your system's local time):
-55 15 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY --strategy rule_based --execute >> logs/cron.log 2>&1
+55 15 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY AAPL QQQ --strategy rule_based --execute >> logs/cron.log 2>&1
 ```
 
 **Windows (Task Scheduler):** create a new task that runs
-`python live_trade.py --ticker SPY --strategy rule_based --execute` in
+`live_trade.py --ticker SPY AAPL QQQ --strategy rule_based --execute` in
 the `InvestingBot` folder, triggered daily on weekdays at 3:55pm.
 
 Your laptop needs to be on and awake at that time for cron/Task Scheduler
