@@ -1,13 +1,14 @@
 # InvestingBot
 
-A "buy the dip" stock strategy, backtested honestly.
+A "buy the dip" stock strategy: backtest it, then optionally run it
+automatically against a paper (fake-money) brokerage account.
 
-This is a research/backtesting project, **not a live trading bot**, and
-**not investment advice**. It exists to answer a specific question before
+**Not investment advice.** It exists to answer a specific question before
 any real money is involved: does a simple dip-buying rule, optionally
 filtered by a machine-learning model, actually beat just buying and
 holding? The code is built so you can answer that for yourself on real
-data.
+data, and then watch it trade unattended with fake money before ever
+considering real money.
 
 ## What's here
 
@@ -38,6 +39,10 @@ data.
   drawdown, trade count).
 - `main.py` - runs the whole pipeline end to end and saves a comparison
   chart to `results/equity_curve.png`.
+- `src/broker.py` / `live_trade.py` - automated trading against an
+  Alpaca account. Defaults to Alpaca's **paper** endpoint (fake money,
+  real live prices) and refuses to run at all if only synthetic data is
+  available. See "Automated paper trading" below.
 
 ## Running it
 
@@ -79,6 +84,91 @@ train/test split, no lookahead, transaction costs modeled) are sound -
 this particular rule on this particular data simply isn't a demonstrated
 edge yet. Different tickers, periods, or rule parameters could tell a
 different story; that's exactly what the next steps below are for.
+
+## Automated paper trading
+
+This runs the strategy against a real broker automatically, so you don't
+have to click anything - but against **paper** trading by default, which
+uses fake money on a real live account. No real cash is at risk until you
+deliberately flip a switch described at the end of this section.
+
+### 1. Create a free Alpaca paper account
+
+1. Go to https://alpaca.markets and sign up (free).
+2. Once logged in, make sure you're on the **Paper Trading** dashboard
+   (it's the default view, and is separate from any live account - Alpaca
+   won't let you fund it with a real bank account).
+3. Go to **API Keys** and generate a paper key pair. You'll get an
+   `API Key ID` and a `Secret Key` - copy both immediately, the secret is
+   only shown once.
+
+### 2. Configure your keys
+
+```bash
+cp .env.example .env
+```
+Edit `.env` and paste in your key ID and secret:
+```
+ALPACA_API_KEY=your_paper_api_key_id
+ALPACA_SECRET_KEY=your_paper_secret_key
+ALPACA_BASE_URL=https://paper-api.alpaca.markets
+```
+`.env` is git-ignored - never commit it.
+
+### 3. Try it manually first (dry run, no orders placed)
+
+```bash
+python live_trade.py --ticker SPY --strategy rule_based
+```
+This prints what it *would* do (buy/sell/hold) based on today's real
+price data and your actual paper account position, but doesn't place an
+order yet. Run it a few times on different days to get a feel for it.
+
+### 4. Let it actually place paper orders
+
+```bash
+python live_trade.py --ticker SPY --strategy rule_based --execute
+```
+This places the order for real against your **paper** account. Check the
+Alpaca paper dashboard to see the fill. Every run also appends a line to
+`logs/trade_log.csv` (git-ignored) so you have a record of every decision
+the bot made, executed or not.
+
+### 5. Make it run automatically, on a schedule
+
+The strategy is a once-a-day decision (it's based on daily closing
+prices), so schedule it to run once a day, a few minutes before market
+close (4pm ET / 3:55pm ET), on whatever machine you leave running:
+
+**macOS/Linux (cron):**
+```bash
+crontab -e
+# Add a line like this (adjust the path and time; cron uses your system's local time):
+55 15 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY --strategy rule_based --execute >> logs/cron.log 2>&1
+```
+
+**Windows (Task Scheduler):** create a new task that runs
+`python live_trade.py --ticker SPY --strategy rule_based --execute` in
+the `InvestingBot` folder, triggered daily on weekdays at 3:55pm.
+
+Your laptop needs to be on and awake at that time for cron/Task Scheduler
+to fire. If that's not realistic, the next step once you trust this is
+moving it to a small always-on server or a cloud scheduled job (e.g. a
+$5-6/mo VM, or a serverless cron trigger) - happy to help set that up once
+you're at that point.
+
+### 6. Going live (real money) - deliberately, later
+
+`live_trade.py` has two independent locks against ever touching a real
+account by accident:
+1. `ALPACA_BASE_URL` must be explicitly changed to Alpaca's live endpoint
+   (`https://api.alpaca.markets`) with real (non-paper) API keys.
+2. You must also pass `--i-understand-this-is-live` on the command line.
+
+Both are required; neither alone will trade real money. Don't flip these
+until you've watched the paper version run unattended for a meaningful
+stretch (weeks to months) and you understand and accept its drawdown
+behavior from the backtest above.
 
 ## Before this touches real money
 
