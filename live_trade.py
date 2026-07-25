@@ -291,10 +291,14 @@ def main():
                 "ticker": ticker,
                 "strategy": args.strategy,
                 "action": action,
-                "price_usd": f"{decision['last_price']:.2f}",
+                # 2 decimals rounds sub-$1 assets (e.g. DOGE at $0.07) down to
+                # nothing - price_usd and avg_entry_price_usd need enough
+                # precision to tell entry and exit price apart, since that
+                # difference is exactly what realized P&L is computed from.
+                "price_usd": f"{decision['last_price']:.6f}",
                 "notional_usd": f"{notional:.2f}" if notional is not None else "",
                 "position_qty_before": decision["current_qty"],
-                "avg_entry_price_usd": f"{decision['entry_price']:.2f}" if decision["entry_price"] else "",
+                "avg_entry_price_usd": f"{decision['entry_price']:.6f}" if decision["entry_price"] else "",
                 "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
                 "order_placed": executed,
             })
