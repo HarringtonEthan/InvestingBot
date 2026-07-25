@@ -166,3 +166,12 @@ timestamp,mode,ticker,strategy,price,target_position,current_qty_before,action,e
 2026-07-25T04:41:17,PAPER,LINK,day_trading,8.33,0.0,0.0,,,HOLD,False
 2026-07-25T04:41:17,PAPER,XRP,day_trading,1.09,0.0,0.0,,,HOLD,False
 2026-07-25T04:41:17,PAPER,DOT,day_trading,0.81,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,BTC,day_trading,64120.12,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,ETH,day_trading,1860.10,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,SOL,day_trading,74.19,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,DOGE,day_trading,0.07,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,LTC,day_trading,46.32,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,AVAX,day_trading,6.26,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,LINK,day_trading,8.34,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,XRP,day_trading,1.09,0.0,0.0,,,HOLD,False
+2026-07-25T04:47:11,PAPER,DOT,day_trading,0.81,0.0,0.0,,,HOLD,False
