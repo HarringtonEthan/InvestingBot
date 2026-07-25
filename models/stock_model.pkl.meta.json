@@ -1,5 +1,5 @@
 {
-  "trained_at": "2026-07-25T11:43:37+00:00",
+  "trained_at": "2026-07-25T12:04:37+00:00",
   "tickers": [
     "SPY",
     "AAPL",
@@ -9,5 +9,5 @@
   "horizon": 10,
   "bounce_pct": 0.03,
   "train_rows": 1503,
-  "threshold": 0.5723352032854883
+  "threshold": 0.5725406978451055
 }
