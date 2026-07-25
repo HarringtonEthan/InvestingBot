@@ -1,9 +1,9 @@
 name: Paper trade - crypto
 
 on:
-  # Every 15 minutes, every day - crypto trades 24/7, unlike stocks.
+  # Every 5 minutes, every day - crypto trades 24/7, unlike stocks.
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -33,7 +33,7 @@ jobs:
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
         run: >
           python live_trade.py --ticker BTC ETH SOL DOGE LTC
-          --strategy day_trading --interval 15m
+          --strategy day_trading --interval 5m
           --dip-threshold -0.02 --profit-target 0.02 --stop-loss 0.04
           --execute
 
