@@ -1,0 +1,47 @@
+name: Paper trade - stocks
+
+on:
+  schedule:
+    # ~3:55pm US Eastern on weekdays. GitHub Actions cron is UTC and does
+    # not adjust for daylight saving, so this drifts by an hour (to
+    # ~4:55pm ET) during EST (roughly Nov-Mar). Fine for a once-a-day
+    # daily-close strategy; not worth the complexity of two DST-aware
+    # cron entries for this use case.
+    - cron: "55 19 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-trade-stocks
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run stock strategy
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+        run: python live_trade.py --ticker SPY AAPL QQQ --strategy rule_based --execute
+
+      - name: Commit trade log
+        run: |
+          git config user.name "investingbot"
+          git config user.email "investingbot@users.noreply.github.com"
+          git add logs/trade_log.csv
+          git diff --cached --quiet && exit 0
+          git commit -m "Log stock trading run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"

@@ -1,0 +1,43 @@
+name: Paper trade - crypto
+
+on:
+  schedule:
+    # Every hour, every day - crypto trades 24/7, unlike stocks.
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: paper-trade-crypto
+  cancel-in-progress: false
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run crypto strategy
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+        run: python live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute
+
+      - name: Commit trade log
+        run: |
+          git config user.name "investingbot"
+          git config user.email "investingbot@users.noreply.github.com"
+          git add logs/trade_log.csv
+          git diff --cached --quiet && exit 0
+          git commit -m "Log crypto trading run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"

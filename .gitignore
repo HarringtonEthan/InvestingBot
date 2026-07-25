@@ -3,4 +3,5 @@ __pycache__/
 .venv/
 venv/
 .env
-logs/
+logs/*
+!logs/trade_log.csv

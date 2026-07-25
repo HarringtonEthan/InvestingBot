@@ -161,10 +161,46 @@ crontab -e
 the `InvestingBot` folder, triggered daily on weekdays at 3:55pm.
 
 Your laptop needs to be on and awake at that time for cron/Task Scheduler
-to fire. If that's not realistic, the next step once you trust this is
-moving it to a small always-on server or a cloud scheduled job (e.g. a
-$5-6/mo VM, or a serverless cron trigger) - happy to help set that up once
-you're at that point.
+to fire. If that's not realistic, see "Running without your computer on"
+below.
+
+### Running without your computer on (GitHub Actions)
+
+This repo includes `.github/workflows/paper-trade-stocks.yml` and
+`.github/workflows/paper-trade-crypto.yml`, which let GitHub run the bot
+for you on their own servers, for free, on the same schedule described
+above - no computer of yours needs to be on at all.
+
+**Setup:**
+1. On GitHub, go to your repo -> **Settings -> Actions -> General ->
+   Workflow permissions**, select **"Read and write permissions,"** and
+   save. (This lets the workflow commit the trade log back to the repo
+   after each run.)
+2. Go to **Settings -> Secrets and variables -> Actions -> New repository
+   secret** and add two secrets: `ALPACA_API_KEY` and
+   `ALPACA_SECRET_KEY`, using the same paper-trading values from your
+   `.env` file. These are encrypted by GitHub and never shown in logs.
+3. Push this branch (or merge it into your default branch) if you
+   haven't already - scheduled workflows only run from the repo's
+   default branch.
+4. Go to the **Actions** tab on GitHub, and you should see "Paper trade -
+   stocks" and "Paper trade - crypto" listed. You can click into either
+   one and hit **"Run workflow"** to trigger it manually right now,
+   instead of waiting for the schedule, to confirm it works.
+5. Every run appends to `logs/trade_log.csv` and the workflow
+   automatically commits that update back to the repo, so `git pull`
+   locally will show new commits with a "Log ... trading run" message
+   over time. That's the automated bot committing its own log, not you.
+
+**Important - avoid double-trading:** once GitHub Actions is confirmed
+working, **turn off your local Windows Task Scheduler tasks** (or the
+cron jobs, if you're on Mac/Linux). If both your PC and GitHub Actions
+are scheduled to run at the same time against the same Alpaca account,
+you'd get duplicate orders - each one independently deciding to buy,
+unaware the other already did. Only one automation path should be active
+against a given account at a time. To disable in Task Scheduler: find the
+task, right-click -> Disable (or Delete, once you're confident GitHub
+Actions is working reliably).
 
 ### Crypto support
 
