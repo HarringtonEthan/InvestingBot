@@ -4,3 +4,6 @@ timestamp,mode,ticker,strategy,price,target_position,current_qty_before,action,e
 2026-07-25T00:38:58,PAPER,SOL,rule_based,75.86,1.0,0.0,BUY,True
 2026-07-25T00:38:58,PAPER,DOGE,rule_based,0.07,1.0,0.0,BUY,True
 2026-07-25T00:38:58,PAPER,LTC,rule_based,46.93,0.0,0.0,HOLD,False
+2026-07-25T00:42:23,PAPER,SPY,rule_based,738.93,0.0,0.0,HOLD,False
+2026-07-25T00:42:23,PAPER,AAPL,rule_based,333.02,0.0,0.0,HOLD,False
+2026-07-25T00:42:23,PAPER,QQQ,rule_based,684.23,1.0,0.0,BUY,True
