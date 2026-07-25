@@ -41,39 +41,12 @@ from src.strategies import (
 )
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ticker", default="SPY")
-    parser.add_argument("--start", default="2015-01-01")
-    parser.add_argument("--split", default="2022-01-01", help="train/test split date")
-    parser.add_argument("--end", default="2024-12-31")
-    parser.add_argument("--interval", default="1d",
-                         help="bar size: 1d, 1h, 30m, 15m, 5m. Use an intraday interval to backtest "
-                              "day-trading-style strategies - and keep --start recent, since Yahoo "
-                              "Finance only keeps a limited window of intraday history.")
-    parser.add_argument("--cost-bps", type=float, default=5.0,
-                         help="round-trip cost assumption in basis points; crypto fees run higher "
-                              "than stocks (try 15-25) so don't leave this at the stock default "
-                              "when backtesting day_trading on crypto")
-    parser.add_argument("--dip-threshold", type=float, default=-0.02,
-                         help="day-trading strategy: dip entry threshold, e.g. -0.02 = 2%% below rolling average")
-    parser.add_argument("--profit-target", type=float, default=0.02,
-                         help="day-trading strategy: sell once this far above your entry price")
-    parser.add_argument("--stop-loss", type=float, default=0.04,
-                         help="day-trading strategy: sell if price falls this far below your entry price")
-    parser.add_argument("--bb-window", type=int, default=20,
-                         help="Bollinger breakout: period for the middle band / trend-loss exit SMA")
-    parser.add_argument("--bb-std", type=float, default=2.0,
-                         help="Bollinger breakout: standard deviations for the upper band")
-    parser.add_argument("--trend-window", type=int, default=200,
-                         help="Bollinger breakout: long SMA period required to confirm a breakout")
-    parser.add_argument("--seed", type=int, default=7, help="synthetic-data RNG seed")
-    parser.add_argument("--out", default="results/equity_curve.png")
-    args = parser.parse_args()
-
-    raw, is_synthetic = get_price_data(args.ticker, args.start, args.end, interval=args.interval, seed=args.seed)
-    label = f"SYNTHETIC data (no live market access) - NOT real {args.ticker} prices" if is_synthetic \
-        else f"real {args.ticker} data from Yahoo Finance"
+def run_for_ticker(ticker: str, args):
+    """Runs the full backtest suite for one ticker. Returns True on success, False if skipped."""
+    raw, is_synthetic = get_price_data(ticker, args.start, args.end, interval=args.interval, seed=args.seed)
+    label = f"SYNTHETIC data (no live market access) - NOT real {ticker} prices" if is_synthetic \
+        else f"real {ticker} data from Yahoo Finance"
+    print(f"=== {ticker} ===")
     print(f"Data source: {label}")
     print(f"Rows: {len(raw)}  Range: {raw.index.min().date()} -> {raw.index.max().date()}\n")
 
@@ -82,7 +55,8 @@ def main():
     train_df = df[df.index < args.split]
     test_df = df[df.index >= args.split]
     if len(train_df) < 100 or len(test_df) < 50:
-        raise SystemExit("Not enough data on one side of the train/test split; widen --start/--end.")
+        print(f"Not enough data on one side of the train/test split for {ticker}; widen --start/--end. Skipping.\n")
+        return False
 
     model, threshold, train_scores = train_model(train_df)
     print(f"ML dip-filter trained on {len(train_df)} rows.")
@@ -122,17 +96,60 @@ def main():
             "real markets. Re-run with real network access before drawing any conclusions."
         )
 
+    out_path = args.out
+    if len(args.ticker) > 1:
+        stem, _, ext = args.out.rpartition(".")
+        safe_ticker = ticker.replace("/", "-")
+        out_path = f"{stem}_{safe_ticker}.{ext}" if stem else f"{args.out}_{safe_ticker}"
+
     plt.figure(figsize=(10, 6))
     for name, result in results.items():
         plt.plot(result.equity_curve.index, result.equity_curve.values, label=name)
     title_suffix = " (SYNTHETIC DATA)" if is_synthetic else ""
-    plt.title(f"{args.ticker} strategy comparison{title_suffix}")
+    plt.title(f"{ticker} strategy comparison{title_suffix}")
     plt.xlabel("Date")
     plt.ylabel("Portfolio value ($)")
     plt.legend()
     plt.tight_layout()
-    plt.savefig(args.out, dpi=120)
-    print(f"\nChart saved to {args.out}")
+    plt.savefig(out_path, dpi=120)
+    plt.close()
+    print(f"\nChart saved to {out_path}\n")
+    return True
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ticker", nargs="+", default=["SPY"],
+                         help="one or more tickers, space-separated, e.g. --ticker BTC-USD ETH-USD SOL-USD")
+    parser.add_argument("--start", default="2015-01-01")
+    parser.add_argument("--split", default="2022-01-01", help="train/test split date")
+    parser.add_argument("--end", default="2024-12-31")
+    parser.add_argument("--interval", default="1d",
+                         help="bar size: 1d, 1h, 30m, 15m, 5m. Use an intraday interval to backtest "
+                              "day-trading-style strategies - and keep --start recent, since Yahoo "
+                              "Finance only keeps a limited window of intraday history.")
+    parser.add_argument("--cost-bps", type=float, default=5.0,
+                         help="round-trip cost assumption in basis points; crypto fees run higher "
+                              "than stocks (try 15-25) so don't leave this at the stock default "
+                              "when backtesting day_trading on crypto")
+    parser.add_argument("--dip-threshold", type=float, default=-0.02,
+                         help="day-trading strategy: dip entry threshold, e.g. -0.02 = 2%% below rolling average")
+    parser.add_argument("--profit-target", type=float, default=0.02,
+                         help="day-trading strategy: sell once this far above your entry price")
+    parser.add_argument("--stop-loss", type=float, default=0.04,
+                         help="day-trading strategy: sell if price falls this far below your entry price")
+    parser.add_argument("--bb-window", type=int, default=20,
+                         help="Bollinger breakout: period for the middle band / trend-loss exit SMA")
+    parser.add_argument("--bb-std", type=float, default=2.0,
+                         help="Bollinger breakout: standard deviations for the upper band")
+    parser.add_argument("--trend-window", type=int, default=200,
+                         help="Bollinger breakout: long SMA period required to confirm a breakout")
+    parser.add_argument("--seed", type=int, default=7, help="synthetic-data RNG seed")
+    parser.add_argument("--out", default="results/equity_curve.png")
+    args = parser.parse_args()
+
+    for ticker in args.ticker:
+        run_for_ticker(ticker, args)
 
 
 if __name__ == "__main__":
