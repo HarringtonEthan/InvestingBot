@@ -236,33 +236,40 @@ workflow (`.github/workflows/paper-trade-crypto.yml`) is configured for
 day trading rather than the once-a-day daily-close strategy:
 
 ```bash
-python live_trade.py --ticker BTC ETH SOL DOGE LTC \
-  --strategy day_trading --interval 15m \
-  --dip-threshold -0.02 --profit-target 0.02 --stop-loss 0.04 \
+python live_trade.py --ticker BTC ETH SOL DOGE LTC AVAX LINK XRP DOT \
+  --strategy day_trading --interval 5m \
+  --dip-threshold -0.005 --profit-target 0.008 --stop-loss 0.015 \
   --execute
 ```
 
-This runs on 15-minute bars, buys a 2%+ dip, and sells once your
-*actual* position is up 2% - or cuts it at -4% if the dip keeps falling
-instead of bouncing. It's scheduled to fire every 15 minutes, every day,
-automatically, via GitHub Actions - see "Running without your computer
-on" above for setup.
+This runs on 5-minute bars, buys a 0.5%+ dip, and sells once your
+*actual* position is up 0.8% - or cuts it at -1.5% if the dip keeps
+falling instead of bouncing.
 
-**Worth knowing before you get excited about the frequency:** more
-frequent trading means more round trips, and every round trip pays
-Alpaca's crypto spread/fee (roughly 0.15-0.25% each way, so ~0.3-0.5% per
-full buy-sell cycle). A 2% profit target nets a lot less than 2% after
-that, and a strategy that trades often needs to be right often enough to
-outrun that drag - which is exactly why backtesting this specific setup
-(numbers below) before trusting it matters more, not less, at higher
-frequency.
+**Thresholds should match real observed volatility, not be picked
+arbitrarily.** The original 2%/2%/4% thresholds never fired a single
+trade in practice - actual short-term crypto moves during a live check
+were closer to 0.05-0.2% over 5-minute windows, so a 2% dip essentially
+never happens on that timeframe. Before changing these numbers, check
+what the market is actually doing (`logs/trade_log.csv` has real price
+history) rather than guessing.
 
-**Backtest it before trusting it** - same principle as the stock
-strategy, just with intraday data and crypto-realistic fees:
+**Worth knowing before you tighten these further:** more frequent
+trading means more round trips, and every round trip pays Alpaca's
+crypto spread/fee (roughly 0.15-0.25% each way, so ~0.3-0.5% per full
+buy-sell cycle). If `--profit-target` is smaller than that fee drag, the
+strategy loses money **on average even when directionally correct** -
+there's a real floor below which "more trades" just means "more fee
+payments," not more profit. The 0.8% target above has been kept
+deliberately above that floor; going much lower trades against the fee
+structure, not with it.
+
+**Backtest it before trusting a threshold change** - same principle as
+the stock strategy, just with intraday data and crypto-realistic fees:
 ```bash
 python main.py --ticker BTC-USD --interval 1h \
   --start 2026-05-01 --split 2026-07-01 --end 2026-07-25 \
-  --cost-bps 20 --dip-threshold -0.02 --profit-target 0.02 --stop-loss 0.04
+  --cost-bps 20 --dip-threshold -0.005 --profit-target 0.008 --stop-loss 0.015
 ```
 (Yahoo Finance only keeps a limited window of intraday history, so keep
 `--start` recent rather than reaching back years like the daily stock
