@@ -41,7 +41,8 @@ jobs:
         run: |
           git config user.name "investingbot"
           git config user.email "investingbot@users.noreply.github.com"
-          git add logs/trade_log.csv logs/equity_log.csv
+          [ -f logs/trade_log.csv ] && git add logs/trade_log.csv
+          [ -f logs/equity_log.csv ] && git add logs/equity_log.csv
           git diff --cached --quiet && exit 0
           git commit -m "Log stock trading run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           git pull --rebase origin "${{ github.ref_name }}"
