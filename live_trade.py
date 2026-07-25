@@ -37,7 +37,21 @@ from src.model_store import load_model as load_saved_model
 from src.strategies import bollinger_breakout, ml_filtered_dip_buy, rule_based_dip_buy
 from src.symbols import resolve_symbol
 
-LOG_PATH = Path("logs/trade_log.csv")
+TRADE_LOG_PATH = Path("logs/trade_log.csv")
+TRADE_LOG_FIELDS = [
+    "timestamp_utc", "mode", "asset_class", "ticker", "strategy",
+    "action", "price_usd", "notional_usd", "position_qty_before",
+    "avg_entry_price_usd", "unrealized_gain_pct", "order_placed",
+]
+
+# Deliberately separate from trade_log.csv and always one row per run (not
+# per ticker): trade_log.csv only records actual BUY/SELL decisions - most
+# runs are HOLD and aren't logged at all, to keep both the file size and
+# the number of git commits (one per run, since these get committed by the
+# GitHub Actions workflows) from growing unboundedly on the 5-minute crypto
+# schedule. This file is what an equity-over-time chart should read from.
+EQUITY_LOG_PATH = Path("logs/equity_log.csv")
+EQUITY_LOG_FIELDS = ["timestamp_utc", "mode", "portfolio_value_usd", "cash_usd"]
 
 # Yahoo Finance limits how far back intraday bars go (roughly; exact
 # limits can change). These defaults stay safely inside those limits;
@@ -70,14 +84,26 @@ def get_target_position(df, args) -> float:
     return float(series.iloc[-1])
 
 
-def log_run(row: dict):
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    is_new = not LOG_PATH.exists()
-    with LOG_PATH.open("a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(row.keys()))
+def _append_row(path: Path, fieldnames: list[str], row: dict):
+    # fieldnames is always the fixed module-level list above, never derived
+    # from row.keys() - a prior version did that, and once the row shape
+    # changed after the file (and its header) already existed, every
+    # subsequent row silently drifted out of alignment with its own header.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not path.exists()
+    with path.open("a", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         if is_new:
             writer.writeheader()
         writer.writerow(row)
+
+
+def log_trade(row: dict):
+    _append_row(TRADE_LOG_PATH, TRADE_LOG_FIELDS, row)
+
+
+def log_equity(row: dict):
+    _append_row(EQUITY_LOG_PATH, EQUITY_LOG_FIELDS, row)
 
 
 def decide(ticker: str, args, broker: Broker):
@@ -212,6 +238,7 @@ def main():
               f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}  -> {action}")
 
         executed = False
+        notional = None
         if action != "HOLD" and args.execute:
             if action == "BUY":
                 cash_now = broker.get_cash()
@@ -219,6 +246,7 @@ def main():
                 notional = min(budget, cash_now)
                 if notional < 1.0:
                     print(f"[{ticker}] Not enough cash to buy; skipping.")
+                    notional = None
                 else:
                     broker.buy_notional(symbol.alpaca, notional, is_crypto=symbol.is_crypto)
                     print(f"[{ticker}] Submitted BUY order for ${notional:.2f}.")
@@ -230,19 +258,33 @@ def main():
         elif action != "HOLD":
             print(f"[{ticker}] Dry run (pass --execute to actually place this order).")
 
-        log_run({
-            "timestamp": dt.datetime.now().isoformat(timespec="seconds"),
-            "mode": mode,
-            "ticker": ticker,
-            "strategy": args.strategy,
-            "price": f"{decision['last_price']:.2f}",
-            "target_position": decision["target_position"],
-            "current_qty_before": decision["current_qty"],
-            "entry_price": f"{decision['entry_price']:.2f}" if decision["entry_price"] else "",
-            "gain_pct": f"{decision['gain_pct']:.4f}" if decision["gain_pct"] is not None else "",
-            "action": action,
-            "executed": executed,
-        })
+        # Only real decisions get a row - HOLD is the overwhelming majority
+        # of runs (especially on the 5-minute crypto schedule) and isn't
+        # informative enough to justify a permanent, git-committed row every
+        # single time. Full per-run detail, including HOLDs, is still
+        # visible in that run's GitHub Actions console log if you need it.
+        if action != "HOLD":
+            log_trade({
+                "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                "mode": mode,
+                "asset_class": kind,
+                "ticker": ticker,
+                "strategy": args.strategy,
+                "action": action,
+                "price_usd": f"{decision['last_price']:.2f}",
+                "notional_usd": f"{notional:.2f}" if notional is not None else "",
+                "position_qty_before": decision["current_qty"],
+                "avg_entry_price_usd": f"{decision['entry_price']:.2f}" if decision["entry_price"] else "",
+                "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
+                "order_placed": executed,
+            })
+
+    log_equity({
+        "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "mode": mode,
+        "portfolio_value_usd": f"{broker.get_equity():.2f}",
+        "cash_usd": f"{broker.get_cash():.2f}",
+    })
 
 
 if __name__ == "__main__":

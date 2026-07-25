@@ -41,11 +41,13 @@ the live configuration changes.
   now drive both workflows the same way one already drives crypto -
   `retrain-stock-model.yml` weekly, `paper-trade-stocks.yml` daily near
   market close - confirmed working: a model has been trained (see
-  `logs/retrain_log.csv`) and `logs/trade_log.csv` shows real
-  `ml_filtered` decisions for SPY/AAPL/QQQ. See "Machine learning: what
-  it actually does" in "What's here" below for what this does and
-  doesn't mean - in particular, this setup has no real-data track record
-  yet, so "automated" here is not the same claim as "proven to work."
+  `logs/retrain_log.csv`) and manual test runs showed real `ml_filtered`
+  decisions for SPY/AAPL/QQQ (all HOLD so far - a legitimate outcome, not
+  a failure). See "Machine learning: what it actually does" in "What's
+  here" below for what this does and doesn't mean, and "Logs and the
+  trade dashboard" for what does/doesn't get recorded going forward - in
+  particular, this setup has no real-data track record yet, so
+  "automated" here is not the same claim as "proven to work."
   There's also still an open QQQ paper position from the old
   `rule_based` manual test (back before this switch) that hasn't been
   re-evaluated since - worth checking the Alpaca paper dashboard for it.
@@ -150,6 +152,10 @@ the live configuration changes.
   Alpaca account. Defaults to Alpaca's **paper** endpoint (fake money,
   real live prices) and refuses to run at all if only synthetic data is
   available. See "Automated paper trading" below.
+- `visualize_log.py` - turns `logs/equity_log.csv` and
+  `logs/trade_log.csv` into a 3-panel dashboard PNG (equity over time,
+  cumulative realized P&L, win/loss per ticker). See "Logs and the trade
+  dashboard" below.
 
 ## Running it
 
@@ -246,9 +252,8 @@ them rather than the first one spending the whole account (pass
 python live_trade.py --ticker SPY --strategy rule_based --execute
 ```
 This places the order for real against your **paper** account. Check the
-Alpaca paper dashboard to see the fill. Every run also appends a line to
-`logs/trade_log.csv` (git-ignored) so you have a record of every decision
-the bot made, executed or not.
+Alpaca paper dashboard to see the fill. See "Logs and the trade dashboard"
+below for what gets recorded and where.
 
 ### 5. Make it run automatically, on a schedule
 
@@ -295,10 +300,12 @@ above - no computer of yours needs to be on at all.
    You can click into any of them and hit **"Run workflow"** to trigger
    it manually right now, instead of waiting for the schedule, to
    confirm it works.
-5. Every run appends to `logs/trade_log.csv` and the workflow
-   automatically commits that update back to the repo, so `git pull`
+5. Each run appends to `logs/equity_log.csv` (always) and
+   `logs/trade_log.csv` (only if it actually bought or sold something),
+   then the workflow commits that update back to the repo, so `git pull`
    locally will show new commits with a "Log ... trading run" message
    over time. That's the automated bot committing its own log, not you.
+   See "Logs and the trade dashboard" below for what's in each file.
 
 **Important - avoid double-trading:** once GitHub Actions is confirmed
 working, **turn off your local Windows Task Scheduler tasks** (or the
@@ -352,8 +359,11 @@ arbitrarily.** The original 2%/2%/4% thresholds never fired a single
 trade in practice - actual short-term crypto moves during a live check
 were closer to 0.05-0.2% over 5-minute windows, so a 2% dip essentially
 never happens on that timeframe. Before changing these numbers, check
-what the market is actually doing (`logs/trade_log.csv` has real price
-history) rather than guessing.
+what the market is actually doing - pull real price data (e.g. via
+`main.py` or `optimize.py`, both of which fetch it fresh) rather than
+guessing. `trade_log.csv` itself only records actual BUY/SELL decisions
+now (see "Logs and the trade dashboard"), so it's no longer a dense price
+history the way it briefly was.
 
 **Worth knowing before you tighten these further:** more frequent
 trading means more round trips, and every round trip pays Alpaca's
@@ -382,10 +392,47 @@ instead, both workflows accept the same `--strategy`, `--interval`,
 `run` line in either `.github/workflows/paper-trade-*.yml` file to
 change what it does.
 
-Both workflows write to the same `logs/trade_log.csv`, so you can tell
-stock vs. crypto decisions apart by the `ticker` column, and day-trading
-decisions additionally log `entry_price`/`gain_pct` so you can see the
-real unrealized P&L behind each sell.
+### Logs and the trade dashboard
+
+Every `live_trade.py` run writes to two separate CSVs, both git-tracked so
+`git pull` shows the bot's own history over time:
+
+- **`logs/equity_log.csv`** - one row **per run** (not per ticker):
+  `timestamp_utc`, `mode`, `portfolio_value_usd`, `cash_usd`. Written
+  every single time, whether or not anything traded, so it makes a clean
+  time series of "what was the whole paper account worth" for charting.
+- **`logs/trade_log.csv`** - one row **per actual BUY/SELL decision**
+  (dry-run or executed): `timestamp_utc`, `mode`, `asset_class`, `ticker`,
+  `strategy`, `action`, `price_usd`, `notional_usd`,
+  `position_qty_before`, `avg_entry_price_usd`, `unrealized_gain_pct`
+  (already a percentage, e.g. `1.08` means +1.08%, not `0.0108`), and
+  `order_placed` (whether it was a live order vs. a dry run). **HOLD
+  decisions are not logged here** - see below for why.
+
+**Why HOLD isn't logged, and whether the crypto log will get "too big"
+eventually:** it would, if every 5-minute crypto run wrote a row per
+ticker regardless of outcome - at 9 coins every 5 minutes that's ~2,600
+rows/day, and since every workflow run also **commits** that file, it
+would mean roughly 288 git commits a day forever just from crypto HOLDs.
+That's real repo bloat (slow clones, unreadable history) for close to
+zero information, since the vast majority of runs are HOLD and the console
+output of that run (visible in the Actions tab for a while after) already
+shows it happened. So `trade_log.csv` only gets a row when something
+actually happened (a BUY or SELL signal fired), which cuts the volume by
+roughly 100x based on this project's own history so far - and
+`equity_log.csv`, which does log every run, stays small on disk (a few
+dozen bytes per row) even accumulating for years, since it's one row per
+run rather than one row per run *per ticker*. The pre-redesign log,
+kept for reference (and because its header didn't actually match its
+data - a real bug that motivated this rewrite), is archived at
+`logs/trade_log_archive_pre_2026-07-25.csv`.
+
+**`python visualize_log.py`** turns both files into a three-panel PNG
+(`results/trade_dashboard.png` by default): portfolio value over time,
+cumulative realized P&L from executed trades, and win/loss counts per
+ticker. Run it locally whenever you want a current snapshot - it's not
+wired into the automated workflows on purpose, so it doesn't add its own
+image-diff commits on top of the log commits described above.
 
 ### Stock automation: ML with periodic retraining
 
