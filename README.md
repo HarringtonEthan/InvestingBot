@@ -65,6 +65,24 @@ the live configuration changes.
   workflow explicitly passes `--dip-threshold -0.03` so this fix doesn't
   silently change its behavior - that was the effective value all along,
   it just wasn't controllable before.
+- **Fixed a serious bug: crypto positions were invisible to the bot.**
+  `src/broker.py` asked Alpaca for a position using the same symbol
+  format used for placing orders (e.g. `"DOGE/USD"`, with a slash), but
+  Alpaca's client builds that lookup's URL by plain string concatenation
+  with no encoding - the literal `/` split `/positions/DOGE/USD` into an
+  invalid 3-segment path, the request failed, and the code's error
+  handling silently treated that failure as "no position held" instead
+  of surfacing it. Net effect: the bot could never detect a crypto
+  position it already held, so the profit-target/stop-loss check never
+  ran on it, and a fresh dip signal on a coin already held could trigger
+  *another* buy instead of being recognized as "already in this trade."
+  This is very likely why real positions (found via the Alpaca paper
+  dashboard, not the bot's own - inaccurate - logs) grew large and sat
+  unmanaged despite the sell-check logic itself being correct. Fixed by
+  stripping the slash for these specific lookups (order placement is
+  unaffected - it already worked correctly). Existing open positions
+  should be correctly detected, and evaluated for sale, starting with
+  the next crypto cycle.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled

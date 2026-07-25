@@ -51,9 +51,22 @@ class Broker:
         account = self.client.get_account()
         return float(account.equity)
 
+    @staticmethod
+    def _position_symbol(symbol: str) -> str:
+        # alpaca-py builds position/close-position URLs by plain string
+        # concatenation (base_url + "/positions/" + symbol) with no
+        # URL-encoding. Crypto symbols like "DOGE/USD" contain a literal
+        # "/", which turns "/positions/DOGE/USD" into a 3-segment path
+        # instead of the 2-segment one Alpaca's API expects - the request
+        # 404s, and the caller's `except APIError` silently reports "no
+        # position" even when a real one exists. Order placement (a POST
+        # body field, not a URL path) is unaffected and still wants the
+        # slash form - only these per-symbol lookups need it stripped.
+        return symbol.replace("/", "")
+
     def get_position_qty(self, symbol: str) -> float:
         try:
-            pos = self.client.get_open_position(symbol)
+            pos = self.client.get_open_position(self._position_symbol(symbol))
             return float(pos.qty)
         except APIError:
             return 0.0
@@ -61,7 +74,7 @@ class Broker:
     def get_position_avg_entry_price(self, symbol: str) -> float | None:
         """Your actual real cost basis for an open position, or None if you don't hold one."""
         try:
-            pos = self.client.get_open_position(symbol)
+            pos = self.client.get_open_position(self._position_symbol(symbol))
             return float(pos.avg_entry_price)
         except APIError:
             return None
@@ -79,4 +92,4 @@ class Broker:
         return self.client.submit_order(order)
 
     def close_position(self, symbol: str):
-        return self.client.close_position(symbol)
+        return self.client.close_position(self._position_symbol(symbol))
