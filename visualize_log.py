@@ -49,6 +49,13 @@ def main():
     parser.add_argument("--equity-log", default="logs/equity_log.csv")
     parser.add_argument("--trade-log", default="logs/trade_log.csv")
     parser.add_argument("--out", default="results/trade_dashboard.png")
+    parser.add_argument("--baseline", type=float, default=None,
+                         help="account value to measure net gain/loss from, e.g. --baseline 100000 "
+                              "for your original funding amount. Without this, the baseline is "
+                              "whatever the first row of --equity-log happens to be - which is "
+                              "wherever equity logging started, not necessarily when the account "
+                              "was funded, so it can understate gains or losses that happened "
+                              "before logging began.")
     args = parser.parse_args()
 
     equity_df = load_csv(args.equity_log)
@@ -68,12 +75,17 @@ def main():
 
     ax = axes[0]
     if equity_df is not None:
-        baseline = equity_df["portfolio_value_usd"].iloc[0]
+        if args.baseline is not None:
+            baseline = args.baseline
+            baseline_label = "since baseline"
+        else:
+            baseline = equity_df["portfolio_value_usd"].iloc[0]
+            baseline_label = "since tracking began"
         net = equity_df["portfolio_value_usd"] - baseline
         color = "tab:green" if net.iloc[-1] >= 0 else "tab:red"
         ax.plot(equity_df["timestamp_utc"], net, color=color)
         ax.axhline(0, color="gray", linewidth=0.8)
-        ax.set_title(f"Net account gain/loss since tracking began (baseline ${baseline:,.2f})")
+        ax.set_title(f"Net account gain/loss {baseline_label} (baseline ${baseline:,.2f})")
         ax.set_ylabel("Net gain/loss ($)")
         ax.annotate(
             f"{net.iloc[-1]:+,.2f}",

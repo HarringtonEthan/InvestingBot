@@ -702,21 +702,34 @@ data - a real bug that motivated this rewrite), is archived at
 `logs/trade_log_archive_pre_2026-07-25.csv`.
 
 **`python visualize_log.py`** turns both files into a three-panel PNG
-(`results/trade_dashboard.png` by default): net account gain/loss over
-time (equity minus its own first logged value, so it reads as a direct
-"+$X"/"-$X"), cumulative realized P&L from executed trades, and win/loss
-counts per ticker. Run it locally anytime for an on-demand snapshot -
-harmless, no network/broker access needed, just reads the two log files.
+(`results/trade_dashboard.png` by default): net account gain/loss,
+cumulative realized P&L from executed trades, and win/loss counts per
+ticker. Run it locally anytime for an on-demand snapshot - harmless, no
+network/broker access needed, just reads the two log files.
+
+**The first panel's baseline matters and is easy to misread.** By
+default it's equity minus the *first* row of `logs/equity_log.csv` -
+i.e. "gain/loss since equity logging happened to start," which is not
+the same as "since you funded the account," especially if trades were
+already open before logging began. Pass `--baseline 100000` (or
+whatever your actual starting cash was) to measure from your real
+starting point instead - the title changes to make clear which one
+you're looking at. Both are valid, they just answer different
+questions, and showing only the "since tracking began" one is what
+caused real confusion once - it can look like it disagrees with what
+Alpaca's own dashboard says, when both are actually correct, just
+measuring from different starting points.
 
 It also runs on a schedule: `.github/workflows/update-dashboard.yml`
-regenerates and commits `results/trade_dashboard.png` roughly hourly (via
-an external scheduler - GitHub's own `schedule:` trigger isn't reliable
-enough on its own here either, same as the trading workflows), so
-`results/trade_dashboard.png` on GitHub is close to current without
-needing to run anything locally - just open that file's page on
-github.com. This is deliberately a slower cadence than the 5-minute
-trading workflows: one image commit an hour is a small, bounded cost,
-where committing an image every 5 minutes forever would not be.
+regenerates and commits `results/trade_dashboard.png` roughly hourly
+(with `--baseline 100000`, via an external scheduler - GitHub's own
+`schedule:` trigger isn't reliable enough on its own here either, same
+as the trading workflows), so `results/trade_dashboard.png` on GitHub
+is close to current without needing to run anything locally - just open
+that file's page on github.com. This is deliberately a slower cadence
+than the 5-minute trading workflows: one image commit an hour is a
+small, bounded cost, where committing an image every 5 minutes forever
+would not be.
 
 ### Stock automation: ML with periodic retraining
 

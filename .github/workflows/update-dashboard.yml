@@ -31,7 +31,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Generate dashboard
-        run: python visualize_log.py
+        run: python visualize_log.py --baseline 100000
 
       - name: Commit updated dashboard
         run: |
