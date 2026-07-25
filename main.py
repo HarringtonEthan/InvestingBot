@@ -32,7 +32,7 @@ from src.backtest import run_backtest
 from src.data import get_price_data
 from src.features import add_features
 from src.model import train_model
-from src.strategies import buy_and_hold, ml_filtered_dip_buy, rule_based_dip_buy
+from src.strategies import buy_and_hold, dip_buy_profit_target, ml_filtered_dip_buy, rule_based_dip_buy
 
 
 def main():
@@ -41,11 +41,25 @@ def main():
     parser.add_argument("--start", default="2015-01-01")
     parser.add_argument("--split", default="2022-01-01", help="train/test split date")
     parser.add_argument("--end", default="2024-12-31")
+    parser.add_argument("--interval", default="1d",
+                         help="bar size: 1d, 1h, 30m, 15m, 5m. Use an intraday interval to backtest "
+                              "day-trading-style strategies - and keep --start recent, since Yahoo "
+                              "Finance only keeps a limited window of intraday history.")
+    parser.add_argument("--cost-bps", type=float, default=5.0,
+                         help="round-trip cost assumption in basis points; crypto fees run higher "
+                              "than stocks (try 15-25) so don't leave this at the stock default "
+                              "when backtesting day_trading on crypto")
+    parser.add_argument("--dip-threshold", type=float, default=-0.02,
+                         help="day-trading strategy: dip entry threshold, e.g. -0.02 = 2%% below rolling average")
+    parser.add_argument("--profit-target", type=float, default=0.02,
+                         help="day-trading strategy: sell once this far above your entry price")
+    parser.add_argument("--stop-loss", type=float, default=0.04,
+                         help="day-trading strategy: sell if price falls this far below your entry price")
     parser.add_argument("--seed", type=int, default=7, help="synthetic-data RNG seed")
     parser.add_argument("--out", default="results/equity_curve.png")
     args = parser.parse_args()
 
-    raw, is_synthetic = get_price_data(args.ticker, args.start, args.end, seed=args.seed)
+    raw, is_synthetic = get_price_data(args.ticker, args.start, args.end, interval=args.interval, seed=args.seed)
     label = f"SYNTHETIC data (no live market access) - NOT real {args.ticker} prices" if is_synthetic \
         else f"real {args.ticker} data from Yahoo Finance"
     print(f"Data source: {label}")
@@ -70,15 +84,19 @@ def main():
         "Buy & Hold": buy_and_hold(test_df),
         "Rule-based dip buy": rule_based_dip_buy(test_df),
         "ML-filtered dip buy": ml_filtered_dip_buy(test_df, model, threshold),
+        "Day trading (profit target)": dip_buy_profit_target(
+            test_df, dip_threshold=args.dip_threshold,
+            profit_target=args.profit_target, stop_loss=args.stop_loss,
+        ),
     }
 
     results = {}
-    print(f"{'Strategy':<22}{'Total Ret':>12}{'Ann. Ret':>12}{'Ann. Vol':>12}{'Sharpe':>10}{'Max DD':>10}{'Trades':>9}")
+    print(f"{'Strategy':<28}{'Total Ret':>12}{'Ann. Ret':>12}{'Ann. Vol':>12}{'Sharpe':>10}{'Max DD':>10}{'Trades':>9}")
     for name, position in strategies.items():
-        result = run_backtest(test_df["Close"], position)
+        result = run_backtest(test_df["Close"], position, cost_bps=args.cost_bps)
         results[name] = result
         print(
-            f"{name:<22}{result.total_return:>11.1%} {result.annualized_return:>11.1%} "
+            f"{name:<28}{result.total_return:>11.1%} {result.annualized_return:>11.1%} "
             f"{result.annualized_vol:>11.1%} {result.sharpe:>10.2f} {result.max_drawdown:>10.1%} {result.num_trades:>9}"
         )
 

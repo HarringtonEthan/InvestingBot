@@ -3,12 +3,11 @@ Run one automated trading decision, for one or more tickers, against an
 Alpaca account (paper by default) and, if a position needs to change,
 place the order.
 
-Meant to be run on a schedule (e.g. once a day, shortly before market
-close) via cron / Task Scheduler - see README.md "Automated paper
-trading" section for setup. Each run is stateless: it re-derives that
-day's buy/sell/hold decision from full price history and your *actual*
-broker position for each ticker, so it's safe to run it manually as many
-times as you want to check what it would do.
+Meant to be run on a schedule via cron / Task Scheduler / GitHub Actions -
+see README.md "Automated paper trading" section for setup. Each run is
+stateless: it re-derives that period's buy/sell/hold decision from price
+history and your *actual* broker position for each ticker, so it's safe
+to run it manually as many times as you want to check what it would do.
 
 Safety defaults:
   - Points at Alpaca's PAPER endpoint unless ALPACA_BASE_URL is changed.
@@ -24,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import datetime as dt
+import math
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -36,6 +36,11 @@ from src.strategies import ml_filtered_dip_buy, rule_based_dip_buy
 from src.symbols import resolve_symbol
 
 LOG_PATH = Path("logs/trade_log.csv")
+
+# Yahoo Finance limits how far back intraday bars go (roughly; exact
+# limits can change). These defaults stay safely inside those limits;
+# override with --lookback-days if you know your interval supports more.
+DEFAULT_LOOKBACK_DAYS = {"1d": 365 * 5, "1h": 59, "30m": 59, "15m": 59, "5m": 7}
 
 
 def get_target_position(df, strategy: str) -> float:
@@ -59,11 +64,15 @@ def log_run(row: dict):
         writer.writerow(row)
 
 
-def decide(ticker: str, strategy: str, start: str, end: str, broker: Broker):
+def decide(ticker: str, args, broker: Broker):
     """Returns a dict describing the decision for one ticker, or None if data was unusable."""
     symbol = resolve_symbol(ticker)
 
-    raw, is_synthetic = get_price_data(symbol.yfinance, start, end)
+    end = dt.date.today()
+    lookback_days = args.lookback_days or DEFAULT_LOOKBACK_DAYS.get(args.interval, 30)
+    start = end - dt.timedelta(days=lookback_days)
+
+    raw, is_synthetic = get_price_data(symbol.yfinance, start.isoformat(), end.isoformat(), interval=args.interval)
     if is_synthetic:
         print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
               f"(no real network access to Yahoo Finance from here).")
@@ -71,19 +80,39 @@ def decide(ticker: str, strategy: str, start: str, end: str, broker: Broker):
 
     df = add_features(raw)
     last_price = float(df["Close"].iloc[-1])
-    last_date = df.index[-1].date()
-
-    target_position = get_target_position(df, strategy)
+    last_date = df.index[-1]
 
     current_qty = broker.get_position_qty(symbol.alpaca)
     currently_holding = current_qty > 0
 
-    if target_position >= 1.0 and not currently_holding:
-        action = "BUY"
-    elif target_position <= 0.0 and currently_holding:
-        action = "SELL"
+    entry_price = None
+    gain_pct = None
+
+    if args.strategy == "day_trading":
+        pct_below = float(df["pct_below_sma20"].iloc[-1])
+        if currently_holding:
+            entry_price = broker.get_position_avg_entry_price(symbol.alpaca)
+            if entry_price:
+                gain_pct = last_price / entry_price - 1.0
+                if gain_pct >= args.profit_target or gain_pct <= -args.stop_loss:
+                    action = "SELL"
+                else:
+                    action = "HOLD"
+            else:
+                action = "HOLD"
+        elif not math.isnan(pct_below) and pct_below <= args.dip_threshold:
+            action = "BUY"
+        else:
+            action = "HOLD"
+        target_position = 1.0 if (action == "BUY" or (action == "HOLD" and currently_holding)) else 0.0
     else:
-        action = "HOLD"
+        target_position = get_target_position(df, args.strategy)
+        if target_position >= 1.0 and not currently_holding:
+            action = "BUY"
+        elif target_position <= 0.0 and currently_holding:
+            action = "SELL"
+        else:
+            action = "HOLD"
 
     return {
         "ticker": ticker,
@@ -92,6 +121,8 @@ def decide(ticker: str, strategy: str, start: str, end: str, broker: Broker):
         "last_date": last_date,
         "target_position": target_position,
         "current_qty": current_qty,
+        "entry_price": entry_price,
+        "gain_pct": gain_pct,
         "action": action,
     }
 
@@ -100,8 +131,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", default=["SPY"],
                          help="one or more tickers, space-separated, e.g. --ticker SPY AAPL QQQ")
-    parser.add_argument("--strategy", choices=["rule_based", "ml_filtered"], default="rule_based")
-    parser.add_argument("--lookback-days", type=int, default=365 * 5, help="history to pull for indicators/model")
+    parser.add_argument("--strategy", choices=["rule_based", "ml_filtered", "day_trading"], default="rule_based")
+    parser.add_argument("--interval", default="1d",
+                         help="bar size for price data: 1d, 1h, 30m, 15m, 5m (yfinance intervals)")
+    parser.add_argument("--lookback-days", type=int, default=None,
+                         help="history to pull; default depends on --interval (see DEFAULT_LOOKBACK_DAYS)")
+    parser.add_argument("--dip-threshold", type=float, default=-0.02,
+                         help="day_trading: buy when price is this fraction below its rolling average, e.g. -0.02 = 2%% dip")
+    parser.add_argument("--profit-target", type=float, default=0.02,
+                         help="day_trading: sell once price is this fraction above your actual entry price")
+    parser.add_argument("--stop-loss", type=float, default=0.04,
+                         help="day_trading: sell if price falls this fraction below your actual entry price")
     parser.add_argument("--max-notional", type=float, default=None,
                          help="cap $ amount per buy; default = an even split of available cash across tickers")
     parser.add_argument("--execute", action="store_true", help="actually submit orders; without this, dry-run only")
@@ -110,16 +150,13 @@ def main():
 
     load_dotenv()
 
-    end = dt.date.today()
-    start = end - dt.timedelta(days=args.lookback_days)
-
     broker = Broker(allow_live=args.allow_live)
     mode = "PAPER" if broker.is_paper else "LIVE"
 
     tickers = args.ticker
     decisions = []
     for ticker in tickers:
-        decision = decide(ticker, args.strategy, start.isoformat(), end.isoformat(), broker)
+        decision = decide(ticker, args, broker)
         if decision is not None:
             decisions.append(decision)
 
@@ -135,9 +172,9 @@ def main():
         action = decision["action"]
 
         kind = "crypto" if symbol.is_crypto else "stock"
+        gain_str = f"  unrealized={decision['gain_pct']:+.2%}" if decision["gain_pct"] is not None else ""
         print(f"[{mode}] {ticker} ({kind}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
-              f"strategy={args.strategy}  target_position={decision['target_position']:.0f}  "
-              f"current_qty={decision['current_qty']}  -> {action}")
+              f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}  -> {action}")
 
         executed = False
         if action != "HOLD" and args.execute:
@@ -166,6 +203,8 @@ def main():
             "price": f"{decision['last_price']:.2f}",
             "target_position": decision["target_position"],
             "current_qty_before": decision["current_qty"],
+            "entry_price": f"{decision['entry_price']:.2f}" if decision["entry_price"] else "",
+            "gain_pct": f"{decision['gain_pct']:.4f}" if decision["gain_pct"] is not None else "",
             "action": action,
             "executed": executed,
         })

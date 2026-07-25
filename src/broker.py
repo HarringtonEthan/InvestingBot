@@ -58,6 +58,14 @@ class Broker:
         except APIError:
             return 0.0
 
+    def get_position_avg_entry_price(self, symbol: str) -> float | None:
+        """Your actual real cost basis for an open position, or None if you don't hold one."""
+        try:
+            pos = self.client.get_open_position(symbol)
+            return float(pos.avg_entry_price)
+        except APIError:
+            return None
+
     def buy_notional(self, symbol: str, notional: float, is_crypto: bool = False):
         # Crypto orders on Alpaca don't support DAY (there's no market
         # close to expire at); they require GTC instead.

@@ -2,8 +2,8 @@ name: Paper trade - crypto
 
 on:
   schedule:
-    # Every hour, every day - crypto trades 24/7, unlike stocks.
-    - cron: "0 * * * *"
+    # Every 15 minutes, every day - crypto trades 24/7, unlike stocks.
+    - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -22,6 +22,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: "pip"
 
       - run: pip install -r requirements.txt
 
@@ -30,7 +31,11 @@ jobs:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute
+        run: >
+          python live_trade.py --ticker BTC ETH SOL DOGE LTC
+          --strategy day_trading --interval 15m
+          --dip-threshold -0.02 --profit-target 0.02 --stop-loss 0.04
+          --execute
 
       - name: Commit trade log
         run: |

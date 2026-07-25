@@ -12,22 +12,33 @@ considering real money.
 
 ## What's here
 
-- `src/data.py` - loads daily price data. Tries Yahoo Finance
-  (`yfinance`) first; if there's no network access it falls back to a
-  synthetic price series calibrated to realistic equity market behavior
-  (~9% annual drift, ~19% annual volatility, clustered vol regimes). Every
-  place synthetic data is used, it's labeled loudly - in the console
-  output and in the chart title - so it never gets mistaken for a real
-  result.
+- `src/data.py` - loads price data at daily or intraday resolution
+  (`--interval 1d`, `1h`, `15m`, etc.). Tries Yahoo Finance (`yfinance`)
+  first; if there's no network access it falls back to a synthetic price
+  series calibrated to realistic market behavior (~9% annual drift, ~19%
+  annual volatility, clustered vol regimes), generated at whatever bar
+  frequency was requested. Every place synthetic data is used, it's
+  labeled loudly - in the console output and in the chart title - so it
+  never gets mistaken for a real result.
 - `src/features.py` - technical indicators (SMA, RSI, rolling
   volatility, drawdown-from-high) used both to define a "dip" and as ML
-  features.
-- `src/strategies.py` - three strategies:
+  features. Windows are defined in bars, not calendar days, so the same
+  code produces a 20-day trend on daily data or a 20-hour trend on hourly
+  data.
+- `src/strategies.py` - four strategies:
   1. **Buy & hold**
-  2. **Rule-based dip buy** - buy when price is >3% below its 20-day
-     moving average, sell once it recovers back above the average.
+  2. **Rule-based dip buy** - buy when price is >3% below its 20-period
+     moving average, sell once it recovers back above the average
+     (mean-reversion exit, independent of what you paid).
   3. **ML-filtered dip buy** - same rule, but only acts on a dip if a
      model trained to predict "will this bounce?" is confident enough.
+  4. **Day trading (profit target)** - buy a dip, but sell based on your
+     *actual entry price* instead of the moving average: exits once
+     price is a set % above your entry (a real profit), or cuts losses
+     if price falls a set % below entry first (a stop-loss, so it
+     doesn't ride a sustained downtrend forever waiting for a recovery
+     that may not come). This is the one wired up for the frequent,
+     always-on crypto automation - see "Crypto support" below.
 - `src/model.py` - trains a `RandomForestClassifier` on the training
   period only, with a label of "price rises >=3% within the next 10
   trading days." The confidence threshold used at test time is calibrated
@@ -207,44 +218,55 @@ Actions is working reliably).
 `--ticker` also accepts crypto: just pass the base symbol (`BTC`, `ETH`,
 `SOL`, `DOGE`, `LTC`, and others - see `KNOWN_CRYPTO_BASES` in
 `src/symbols.py`). It's auto-detected and mapped to the right format for
-both Yahoo Finance (`BTC-USD`) and Alpaca (`BTC/USD`) automatically:
+both Yahoo Finance (`BTC-USD`) and Alpaca (`BTC/USD`) automatically.
+
+**Crypto trades 24/7**, unlike stocks, and the GitHub Actions crypto
+workflow (`.github/workflows/paper-trade-crypto.yml`) is configured for
+day trading rather than the once-a-day daily-close strategy:
 
 ```bash
-python live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute
+python live_trade.py --ticker BTC ETH SOL DOGE LTC \
+  --strategy day_trading --interval 15m \
+  --dip-threshold -0.02 --profit-target 0.02 --stop-loss 0.04 \
+  --execute
 ```
 
-Stocks and crypto can be mixed in the same command - cash still splits
-evenly across whichever ones signal BUY that run.
+This runs on 15-minute bars, buys a 2%+ dip, and sells once your
+*actual* position is up 2% - or cuts it at -4% if the dip keeps falling
+instead of bouncing. It's scheduled to fire every 15 minutes, every day,
+automatically, via GitHub Actions - see "Running without your computer
+on" above for setup.
 
-**Crypto trades 24/7**, unlike stocks - there's no market close to time
-a daily check around, and price keeps moving through the night and on
-weekends. That means checking more often than once a day is actually
-useful here (the strategy still looks at daily-average indicators, but
-"today's close" is really "right now" for crypto, so an hourly check can
-catch a dip/recovery signal mid-day instead of waiting until tomorrow).
-Set this up as a **second, separate** scheduled task from your stock one,
-running every hour, every day (including weekends):
+**Worth knowing before you get excited about the frequency:** more
+frequent trading means more round trips, and every round trip pays
+Alpaca's crypto spread/fee (roughly 0.15-0.25% each way, so ~0.3-0.5% per
+full buy-sell cycle). A 2% profit target nets a lot less than 2% after
+that, and a strategy that trades often needs to be right often enough to
+outrun that drag - which is exactly why backtesting this specific setup
+(numbers below) before trusting it matters more, not less, at higher
+frequency.
 
-**macOS/Linux (cron)** - add a second line to `crontab -e`:
+**Backtest it before trusting it** - same principle as the stock
+strategy, just with intraday data and crypto-realistic fees:
+```bash
+python main.py --ticker BTC-USD --interval 1h \
+  --start 2026-05-01 --split 2026-07-01 --end 2026-07-25 \
+  --cost-bps 20 --dip-threshold -0.02 --profit-target 0.02 --stop-loss 0.04
 ```
-0 * * * * cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute >> logs/cron_crypto.log 2>&1
-```
+(Yahoo Finance only keeps a limited window of intraday history, so keep
+`--start` recent rather than reaching back years like the daily stock
+backtest does.)
 
-**Windows (Task Scheduler)** - create a second task (e.g.
-`InvestingBot Crypto Hourly`):
-1. **Triggers tab:** New → "Begin the task: **Daily**" → set it to start
-   at 12:00 AM and repeat **every day** (not just weekdays) → check
-   **"Repeat task every: 1 hour"** → set "for a duration of" to
-   **"Indefinitely."**
-2. **Actions tab:** same Program/script (path to `python.exe`) and
-   "Start in" (project folder) as your stock task, but with these
-   arguments instead:
-   ```
-   live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute
-   ```
+If you'd rather run stocks and crypto with matching strategies/settings
+instead, both workflows accept the same `--strategy`, `--interval`,
+`--dip-threshold`, `--profit-target`, and `--stop-loss` flags - edit the
+`run` line in either `.github/workflows/paper-trade-*.yml` file to
+change what it does.
 
-Both tasks write to the same `logs/trade_log.csv`, so you can tell stock
-vs. crypto decisions apart by the `ticker` column.
+Both workflows write to the same `logs/trade_log.csv`, so you can tell
+stock vs. crypto decisions apart by the `ticker` column, and day-trading
+decisions additionally log `entry_price`/`gain_pct` so you can see the
+real unrealized P&L behind each sell.
 
 ### 6. Going live (real money) - deliberately, later
 

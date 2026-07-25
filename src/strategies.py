@@ -52,6 +52,53 @@ def rule_based_dip_buy(
     return pd.Series(position, index=df.index)
 
 
+def dip_buy_profit_target(
+    df: pd.DataFrame,
+    dip_threshold: float = -0.02,
+    profit_target: float = 0.02,
+    stop_loss: float = 0.04,
+) -> pd.Series:
+    """
+    Day-trading variant: buy a dip (same signal as `rule_based_dip_buy`),
+    but exit based on your actual entry price instead of the moving
+    average:
+      - Sell once price is `profit_target` above where you bought (a real
+        profit, not just "back to normal").
+      - Sell at a loss if price falls `stop_loss` below your entry first -
+        without this, a strategy that only sells "once it recovers" can
+        ride a sustained downtrend indefinitely waiting for a recovery
+        that may not come for a long time, if ever.
+    Whichever threshold is hit first wins. For backtesting, entry price is
+    this bar's close; live trading uses the broker's actual average entry
+    price instead (see live_trade.py), which is the real number that
+    matters once money is involved.
+    """
+    pct_below = df["pct_below_sma20"].to_numpy()
+    close = df["Close"].to_numpy()
+    position = np.zeros(len(df))
+    holding = False
+    entry_price = None
+
+    for i in range(len(df)):
+        pb = pct_below[i]
+        price = close[i]
+        if np.isnan(pb):
+            position[i] = 0.0
+            continue
+        if not holding:
+            if pb <= dip_threshold:
+                holding = True
+                entry_price = price
+        else:
+            gain = price / entry_price - 1.0
+            if gain >= profit_target or gain <= -stop_loss:
+                holding = False
+                entry_price = None
+        position[i] = 1.0 if holding else 0.0
+
+    return pd.Series(position, index=df.index)
+
+
 def ml_filtered_dip_buy(
     df: pd.DataFrame,
     model,
