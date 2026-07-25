@@ -1,8 +1,8 @@
 name: Paper trade - crypto
 
 on:
+  # Every 15 minutes, every day - crypto trades 24/7, unlike stocks.
   schedule:
-    # Every 15 minutes, every day - crypto trades 24/7, unlike stocks.
     - cron: "*/15 * * * *"
   workflow_dispatch: {}
 
