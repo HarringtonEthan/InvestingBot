@@ -1,14 +1,61 @@
 # InvestingBot
 
-A "buy the dip" stock strategy: backtest it, then optionally run it
-automatically against a paper (fake-money) brokerage account.
+A "buy the dip" stock and crypto strategy: backtest it, search for better
+settings systematically, then optionally run it automatically against a
+paper (fake-money) brokerage account.
 
 **Not investment advice.** It exists to answer a specific question before
-any real money is involved: does a simple dip-buying rule, optionally
-filtered by a machine-learning model, actually beat just buying and
-holding? The code is built so you can answer that for yourself on real
-data, and then watch it trade unattended with fake money before ever
-considering real money.
+any real money is involved: do these dip-buying rules actually beat just
+buying and holding? So far, on real recent data, the honest answer is
+**no** - see "Current live status" below for specifics. The code is built
+so you can keep answering that for yourself on real data, and only
+consider real money once something actually demonstrates an edge.
+
+## Current live status (as of this writing)
+
+This section exists so nobody - including future us - has to reverse
+engineer what's actually running from workflow files. Update it whenever
+the live configuration changes.
+
+- **Crypto: live and automated.** An external free scheduler
+  ([cron-job.org](https://cron-job.org)) calls GitHub's API every 5
+  minutes to run `.github/workflows/paper-trade-crypto.yml`, which runs
+  `live_trade.py --strategy day_trading` (rule-based, **no machine
+  learning**) against **BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT**
+  on 5-minute bars, buying a 0.5% dip and selling at +0.8% profit or
+  -1.5% stop-loss. This does not depend on GitHub's own cron (which we
+  found unreliable - see below) or on any computer being on.
+- **Stocks: configured but NOT reliably running.** The stock workflow
+  (`paper-trade-stocks.yml`, `--strategy rule_based` on SPY/AAPL/QQQ) is
+  still scheduled through GitHub Actions' *own* cron trigger, which we
+  found does not fire reliably - it was never confirmed to run
+  automatically on its own the entire time this was tested. cron-job.org
+  was only ever wired up for the crypto workflow. Practically: **the
+  stock bot has not run since its first manual test**, and there's an
+  open QQQ paper position from that test that hasn't been re-evaluated
+  since. Fix this the same way the crypto workflow was fixed (point an
+  external scheduler at it) before relying on it.
+- **Local Windows Task Scheduler: should be disabled.** Both local tasks
+  were used earlier for testing and troubleshooting; cron-job.org now
+  handles crypto automation instead. Leaving a local task enabled
+  alongside cron-job.org would double-trade the same account.
+- **Machine learning: implemented, not deployed.** `--strategy
+  ml_filtered` exists and works, but nothing live uses it. It's also not
+  "learning" in an ongoing sense - see "Machine learning: what it
+  actually does" in "What's here" below before turning it on.
+- **Bollinger breakout: implemented, not deployed.** `--strategy
+  bollinger_breakout` exists (see `src/strategies.py`) but isn't wired
+  into any live workflow. Backtested on 5-minute crypto bars during a
+  choppy (non-trending) stretch, it performed far worse than the other
+  strategies - expected, since it's a trend-following design meant for
+  slower timeframes and genuinely trending markets, not what it was
+  tested against.
+- **Known-better settings, not yet applied.** `optimize.py` (a
+  multi-ticker parameter sweep) found `dip=-1.0% / profit=+1.0% /
+  stop=+3.0%` outperforms the currently-live `-0.5%/+0.8%/-1.5%` on
+  real recent data across all 9 coins - though both still lost money on
+  average over that period; the swept setting just lost less. Not yet
+  applied live pending re-validation on a different time window.
 
 ## What's here
 
@@ -25,13 +72,18 @@ considering real money.
   features. Windows are defined in bars, not calendar days, so the same
   code produces a 20-day trend on daily data or a 20-hour trend on hourly
   data.
-- `src/strategies.py` - four strategies:
+- `src/strategies.py` - five strategies:
   1. **Buy & hold**
   2. **Rule-based dip buy** - buy when price is >3% below its 20-period
      moving average, sell once it recovers back above the average
-     (mean-reversion exit, independent of what you paid).
-  3. **ML-filtered dip buy** - same rule, but only acts on a dip if a
-     model trained to predict "will this bounce?" is confident enough.
+     (mean-reversion exit, independent of what you paid). Note: this
+     3% threshold is hardcoded in `src/strategies.py` and is *not*
+     connected to the `--dip-threshold` CLI flag (only "Day trading"
+     below uses that flag) - on real recent crypto/5-minute data, moves
+     rarely reach 3%, so this strategy currently shows ~0 trades there.
+  3. **ML-filtered dip buy** - same rule (same hardcoded 3% dip, same
+     caveat), but only acts on a dip if a model trained to predict "will
+     this bounce?" is confident enough.
   4. **Day trading (profit target)** - buy a dip, but sell based on your
      *actual entry price* instead of the moving average: exits once
      price is a set % above your entry (a real profit), or cuts losses
@@ -39,11 +91,35 @@ considering real money.
      doesn't ride a sustained downtrend forever waiting for a recovery
      that may not come). This is the one wired up for the frequent,
      always-on crypto automation - see "Crypto support" below.
+  5. **Bollinger breakout** - a trend-following (not mean-reversion) bet:
+     buy when price breaks above its upper Bollinger Band while also
+     above a long-term trend average, sell when it falls back below the
+     middle band. Implemented but not wired into any live workflow - see
+     "Current live status" above for why.
 - `src/model.py` - trains a `RandomForestClassifier` on the training
   period only, with a label of "price rises >=3% within the next 10
   trading days." The confidence threshold used at test time is calibrated
   from the *training* score distribution (75th percentile of training
   scores), not hand-picked to make the test result look good.
+
+  **Machine learning: what it actually does (and doesn't).** This is the
+  only ML in the project, and only used by `ml_filtered` - `rule_based`,
+  `day_trading`, and `bollinger_breakout` are pure rules, no model
+  involved. Important to be clear-eyed about before turning it on live:
+  - It does not "learn" in an ongoing/online sense. Every time it's run
+    (in a backtest, or if it were live) it trains a brand-new
+    `RandomForestClassifier` from scratch on whatever training window you
+    give it, uses it once, and discards it. It never accumulates
+    experience across live runs the way "a bot that learns" implies -
+    each invocation starts from zero.
+  - It has never been shown to beat the plain rule-based version. In the
+    one direct real-data comparison run in this project so far, the ML
+    filter underperformed the plain rule-based strategy out of sample -
+    a common and expected outcome (a filter can easily fit noise in the
+    training window rather than a real pattern).
+  - Its dip threshold has the same hardcoded-3%/real-volatility mismatch
+    described above, so on 5-minute crypto data it currently fires on
+    almost nothing regardless of the model's opinion.
 - `src/backtest.py` - a simple long/cash backtest engine: one day of
   execution lag (no lookahead), transaction costs on every position
   change, and standard metrics (annualized return/vol, Sharpe, max
