@@ -29,37 +29,26 @@ the live configuration changes.
   it hasn't been re-validated on a different time window yet. This does
   not depend on GitHub's own cron (which we found unreliable - see
   below) or on any computer being on.
-- **Stocks: switched to the ML-filtered strategy, with periodic
-  retraining - but the automatic schedule is still unfixed.** The stock
-  workflow (`paper-trade-stocks.yml`) now runs `--strategy ml_filtered`
-  on SPY/AAPL/QQQ instead of `rule_based`. Unlike every other strategy in
-  this project, this one is designed to actually persist a model between
-  runs: a separate workflow, `.github/workflows/retrain-stock-model.yml`
-  (via `train_stock_model.py`), pools recent SPY/AAPL/QQQ data into one
+- **Stocks: live and automated, ML-filtered, with periodic retraining.**
+  The stock workflow (`paper-trade-stocks.yml`) runs `--strategy
+  ml_filtered` on SPY/AAPL/QQQ instead of `rule_based`. Unlike every
+  other strategy in this project, this one actually persists a model
+  between runs: a separate workflow, `retrain-stock-model.yml` (via
+  `train_stock_model.py`), pools recent SPY/AAPL/QQQ data into one
   `RandomForestClassifier`, saves it to `models/stock_model.pkl`, and
-  commits it back to the repo. `live_trade.py` then loads that saved
-  model on every run instead of retraining from scratch - so the "brain"
-  behind stock trades only updates when the retrain workflow runs, and
-  stays the same in between. See "Machine learning: what it actually
-  does" in "What's here" below for what this does and doesn't mean.
-  Two things still need doing before this is trustworthy:
-  1. **No model has been trained yet** - `models/stock_model.pkl` doesn't
-     exist in the repo until the retrain workflow runs once (manually,
-     via the Actions tab -> "Retrain stock ML model" -> "Run workflow").
-     Until then, `live_trade.py` falls back to training inline from just
-     that run's data (logged loudly when it happens) rather than failing.
-  2. **Neither stock workflow reliably fires on its own yet.** Both
-     `paper-trade-stocks.yml` and `retrain-stock-model.yml` still rely on
-     GitHub Actions' *own* cron trigger as a fallback, which we've found
-     doesn't fire reliably - `paper-trade-stocks.yml` was never confirmed
-     to run automatically the entire time this was tested, and there's an
-     open QQQ paper position from its one manual test that hasn't been
-     re-evaluated since. Both workflows have a `workflow_dispatch`
-     trigger, so cron-job.org can drive them the same way it already
-     drives the crypto workflow - point one cron-job.org job at
-     `retrain-stock-model.yml` (weekly is reasonable) and another at
-     `paper-trade-stocks.yml` (daily, near market close) to make this
-     actually automatic.
+  commits it back to the repo; `live_trade.py` loads that saved model on
+  every run instead of retraining from scratch. Two cron-job.org jobs
+  now drive both workflows the same way one already drives crypto -
+  `retrain-stock-model.yml` weekly, `paper-trade-stocks.yml` daily near
+  market close - confirmed working: a model has been trained (see
+  `logs/retrain_log.csv`) and `logs/trade_log.csv` shows real
+  `ml_filtered` decisions for SPY/AAPL/QQQ. See "Machine learning: what
+  it actually does" in "What's here" below for what this does and
+  doesn't mean - in particular, this setup has no real-data track record
+  yet, so "automated" here is not the same claim as "proven to work."
+  There's also still an open QQQ paper position from the old
+  `rule_based` manual test (back before this switch) that hasn't been
+  re-evaluated since - worth checking the Alpaca paper dashboard for it.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled
