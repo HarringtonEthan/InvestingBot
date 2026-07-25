@@ -83,6 +83,17 @@ the live configuration changes.
   unaffected - it already worked correctly). Existing open positions
   should be correctly detected, and evaluated for sale, starting with
   the next crypto cycle.
+- **Fixed: BUY no longer stacks on top of an already-open, unfilled
+  order.** `decide()` only ever checked *filled* position size, never
+  whether an order for that symbol was already sitting open/unfilled -
+  found via two real stale QQQ orders (submitted after market close,
+  queued for the next session, never filled) that a later BUY signal
+  would have had no way of knowing about and could have duplicated.
+  `Broker.has_open_order()` now checks before every BUY and skips if one
+  already exists. This doesn't retroactively cancel any order already
+  sitting open - cancel those manually on Alpaca's Orders page if you
+  don't want them to fill; this only stops *new* ones from stacking on
+  top going forward.
 - **Dashboard: regenerated roughly hourly.** A fourth workflow,
   `update-dashboard.yml`, runs `visualize_log.py` and commits
   `results/trade_dashboard.png` back to the repo - view it directly on

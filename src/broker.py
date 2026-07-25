@@ -13,8 +13,8 @@ import os
 
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
-from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
 
 PAPER_BASE_URL = "https://paper-api.alpaca.markets"
 LIVE_BASE_URL = "https://api.alpaca.markets"
@@ -78,6 +78,19 @@ class Broker:
             return float(pos.avg_entry_price)
         except APIError:
             return None
+
+    def has_open_order(self, symbol: str) -> bool:
+        """
+        True if there's already an unfilled order sitting out there for this
+        symbol - checked before placing a new one, so a fresh BUY signal
+        doesn't stack another order on top of one still working (e.g. a DAY
+        order submitted after market close, queued for the next session,
+        that a later run has no other way of knowing about - decide() only
+        ever checks *filled* position size, not pending orders).
+        """
+        request = GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol])
+        orders = self.client.get_orders(filter=request)
+        return len(orders) > 0
 
     def buy_notional(self, symbol: str, notional: float, is_crypto: bool = False):
         # Crypto orders on Alpaca don't support DAY (there's no market

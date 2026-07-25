@@ -261,16 +261,19 @@ def main():
         notional = None
         if action != "HOLD" and args.execute:
             if action == "BUY":
-                cash_now = broker.get_cash()
-                budget = min(per_ticker_budget, args.max_notional) if args.max_notional else per_ticker_budget
-                notional = min(budget, cash_now)
-                if notional < 1.0:
-                    print(f"[{ticker}] Not enough cash to buy; skipping.")
-                    notional = None
+                if broker.has_open_order(symbol.alpaca):
+                    print(f"[{ticker}] Skipping BUY - an order for this symbol is already open/unfilled.")
                 else:
-                    broker.buy_notional(symbol.alpaca, notional, is_crypto=symbol.is_crypto)
-                    print(f"[{ticker}] Submitted BUY order for ${notional:.2f}.")
-                    executed = True
+                    cash_now = broker.get_cash()
+                    budget = min(per_ticker_budget, args.max_notional) if args.max_notional else per_ticker_budget
+                    notional = min(budget, cash_now)
+                    if notional < 1.0:
+                        print(f"[{ticker}] Not enough cash to buy; skipping.")
+                        notional = None
+                    else:
+                        broker.buy_notional(symbol.alpaca, notional, is_crypto=symbol.is_crypto)
+                        print(f"[{ticker}] Submitted BUY order for ${notional:.2f}.")
+                        executed = True
             elif action == "SELL":
                 broker.close_position(symbol.alpaca)
                 print(f"[{ticker}] Submitted order to close position.")
