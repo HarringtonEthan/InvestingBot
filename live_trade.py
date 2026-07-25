@@ -33,6 +33,7 @@ from src.data import get_price_data
 from src.features import add_features
 from src.model import train_model
 from src.strategies import ml_filtered_dip_buy, rule_based_dip_buy
+from src.symbols import resolve_symbol
 
 LOG_PATH = Path("logs/trade_log.csv")
 
@@ -60,7 +61,9 @@ def log_run(row: dict):
 
 def decide(ticker: str, strategy: str, start: str, end: str, broker: Broker):
     """Returns a dict describing the decision for one ticker, or None if data was unusable."""
-    raw, is_synthetic = get_price_data(ticker, start, end)
+    symbol = resolve_symbol(ticker)
+
+    raw, is_synthetic = get_price_data(symbol.yfinance, start, end)
     if is_synthetic:
         print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
               f"(no real network access to Yahoo Finance from here).")
@@ -72,7 +75,7 @@ def decide(ticker: str, strategy: str, start: str, end: str, broker: Broker):
 
     target_position = get_target_position(df, strategy)
 
-    current_qty = broker.get_position_qty(ticker)
+    current_qty = broker.get_position_qty(symbol.alpaca)
     currently_holding = current_qty > 0
 
     if target_position >= 1.0 and not currently_holding:
@@ -84,6 +87,7 @@ def decide(ticker: str, strategy: str, start: str, end: str, broker: Broker):
 
     return {
         "ticker": ticker,
+        "symbol": symbol,
         "last_price": last_price,
         "last_date": last_date,
         "target_position": target_position,
@@ -127,9 +131,11 @@ def main():
 
     for decision in decisions:
         ticker = decision["ticker"]
+        symbol = decision["symbol"]
         action = decision["action"]
 
-        print(f"[{mode}] {ticker} as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
+        kind = "crypto" if symbol.is_crypto else "stock"
+        print(f"[{mode}] {ticker} ({kind}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
               f"strategy={args.strategy}  target_position={decision['target_position']:.0f}  "
               f"current_qty={decision['current_qty']}  -> {action}")
 
@@ -142,11 +148,11 @@ def main():
                 if notional < 1.0:
                     print(f"[{ticker}] Not enough cash to buy; skipping.")
                 else:
-                    broker.buy_notional(ticker, notional)
+                    broker.buy_notional(symbol.alpaca, notional, is_crypto=symbol.is_crypto)
                     print(f"[{ticker}] Submitted BUY order for ${notional:.2f}.")
                     executed = True
             elif action == "SELL":
-                broker.close_position(ticker)
+                broker.close_position(symbol.alpaca)
                 print(f"[{ticker}] Submitted order to close position.")
                 executed = True
         elif action != "HOLD":

@@ -166,6 +166,50 @@ moving it to a small always-on server or a cloud scheduled job (e.g. a
 $5-6/mo VM, or a serverless cron trigger) - happy to help set that up once
 you're at that point.
 
+### Crypto support
+
+`--ticker` also accepts crypto: just pass the base symbol (`BTC`, `ETH`,
+`SOL`, `DOGE`, `LTC`, and others - see `KNOWN_CRYPTO_BASES` in
+`src/symbols.py`). It's auto-detected and mapped to the right format for
+both Yahoo Finance (`BTC-USD`) and Alpaca (`BTC/USD`) automatically:
+
+```bash
+python live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute
+```
+
+Stocks and crypto can be mixed in the same command - cash still splits
+evenly across whichever ones signal BUY that run.
+
+**Crypto trades 24/7**, unlike stocks - there's no market close to time
+a daily check around, and price keeps moving through the night and on
+weekends. That means checking more often than once a day is actually
+useful here (the strategy still looks at daily-average indicators, but
+"today's close" is really "right now" for crypto, so an hourly check can
+catch a dip/recovery signal mid-day instead of waiting until tomorrow).
+Set this up as a **second, separate** scheduled task from your stock one,
+running every hour, every day (including weekends):
+
+**macOS/Linux (cron)** - add a second line to `crontab -e`:
+```
+0 * * * * cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute >> logs/cron_crypto.log 2>&1
+```
+
+**Windows (Task Scheduler)** - create a second task (e.g.
+`InvestingBot Crypto Hourly`):
+1. **Triggers tab:** New → "Begin the task: **Daily**" → set it to start
+   at 12:00 AM and repeat **every day** (not just weekdays) → check
+   **"Repeat task every: 1 hour"** → set "for a duration of" to
+   **"Indefinitely."**
+2. **Actions tab:** same Program/script (path to `python.exe`) and
+   "Start in" (project folder) as your stock task, but with these
+   arguments instead:
+   ```
+   live_trade.py --ticker BTC ETH SOL DOGE LTC --strategy rule_based --execute
+   ```
+
+Both tasks write to the same `logs/trade_log.csv`, so you can tell stock
+vs. crypto decisions apart by the `ticker` column.
+
 ### 6. Going live (real money) - deliberately, later
 
 `live_trade.py` has two independent locks against ever touching a real

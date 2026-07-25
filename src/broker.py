@@ -58,12 +58,15 @@ class Broker:
         except APIError:
             return 0.0
 
-    def buy_notional(self, symbol: str, notional: float):
+    def buy_notional(self, symbol: str, notional: float, is_crypto: bool = False):
+        # Crypto orders on Alpaca don't support DAY (there's no market
+        # close to expire at); they require GTC instead.
+        tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
         order = MarketOrderRequest(
             symbol=symbol,
             notional=round(notional, 2),
             side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY,
+            time_in_force=tif,
         )
         return self.client.submit_order(order)
 
