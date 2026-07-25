@@ -32,7 +32,13 @@ from src.backtest import run_backtest
 from src.data import get_price_data
 from src.features import add_features
 from src.model import train_model
-from src.strategies import buy_and_hold, dip_buy_profit_target, ml_filtered_dip_buy, rule_based_dip_buy
+from src.strategies import (
+    bollinger_breakout,
+    buy_and_hold,
+    dip_buy_profit_target,
+    ml_filtered_dip_buy,
+    rule_based_dip_buy,
+)
 
 
 def main():
@@ -55,6 +61,12 @@ def main():
                          help="day-trading strategy: sell once this far above your entry price")
     parser.add_argument("--stop-loss", type=float, default=0.04,
                          help="day-trading strategy: sell if price falls this far below your entry price")
+    parser.add_argument("--bb-window", type=int, default=20,
+                         help="Bollinger breakout: period for the middle band / trend-loss exit SMA")
+    parser.add_argument("--bb-std", type=float, default=2.0,
+                         help="Bollinger breakout: standard deviations for the upper band")
+    parser.add_argument("--trend-window", type=int, default=200,
+                         help="Bollinger breakout: long SMA period required to confirm a breakout")
     parser.add_argument("--seed", type=int, default=7, help="synthetic-data RNG seed")
     parser.add_argument("--out", default="results/equity_curve.png")
     args = parser.parse_args()
@@ -87,6 +99,10 @@ def main():
         "Day trading (profit target)": dip_buy_profit_target(
             test_df, dip_threshold=args.dip_threshold,
             profit_target=args.profit_target, stop_loss=args.stop_loss,
+        ),
+        "Bollinger breakout": bollinger_breakout(
+            test_df, bb_window=args.bb_window,
+            bb_std=args.bb_std, trend_window=args.trend_window,
         ),
     }
 

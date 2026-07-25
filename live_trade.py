@@ -33,7 +33,7 @@ from src.broker import Broker
 from src.data import get_price_data
 from src.features import add_features
 from src.model import train_model
-from src.strategies import ml_filtered_dip_buy, rule_based_dip_buy
+from src.strategies import bollinger_breakout, ml_filtered_dip_buy, rule_based_dip_buy
 from src.symbols import resolve_symbol
 
 LOG_PATH = Path("logs/trade_log.csv")
@@ -41,15 +41,20 @@ LOG_PATH = Path("logs/trade_log.csv")
 # Yahoo Finance limits how far back intraday bars go (roughly; exact
 # limits can change). These defaults stay safely inside those limits;
 # override with --lookback-days if you know your interval supports more.
-DEFAULT_LOOKBACK_DAYS = {"1d": 365 * 5, "1h": 59, "30m": 59, "15m": 59, "5m": 7}
+DEFAULT_LOOKBACK_DAYS = {"1d": 365 * 5, "4h": 90, "1h": 59, "30m": 59, "15m": 59, "5m": 7}
 
 
-def get_target_position(df, strategy: str) -> float:
+def get_target_position(df, args) -> float:
+    strategy = args.strategy
     if strategy == "rule_based":
         series = rule_based_dip_buy(df)
     elif strategy == "ml_filtered":
         model, threshold, _ = train_model(df)
         series = ml_filtered_dip_buy(df, model, threshold)
+    elif strategy == "bollinger_breakout":
+        series = bollinger_breakout(
+            df, bb_window=args.bb_window, bb_std=args.bb_std, trend_window=args.trend_window,
+        )
     else:
         raise ValueError(f"unknown strategy: {strategy}")
     return float(series.iloc[-1])
@@ -117,7 +122,7 @@ def decide(ticker: str, args, broker: Broker):
             action = "HOLD"
         target_position = 1.0 if (action == "BUY" or (action == "HOLD" and currently_holding)) else 0.0
     else:
-        target_position = get_target_position(df, args.strategy)
+        target_position = get_target_position(df, args)
         if target_position >= 1.0 and not currently_holding:
             action = "BUY"
         elif target_position <= 0.0 and currently_holding:
@@ -142,9 +147,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", default=["SPY"],
                          help="one or more tickers, space-separated, e.g. --ticker SPY AAPL QQQ")
-    parser.add_argument("--strategy", choices=["rule_based", "ml_filtered", "day_trading"], default="rule_based")
+    parser.add_argument("--strategy", choices=["rule_based", "ml_filtered", "day_trading", "bollinger_breakout"], default="rule_based")
     parser.add_argument("--interval", default="1d",
-                         help="bar size for price data: 1d, 1h, 30m, 15m, 5m (yfinance intervals)")
+                         help="bar size for price data: 1d, 4h, 1h, 30m, 15m, 5m (4h only works for crypto, via Alpaca)")
     parser.add_argument("--lookback-days", type=int, default=None,
                          help="history to pull; default depends on --interval (see DEFAULT_LOOKBACK_DAYS)")
     parser.add_argument("--dip-threshold", type=float, default=-0.02,
@@ -153,6 +158,12 @@ def main():
                          help="day_trading: sell once price is this fraction above your actual entry price")
     parser.add_argument("--stop-loss", type=float, default=0.04,
                          help="day_trading: sell if price falls this fraction below your actual entry price")
+    parser.add_argument("--bb-window", type=int, default=20,
+                         help="bollinger_breakout: period for the middle band / exit SMA")
+    parser.add_argument("--bb-std", type=float, default=2.0,
+                         help="bollinger_breakout: standard deviations for the upper band")
+    parser.add_argument("--trend-window", type=int, default=200,
+                         help="bollinger_breakout: long SMA period required to confirm a breakout")
     parser.add_argument("--max-notional", type=float, default=None,
                          help="cap $ amount per buy; default = an even split of available cash across tickers")
     parser.add_argument("--execute", action="store_true", help="actually submit orders; without this, dry-run only")

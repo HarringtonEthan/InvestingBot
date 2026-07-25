@@ -99,6 +99,53 @@ def dip_buy_profit_target(
     return pd.Series(position, index=df.index)
 
 
+def bollinger_breakout(
+    df: pd.DataFrame,
+    bb_window: int = 20,
+    bb_std: float = 2.0,
+    trend_window: int = 200,
+) -> pd.Series:
+    """
+    Trend-following breakout - the opposite bet from the dip-buying
+    strategies above:
+      - Buy when price closes *above* its upper Bollinger Band (a
+        20-period SMA plus `bb_std` standard deviations) AND above a
+        long `trend_window`-period SMA - i.e. a strong upward breakout
+        confirmed by the longer-term trend, not a dip.
+      - Sell once price closes back below the middle band (the
+        `bb_window`-period SMA itself), signaling the breakout has lost
+        momentum.
+    Mean-reversion strategies bet a drop will bounce back; this bets a
+    breakout will keep going. Neither is universally better - it depends
+    on whether the market is trending or range-bound. Backtest before
+    trusting either on real capital.
+    """
+    close = df["Close"]
+    middle = close.rolling(bb_window).mean()
+    std = close.rolling(bb_window).std()
+    upper = middle + bb_std * std
+    trend = close.rolling(trend_window).mean()
+
+    close_v = close.to_numpy()
+    upper_v = upper.to_numpy()
+    middle_v = middle.to_numpy()
+    trend_v = trend.to_numpy()
+
+    position = np.zeros(len(df))
+    holding = False
+    for i in range(len(df)):
+        if np.isnan(upper_v[i]) or np.isnan(trend_v[i]):
+            position[i] = 0.0
+            continue
+        if not holding and close_v[i] > upper_v[i] and close_v[i] > trend_v[i]:
+            holding = True
+        elif holding and close_v[i] < middle_v[i]:
+            holding = False
+        position[i] = 1.0 if holding else 0.0
+
+    return pd.Series(position, index=df.index)
+
+
 def ml_filtered_dip_buy(
     df: pd.DataFrame,
     model,

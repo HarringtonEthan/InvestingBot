@@ -30,13 +30,14 @@ _INTERVAL_MAP = {
     "15m": (15, TimeFrameUnit.Minute),
     "30m": (30, TimeFrameUnit.Minute),
     "1h": (1, TimeFrameUnit.Hour),
+    "4h": (4, TimeFrameUnit.Hour),
     "1d": (1, TimeFrameUnit.Day),
 }
 
 # How old the latest bar is allowed to be before we treat the feed as
 # stale rather than trade on it. Generous multiple of the bar size.
 _STALENESS_MINUTES = {
-    "1m": 5, "5m": 15, "15m": 30, "30m": 45, "1h": 90, "1d": 60 * 24 * 2,
+    "1m": 5, "5m": 15, "15m": 30, "30m": 45, "1h": 90, "4h": 300, "1d": 60 * 24 * 2,
 }
 
 
