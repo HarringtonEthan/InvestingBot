@@ -1,0 +1,2 @@
+timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,position_qty_before,avg_entry_price_usd,unrealized_gain_pct,order_placed
+2026-07-25T15:52:39+00:00,PAPER,crypto,DOGE,day_trading,SELL,0.07,,451052.891908533,0.07,1.85,True
