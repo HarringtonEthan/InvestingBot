@@ -220,6 +220,17 @@ Actions is working reliably).
 `src/symbols.py`). It's auto-detected and mapped to the right format for
 both Yahoo Finance (`BTC-USD`) and Alpaca (`BTC/USD`) automatically.
 
+**Live crypto trading pulls price data from Alpaca, not Yahoo Finance**
+(`src/alpaca_data.py`) - Yahoo's intraday crypto bars can silently go
+stale for hours without erroring (serving an old price as if it were
+current), so `live_trade.py` uses Alpaca's own crypto market data
+instead: the same venue trades actually execute against, and every
+fetch is checked against a staleness threshold - if the latest bar is
+older than expected for the requested interval, that ticker is skipped
+for the run rather than traded on outdated data. Backtesting (`main.py`)
+still uses Yahoo Finance, since staleness doesn't matter for historical
+data and Yahoo's history window is much longer than Alpaca's crypto feed.
+
 **Crypto trades 24/7**, unlike stocks, and the GitHub Actions crypto
 workflow (`.github/workflows/paper-trade-crypto.yml`) is configured for
 day trading rather than the once-a-day daily-close strategy:

@@ -28,6 +28,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from src.alpaca_data import get_crypto_bars
 from src.broker import Broker
 from src.data import get_price_data
 from src.features import add_features
@@ -67,16 +68,26 @@ def log_run(row: dict):
 def decide(ticker: str, args, broker: Broker):
     """Returns a dict describing the decision for one ticker, or None if data was unusable."""
     symbol = resolve_symbol(ticker)
-
-    end = dt.date.today()
     lookback_days = args.lookback_days or DEFAULT_LOOKBACK_DAYS.get(args.interval, 30)
-    start = end - dt.timedelta(days=lookback_days)
 
-    raw, is_synthetic = get_price_data(symbol.yfinance, start.isoformat(), end.isoformat(), interval=args.interval)
-    if is_synthetic:
-        print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
-              f"(no real network access to Yahoo Finance from here).")
-        return None
+    if symbol.is_crypto:
+        # Alpaca's own crypto feed, not Yahoo Finance: Yahoo's intraday
+        # crypto bars can silently go stale for hours without erroring,
+        # which is worse than a hard failure. Alpaca is also the actual
+        # execution venue, so "current price" means what it says.
+        try:
+            raw = get_crypto_bars(symbol.alpaca, args.interval, lookback_days)
+        except Exception as e:
+            print(f"[{ticker}] SKIPPED: {e}")
+            return None
+    else:
+        end = dt.date.today()
+        start = end - dt.timedelta(days=lookback_days)
+        raw, is_synthetic = get_price_data(symbol.yfinance, start.isoformat(), end.isoformat(), interval=args.interval)
+        if is_synthetic:
+            print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
+                  f"(no real network access to Yahoo Finance from here).")
+            return None
 
     df = add_features(raw)
     last_price = float(df["Close"].iloc[-1])
