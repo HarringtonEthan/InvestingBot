@@ -80,8 +80,8 @@ are, skip to "What's here" below.
 
 Everything in this repository is one of three things:
 
-1. **Python files (`.py`)** - actual instructions I wrote, telling a
-   computer exactly what to do, step by step, when run. `live_trade.py`,
+1. **Python files (`.py`)** - actual instructions, written as code,
+   telling a computer exactly what to do, step by step, when run. `live_trade.py`,
    `main.py`, `optimize.py`, everything under `src/` - these are the
    "brain" of the project.
 2. **Workflow files (`.yml`, under `.github/workflows/`)** - not code
@@ -218,7 +218,7 @@ separate script for every settings combination.
 
 ### Why Python?
 
-A few concrete reasons, not just "it's what I know":
+A few concrete reasons behind the choice, not just familiarity:
 
 - **The entire finance/data-science tooling world is built on it.**
   This project didn't have to write a spreadsheet engine, a statistics
@@ -767,41 +767,43 @@ behavior from the backtest above.
 
 ## Security: who can see what, and who can change what
 
-This repository is currently **public** on GitHub, meaning anyone on the
-internet can view the source code - every strategy, every threshold,
-every workflow file. That's not a secrets leak by itself; here's exactly
-what is and isn't exposed by that:
+A public GitHub repository means the source code is visible to anyone -
+every strategy, every threshold, every workflow file. That does not mean
+credentials are exposed; a few separate mechanisms decide what actually
+is and isn't visible or changeable:
 
-- **Your Alpaca API key and secret are not in the code or visible to
-  anyone.** They're stored as encrypted **GitHub Actions secrets**
-  (Settings -> Secrets and variables -> Actions), which are a separate,
-  locked vault from the repository itself. Once saved, a secret's value
-  can never be viewed again by anyone - not other people, not even you -
+- **API keys and secrets are never in the code, and are not visible to
+  anyone once saved.** They belong in **GitHub Actions secrets**
+  (Settings -> Secrets and variables -> Actions), a separate, encrypted
+  vault from the repository itself. A secret's value can never be viewed
+  again after saving - not by other people, not by the account owner,
   only *used* by a workflow at runtime. If a workflow's console output
   ever tried to print one, GitHub automatically detects and masks it as
-  `***` before the log is shown, public repo or not.
-- **The cron-job.org GitHub token isn't in this repository at all** - it
-  lives only in your cron-job.org account's job configuration, which
-  nobody browsing GitHub can see. It is a real, live credential though
-  (that's why you were told to revoke the one pasted into this chat
-  earlier) - anyone who obtained it could trigger these workflows to run
-  on demand, but the token was deliberately scoped to only "Actions:
-  read and write" on this one repository, so the worst it could do is
-  spam-trigger trading runs, not push code changes or access your Alpaca
-  account directly.
-- **Only you can currently push or edit code.** Checked directly against
-  GitHub: this repository has exactly one collaborator
-  (`HarringtonEthan`, admin) and nobody else. Being public means anyone
-  *could* fork the repo and open a pull request suggesting a change, but
-  a pull request is just a proposal sitting in a queue - nothing merges
-  into this repository unless you personally review and approve it.
-  Nobody gets write access unless you explicitly add them under
-  Settings -> Collaborators and teams, which nobody has been.
-- **If you'd rather nobody see the strategy/code itself**, you can flip
-  this repository to private anytime under Settings -> General -> Danger
-  Zone -> Change visibility. That's purely a visibility setting - it
-  doesn't touch your secrets, your workflows, or how the automation
-  runs; everything above continues to work identically either way.
+  `***` before the log is shown, public repo or not. This is why
+  `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` live there rather than in
+  `.env` (which is git-ignored precisely so it's never committed by
+  accident either).
+- **Tokens used by an external scheduler (e.g. cron-job.org) live
+  entirely outside this repository** - in that service's own account
+  configuration, invisible to anyone browsing GitHub. Such a token is
+  still a real, live credential: anyone who obtained it could trigger
+  the linked workflows on demand. Scoping it as narrowly as
+  possible - e.g. "Actions: read and write" on only this one
+  repository, nothing else - limits the damage a leaked token could
+  do to spam-triggering workflow runs, not pushing code or reaching a
+  broker account directly.
+- **Only explicitly added collaborators can push or edit code.** Check
+  Settings -> Collaborators and teams on GitHub to see exactly who
+  currently has write access - by default, that's just the repository
+  owner. Being public means anyone can fork the repo and open a pull
+  request proposing a change, but a pull request is only a proposal
+  sitting in a queue: nothing merges into the repository unless someone
+  with write access reviews and approves it.
+- **Making a repository private** (Settings -> General -> Danger Zone ->
+  Change visibility) hides the source code from public view entirely.
+  It's purely a visibility toggle - it doesn't touch secrets or
+  workflows, and the automation described throughout this README
+  continues to work identically either way.
 
 ## Before this touches real money
 
