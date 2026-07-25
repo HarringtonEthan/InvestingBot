@@ -62,7 +62,7 @@ DEFAULT_LOOKBACK_DAYS = {"1d": 365 * 5, "4h": 90, "1h": 59, "30m": 59, "15m": 59
 def get_target_position(df, args) -> float:
     strategy = args.strategy
     if strategy == "rule_based":
-        series = rule_based_dip_buy(df)
+        series = rule_based_dip_buy(df, dip_threshold=args.dip_threshold)
     elif strategy == "ml_filtered":
         saved = load_saved_model(args.model_path) if args.model_path else None
         if saved is not None:
@@ -74,7 +74,7 @@ def get_target_position(df, args) -> float:
                   f"from just this run's data instead (won't persist between runs). Run "
                   f"train_stock_model.py on a schedule to avoid this - see README.md.")
             model, threshold, _ = train_model(df)
-        series = ml_filtered_dip_buy(df, model, threshold)
+        series = ml_filtered_dip_buy(df, model, threshold, dip_threshold=args.dip_threshold)
     elif strategy == "bollinger_breakout":
         series = bollinger_breakout(
             df, bb_window=args.bb_window, bb_std=args.bb_std, trend_window=args.trend_window,

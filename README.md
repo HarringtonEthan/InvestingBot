@@ -57,6 +57,14 @@ the live configuration changes.
   There's also still an open QQQ paper position from the old
   `rule_based` manual test (back before this switch) that hasn't been
   re-evaluated since - worth checking the Alpaca paper dashboard for it.
+- **Fixed: `--dip-threshold` now actually controls `rule_based` and
+  `ml_filtered`.** Previously those two strategies silently ignored the
+  flag and always used a hardcoded 3% dip, regardless of what was passed
+  on the command line - only `day_trading` respected `--dip-threshold`.
+  Both now read the same flag `day_trading` always did. The live stock
+  workflow explicitly passes `--dip-threshold -0.03` so this fix doesn't
+  silently change its behavior - that was the effective value all along,
+  it just wasn't controllable before.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled
@@ -315,16 +323,16 @@ backtest wouldn't mean anything about live behavior.
   data.
 - `src/strategies.py` - five strategies:
   1. **Buy & hold**
-  2. **Rule-based dip buy** - buy when price is >3% below its 20-period
-     moving average, sell once it recovers back above the average
-     (mean-reversion exit, independent of what you paid). Note: this
-     3% threshold is hardcoded in `src/strategies.py` and is *not*
-     connected to the `--dip-threshold` CLI flag (only "Day trading"
-     below uses that flag) - on real recent crypto/5-minute data, moves
-     rarely reach 3%, so this strategy currently shows ~0 trades there.
-  3. **ML-filtered dip buy** - same rule (same hardcoded 3% dip, same
-     caveat), but only acts on a dip if a model trained to predict "will
-     this bounce?" is confident enough.
+  2. **Rule-based dip buy** - buy when price is below its 20-period
+     moving average by at least `--dip-threshold` (defaults to 2%), sell
+     once it recovers back above the average (mean-reversion exit,
+     independent of what you paid). On real recent crypto/5-minute data,
+     even a 2% threshold rarely fires - that timeframe's typical moves
+     are well under 1%, so this strategy is a better fit for daily bars
+     than 5-minute ones.
+  3. **ML-filtered dip buy** - same rule and same `--dip-threshold`, but
+     only acts on a dip if a model trained to predict "will this bounce?"
+     is confident enough.
   4. **Day trading (profit target)** - buy a dip, but sell based on your
      *actual entry price* instead of the moving average: exits once
      price is a set % above your entry (a real profit), or cuts losses
@@ -367,11 +375,12 @@ backtest wouldn't mean anything about live behavior.
     ml_filtered for stocks is a bet that periodic retraining on pooled
     multi-ticker data behaves differently - not yet proven, since that
     setup has no real-data track record yet.
-  - Its dip threshold has the same hardcoded-3%/real-volatility mismatch
-    described above. This matters less for stocks on daily bars (where
-    3% moves are plausible) than it would on 5-minute crypto data (where
-    it would fire on almost nothing) - one more reason ML stayed off
-    crypto and went to stocks instead.
+  - Its dip threshold (`--dip-threshold`, controllable like the other
+    strategies - see "Current live status" above) still needs to be
+    sized for the timeframe it runs on: a threshold that makes sense on
+    daily bars would rarely fire on 5-minute crypto data, where typical
+    moves are much smaller - one more reason ML stayed off crypto and
+    went to stocks instead.
 - `src/backtest.py` - a simple long/cash backtest engine: one day of
   execution lag (no lookahead), transaction costs on every position
   change, and standard metrics (annualized return/vol, Sharpe, max
@@ -680,9 +689,10 @@ image-diff commits on top of the log commits described above.
 Stocks run a different strategy than crypto on purpose - `ml_filtered`
 instead of the rule-based `day_trading`, so this project has one live
 example of each approach to actually compare over time, and so the ML
-path gets exercised somewhere: crypto's 5-minute bars are too fast for
-the model's hardcoded 3% dip threshold to fire on (see "Machine
-learning" above), but daily stock bars are within range of it.
+path gets exercised somewhere: crypto's 5-minute bars move far less per
+bar than daily stock bars do, so a dip threshold sized for daily data
+(the live stock workflow runs at 3% - see "Current live status" above)
+would rarely fire on 5-minute crypto.
 
 `live_trade.py --strategy ml_filtered` loads whatever model is saved at
 `--model-path` (default `models/stock_model.pkl`) rather than training

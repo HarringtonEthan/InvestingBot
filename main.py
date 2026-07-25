@@ -68,8 +68,8 @@ def run_for_ticker(ticker: str, args):
 
     strategies = {
         "Buy & Hold": buy_and_hold(test_df),
-        "Rule-based dip buy": rule_based_dip_buy(test_df),
-        "ML-filtered dip buy": ml_filtered_dip_buy(test_df, model, threshold),
+        "Rule-based dip buy": rule_based_dip_buy(test_df, dip_threshold=args.dip_threshold),
+        "ML-filtered dip buy": ml_filtered_dip_buy(test_df, model, threshold, dip_threshold=args.dip_threshold),
         "Day trading (profit target)": dip_buy_profit_target(
             test_df, dip_threshold=args.dip_threshold,
             profit_target=args.profit_target, stop_loss=args.stop_loss,
