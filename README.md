@@ -109,6 +109,19 @@ the live configuration changes.
   hour stale, no local setup needed. Driven by its own cron-job.org job
   hitting its `workflow_dispatch` endpoint, same pattern as the other
   three workflows, confirmed firing successfully on schedule.
+- **Current results snapshot (will be stale by the time you read this -
+  check `results/trade_dashboard.png` for the live number):** the
+  account is up **+$357.00** against its $100,000 funding baseline. That
+  total is not the same as "the strategy has an edge" - only two trades
+  have actually closed so far, and they tell two different stories
+  depending on whether you count the one affected by the bug above.
+  Counting both, realized P&L is **-$857.64** (dominated by DOGE's
+  oversized, bug-inflated loss); excluding the flagged DOGE trade,
+  realized P&L from LTC alone is **+$41.30**. Neither number is "the
+  real" one on its own - see "Logs and the trade dashboard" below for
+  why both are shown side by side rather than picking one. The account
+  being up overall right now is mostly unrealized gains on whatever's
+  still open, not proof the closed trades are profitable.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled
