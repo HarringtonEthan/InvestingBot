@@ -83,6 +83,12 @@ the live configuration changes.
   unaffected - it already worked correctly). Existing open positions
   should be correctly detected, and evaluated for sale, starting with
   the next crypto cycle.
+- **Dashboard: regenerated roughly hourly.** A fourth workflow,
+  `update-dashboard.yml`, runs `visualize_log.py` and commits
+  `results/trade_dashboard.png` back to the repo - view it directly on
+  github.com for a near-current chart without running anything locally.
+  Needs its own cron-job.org job pointed at its `workflow_dispatch`
+  endpoint, same as the other three workflows, to actually fire hourly.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled
@@ -699,10 +705,18 @@ data - a real bug that motivated this rewrite), is archived at
 (`results/trade_dashboard.png` by default): net account gain/loss over
 time (equity minus its own first logged value, so it reads as a direct
 "+$X"/"-$X"), cumulative realized P&L from executed trades, and win/loss
-counts per ticker. Run it locally whenever you want a current snapshot -
-it's not wired into the automated workflows on purpose, so it doesn't
-add its own image-diff commits on top of the log commits described
-above.
+counts per ticker. Run it locally anytime for an on-demand snapshot -
+harmless, no network/broker access needed, just reads the two log files.
+
+It also runs on a schedule: `.github/workflows/update-dashboard.yml`
+regenerates and commits `results/trade_dashboard.png` roughly hourly (via
+an external scheduler - GitHub's own `schedule:` trigger isn't reliable
+enough on its own here either, same as the trading workflows), so
+`results/trade_dashboard.png` on GitHub is close to current without
+needing to run anything locally - just open that file's page on
+github.com. This is deliberately a slower cadence than the 5-minute
+trading workflows: one image commit an hour is a small, bounded cost,
+where committing an image every 5 minutes forever would not be.
 
 ### Stock automation: ML with periodic retraining
 
