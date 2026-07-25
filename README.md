@@ -286,6 +286,37 @@ stock vs. crypto decisions apart by the `ticker` column, and day-trading
 decisions additionally log `entry_price`/`gain_pct` so you can see the
 real unrealized P&L behind each sell.
 
+### Searching for better thresholds (optimize.py)
+
+Hand-picking a dip/profit/stop combination and hoping it's good is a form
+of overfitting if you just keep nudging numbers until one backtest looks
+positive. `optimize.py` instead sweeps a whole grid of combinations
+across multiple tickers at once and reports the **average** across all of
+them - a setting that only works on one coin isn't a real edge, it's
+luck:
+
+```bash
+python optimize.py --ticker BTC-USD ETH-USD SOL-USD DOGE-USD LTC-USD AVAX-USD LINK-USD XRP-USD DOT-USD \
+  --interval 5m --start 2026-05-27 --split 2026-07-11 --end 2026-07-25 --cost-bps 20 \
+  --dip-values=-0.003,-0.005,-0.008,-0.01,-0.015,-0.02 \
+  --profit-values 0.005,0.008,0.01,0.015,0.02 \
+  --stop-values 0.01,0.015,0.02,0.03
+```
+(Note the `=` in `--dip-values=...` - without it, argparse mistakes the
+leading `-` for a new flag.)
+
+It prints the top combinations by average return and writes the full
+grid to `results/param_sweep.csv`. **Before trusting whatever comes out
+on top:** open that CSV and check whether nearby parameter values also
+perform reasonably well (a real signal) or whether the winner is an
+isolated spike surrounded by much worse neighbors (almost always noise
+from testing many combinations - exactly the "parameter sensitivity
+check" step that separates a real strategy from an overfit one). Even a
+robust-looking winner should still be re-validated on a later, different
+time window before it's trusted with anything beyond fake money -
+finding good settings on one stretch of history is the easy part;
+knowing they'll hold up going forward is the part that actually matters.
+
 ### 6. Going live (real money) - deliberately, later
 
 `live_trade.py` has two independent locks against ever touching a real
