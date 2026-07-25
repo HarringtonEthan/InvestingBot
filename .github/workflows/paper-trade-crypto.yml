@@ -34,7 +34,7 @@ jobs:
         run: >
           python live_trade.py --ticker BTC ETH SOL DOGE LTC AVAX LINK XRP DOT
           --strategy day_trading --interval 5m
-          --dip-threshold -0.005 --profit-target 0.008 --stop-loss 0.015
+          --dip-threshold -0.01 --profit-target 0.01 --stop-loss 0.03
           --execute
 
       - name: Commit trade log

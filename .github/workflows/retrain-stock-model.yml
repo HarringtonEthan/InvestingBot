@@ -1,0 +1,44 @@
+name: Retrain stock ML model
+
+on:
+  # Best-effort only - GitHub's own schedule trigger has been unreliable
+  # in this project (see README.md "Current live status"). Point an
+  # external scheduler (e.g. cron-job.org) at this workflow's
+  # workflow_dispatch endpoint instead, the same way it's already wired
+  # up for the crypto trading workflow.
+  schedule:
+    - cron: "0 10 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: retrain-stock-model
+  cancel-in-progress: false
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Retrain stock model
+        run: python train_stock_model.py --ticker SPY AAPL QQQ --lookback-days 730
+
+      - name: Commit updated model
+        run: |
+          git config user.name "investingbot"
+          git config user.email "investingbot@users.noreply.github.com"
+          git add models/stock_model.pkl models/stock_model.pkl.meta.json logs/retrain_log.csv
+          git diff --cached --quiet && exit 0
+          git commit -m "Retrain stock ML model $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git pull --rebase origin "${{ github.ref_name }}"
+          git push origin "HEAD:${{ github.ref_name }}"

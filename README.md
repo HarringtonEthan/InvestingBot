@@ -17,32 +17,53 @@ This section exists so nobody - including future us - has to reverse
 engineer what's actually running from workflow files. Update it whenever
 the live configuration changes.
 
-- **Crypto: live and automated.** An external free scheduler
-  ([cron-job.org](https://cron-job.org)) calls GitHub's API every 5
-  minutes to run `.github/workflows/paper-trade-crypto.yml`, which runs
-  `live_trade.py --strategy day_trading` (rule-based, **no machine
-  learning**) against **BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT**
-  on 5-minute bars, buying a 0.5% dip and selling at +0.8% profit or
-  -1.5% stop-loss. This does not depend on GitHub's own cron (which we
-  found unreliable - see below) or on any computer being on.
-- **Stocks: configured but NOT reliably running.** The stock workflow
-  (`paper-trade-stocks.yml`, `--strategy rule_based` on SPY/AAPL/QQQ) is
-  still scheduled through GitHub Actions' *own* cron trigger, which we
-  found does not fire reliably - it was never confirmed to run
-  automatically on its own the entire time this was tested. cron-job.org
-  was only ever wired up for the crypto workflow. Practically: **the
-  stock bot has not run since its first manual test**, and there's an
-  open QQQ paper position from that test that hasn't been re-evaluated
-  since. Fix this the same way the crypto workflow was fixed (point an
-  external scheduler at it) before relying on it.
+- **Crypto: live and automated, rule-based, no ML.** An external free
+  scheduler ([cron-job.org](https://cron-job.org)) calls GitHub's API
+  every 5 minutes to run `.github/workflows/paper-trade-crypto.yml`,
+  which runs `live_trade.py --strategy day_trading` against **BTC, ETH,
+  SOL, DOGE, LTC, AVAX, LINK, XRP, DOT** on 5-minute bars: buy a 1.0%
+  dip, sell at +1.0% profit or -3.0% stop-loss. These are `optimize.py`'s
+  best average-across-all-9-coins combo (replacing the earlier
+  -0.5%/+0.8%/-1.5%, which it beat on the tested window) - both still
+  lost money on average over that period, this one just lost less, and
+  it hasn't been re-validated on a different time window yet. This does
+  not depend on GitHub's own cron (which we found unreliable - see
+  below) or on any computer being on.
+- **Stocks: switched to the ML-filtered strategy, with periodic
+  retraining - but the automatic schedule is still unfixed.** The stock
+  workflow (`paper-trade-stocks.yml`) now runs `--strategy ml_filtered`
+  on SPY/AAPL/QQQ instead of `rule_based`. Unlike every other strategy in
+  this project, this one is designed to actually persist a model between
+  runs: a separate workflow, `.github/workflows/retrain-stock-model.yml`
+  (via `train_stock_model.py`), pools recent SPY/AAPL/QQQ data into one
+  `RandomForestClassifier`, saves it to `models/stock_model.pkl`, and
+  commits it back to the repo. `live_trade.py` then loads that saved
+  model on every run instead of retraining from scratch - so the "brain"
+  behind stock trades only updates when the retrain workflow runs, and
+  stays the same in between. See "Machine learning: what it actually
+  does" in "What's here" below for what this does and doesn't mean.
+  Two things still need doing before this is trustworthy:
+  1. **No model has been trained yet** - `models/stock_model.pkl` doesn't
+     exist in the repo until the retrain workflow runs once (manually,
+     via the Actions tab -> "Retrain stock ML model" -> "Run workflow").
+     Until then, `live_trade.py` falls back to training inline from just
+     that run's data (logged loudly when it happens) rather than failing.
+  2. **Neither stock workflow reliably fires on its own yet.** Both
+     `paper-trade-stocks.yml` and `retrain-stock-model.yml` still rely on
+     GitHub Actions' *own* cron trigger as a fallback, which we've found
+     doesn't fire reliably - `paper-trade-stocks.yml` was never confirmed
+     to run automatically the entire time this was tested, and there's an
+     open QQQ paper position from its one manual test that hasn't been
+     re-evaluated since. Both workflows have a `workflow_dispatch`
+     trigger, so cron-job.org can drive them the same way it already
+     drives the crypto workflow - point one cron-job.org job at
+     `retrain-stock-model.yml` (weekly is reasonable) and another at
+     `paper-trade-stocks.yml` (daily, near market close) to make this
+     actually automatic.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled
   alongside cron-job.org would double-trade the same account.
-- **Machine learning: implemented, not deployed.** `--strategy
-  ml_filtered` exists and works, but nothing live uses it. It's also not
-  "learning" in an ongoing sense - see "Machine learning: what it
-  actually does" in "What's here" below before turning it on.
 - **Bollinger breakout: implemented, not deployed.** `--strategy
   bollinger_breakout` exists (see `src/strategies.py`) but isn't wired
   into any live workflow. Backtested on 5-minute crypto bars during a
@@ -50,12 +71,6 @@ the live configuration changes.
   strategies - expected, since it's a trend-following design meant for
   slower timeframes and genuinely trending markets, not what it was
   tested against.
-- **Known-better settings, not yet applied.** `optimize.py` (a
-  multi-ticker parameter sweep) found `dip=-1.0% / profit=+1.0% /
-  stop=+3.0%` outperforms the currently-live `-0.5%/+0.8%/-1.5%` on
-  real recent data across all 9 coins - though both still lost money on
-  average over that period; the swept setting just lost less. Not yet
-  applied live pending re-validation on a different time window.
 
 ## What's here
 
@@ -104,26 +119,42 @@ the live configuration changes.
 
   **Machine learning: what it actually does (and doesn't).** This is the
   only ML in the project, and only used by `ml_filtered` - `rule_based`,
-  `day_trading`, and `bollinger_breakout` are pure rules, no model
-  involved. Important to be clear-eyed about before turning it on live:
-  - It does not "learn" in an ongoing/online sense. Every time it's run
-    (in a backtest, or if it were live) it trains a brand-new
-    `RandomForestClassifier` from scratch on whatever training window you
-    give it, uses it once, and discards it. It never accumulates
-    experience across live runs the way "a bot that learns" implies -
-    each invocation starts from zero.
+  `day_trading` (the live crypto strategy), and `bollinger_breakout` are
+  pure rules, no model involved. Important to be clear-eyed about:
+  - By default (in a backtest, or via `main.py`) it does not "learn" in
+    an ongoing/online sense: `train_model()` fits a brand-new
+    `RandomForestClassifier` from scratch on whatever training window
+    you give it, uses it once, and discards it.
+  - The **live stock workflow is the one exception**: it uses
+    `train_model_multi()` + `src/model_store.py` to save a model to
+    `models/stock_model.pkl` on a schedule (`train_stock_model.py`, see
+    "Current live status" above) and `live_trade.py` loads that saved
+    model instead of retraining inline. That's real persistence between
+    runs - but it's still periodic batch retraining (e.g. weekly), not
+    the model updating itself after every trade the way "a bot that
+    learns" often implies.
   - It has never been shown to beat the plain rule-based version. In the
     one direct real-data comparison run in this project so far, the ML
     filter underperformed the plain rule-based strategy out of sample -
     a common and expected outcome (a filter can easily fit noise in the
-    training window rather than a real pattern).
+    training window rather than a real pattern). The switch to live
+    ml_filtered for stocks is a bet that periodic retraining on pooled
+    multi-ticker data behaves differently - not yet proven, since that
+    setup has no real-data track record yet.
   - Its dip threshold has the same hardcoded-3%/real-volatility mismatch
-    described above, so on 5-minute crypto data it currently fires on
-    almost nothing regardless of the model's opinion.
+    described above. This matters less for stocks on daily bars (where
+    3% moves are plausible) than it would on 5-minute crypto data (where
+    it would fire on almost nothing) - one more reason ML stayed off
+    crypto and went to stocks instead.
 - `src/backtest.py` - a simple long/cash backtest engine: one day of
   execution lag (no lookahead), transaction costs on every position
   change, and standard metrics (annualized return/vol, Sharpe, max
   drawdown, trade count).
+- `src/model_store.py` / `train_stock_model.py` - saves/loads a trained
+  model to/from `models/stock_model.pkl` so it can be trained once,
+  periodically, and reused across live runs instead of being refit from
+  scratch every time. See "Machine learning" above and
+  `.github/workflows/retrain-stock-model.yml`.
 - `main.py` - runs the whole pipeline end to end and saves a comparison
   chart to `results/equity_curve.png`.
 - `src/broker.py` / `live_trade.py` - automated trading against an
@@ -271,9 +302,10 @@ above - no computer of yours needs to be on at all.
    haven't already - scheduled workflows only run from the repo's
    default branch.
 4. Go to the **Actions** tab on GitHub, and you should see "Paper trade -
-   stocks" and "Paper trade - crypto" listed. You can click into either
-   one and hit **"Run workflow"** to trigger it manually right now,
-   instead of waiting for the schedule, to confirm it works.
+   stocks," "Paper trade - crypto," and "Retrain stock ML model" listed.
+   You can click into any of them and hit **"Run workflow"** to trigger
+   it manually right now, instead of waiting for the schedule, to
+   confirm it works.
 5. Every run appends to `logs/trade_log.csv` and the workflow
    automatically commits that update back to the repo, so `git pull`
    locally will show new commits with a "Log ... trading run" message
@@ -314,13 +346,17 @@ day trading rather than the once-a-day daily-close strategy:
 ```bash
 python live_trade.py --ticker BTC ETH SOL DOGE LTC AVAX LINK XRP DOT \
   --strategy day_trading --interval 5m \
-  --dip-threshold -0.005 --profit-target 0.008 --stop-loss 0.015 \
+  --dip-threshold -0.01 --profit-target 0.01 --stop-loss 0.03 \
   --execute
 ```
 
-This runs on 5-minute bars, buys a 0.5%+ dip, and sells once your
-*actual* position is up 0.8% - or cuts it at -1.5% if the dip keeps
-falling instead of bouncing.
+This runs on 5-minute bars, buys a 1.0%+ dip, and sells once your
+*actual* position is up 1.0% - or cuts it at -3.0% if the dip keeps
+falling instead of bouncing. These are `optimize.py`'s best
+average-across-all-9-coins combo as of this writing (see "Searching for
+better thresholds" below) - re-run that search periodically as more real
+trade history accumulates, since "best on the window tested" is not a
+permanent property.
 
 **Thresholds should match real observed volatility, not be picked
 arbitrarily.** The original 2%/2%/4% thresholds never fired a single
@@ -345,7 +381,7 @@ the stock strategy, just with intraday data and crypto-realistic fees:
 ```bash
 python main.py --ticker BTC-USD --interval 1h \
   --start 2026-05-01 --split 2026-07-01 --end 2026-07-25 \
-  --cost-bps 20 --dip-threshold -0.005 --profit-target 0.008 --stop-loss 0.015
+  --cost-bps 20 --dip-threshold -0.01 --profit-target 0.01 --stop-loss 0.03
 ```
 (Yahoo Finance only keeps a limited window of intraday history, so keep
 `--start` recent rather than reaching back years like the daily stock
@@ -361,6 +397,52 @@ Both workflows write to the same `logs/trade_log.csv`, so you can tell
 stock vs. crypto decisions apart by the `ticker` column, and day-trading
 decisions additionally log `entry_price`/`gain_pct` so you can see the
 real unrealized P&L behind each sell.
+
+### Stock automation: ML with periodic retraining
+
+Stocks run a different strategy than crypto on purpose - `ml_filtered`
+instead of the rule-based `day_trading`, so this project has one live
+example of each approach to actually compare over time, and so the ML
+path gets exercised somewhere: crypto's 5-minute bars are too fast for
+the model's hardcoded 3% dip threshold to fire on (see "Machine
+learning" above), but daily stock bars are within range of it.
+
+`live_trade.py --strategy ml_filtered` loads whatever model is saved at
+`--model-path` (default `models/stock_model.pkl`) rather than training
+one on the spot. That file is produced by a **separate** workflow,
+`.github/workflows/retrain-stock-model.yml`, which runs
+`train_stock_model.py` - it pools recent SPY/AAPL/QQQ data into one
+model (a setting that only works on one stock isn't a real edge, same
+principle as `optimize.py`) and commits the result back to the repo.
+This is what makes the live stock model "learn" in the sense of updating
+over time, instead of being fixed at the moment this code was written:
+
+```bash
+python train_stock_model.py --ticker SPY AAPL QQQ --lookback-days 730
+```
+
+**Setup, in order:**
+1. Complete the GitHub Actions setup above (secrets, write permissions)
+   if you haven't already - `retrain-stock-model.yml` needs the same
+   write permission to commit the model file that the trade-log commits
+   use, though it doesn't need the Alpaca secrets since it only trains,
+   never trades.
+2. Go to the **Actions** tab -> **"Retrain stock ML model"** -> **"Run
+   workflow"** once, manually, to produce the first `models/stock_model.pkl`.
+   Until this has run at least once, `live_trade.py --strategy
+   ml_filtered` falls back to training inline from just that run's data
+   (it prints a warning when this happens) rather than failing outright.
+3. Point cron-job.org (or any external scheduler) at both stock
+   workflows' `workflow_dispatch` endpoints, the same way it's already
+   wired up for crypto - see "Current live status" at the top of this
+   README for why GitHub's own `schedule:` trigger isn't enough on its
+   own. A reasonable starting cadence: `retrain-stock-model.yml` weekly,
+   `paper-trade-stocks.yml` daily near market close.
+
+Every retrain also appends a row to `logs/retrain_log.csv` (tickers
+used, training window, row count, calibrated threshold) so you can see
+the model's history over time, the same way `logs/trade_log.csv` tracks
+trade history.
 
 ### Searching for better thresholds (optimize.py)
 

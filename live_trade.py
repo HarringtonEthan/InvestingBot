@@ -33,6 +33,7 @@ from src.broker import Broker
 from src.data import get_price_data
 from src.features import add_features
 from src.model import train_model
+from src.model_store import load_model as load_saved_model
 from src.strategies import bollinger_breakout, ml_filtered_dip_buy, rule_based_dip_buy
 from src.symbols import resolve_symbol
 
@@ -49,7 +50,16 @@ def get_target_position(df, args) -> float:
     if strategy == "rule_based":
         series = rule_based_dip_buy(df)
     elif strategy == "ml_filtered":
-        model, threshold, _ = train_model(df)
+        saved = load_saved_model(args.model_path) if args.model_path else None
+        if saved is not None:
+            model, threshold, meta = saved
+            print(f"[ml_filtered] Using saved model from {args.model_path} "
+                  f"(trained {meta.get('trained_at', '?')} on {meta.get('tickers', '?')})")
+        else:
+            print(f"[ml_filtered] No saved model at {args.model_path!r} - training one inline "
+                  f"from just this run's data instead (won't persist between runs). Run "
+                  f"train_stock_model.py on a schedule to avoid this - see README.md.")
+            model, threshold, _ = train_model(df)
         series = ml_filtered_dip_buy(df, model, threshold)
     elif strategy == "bollinger_breakout":
         series = bollinger_breakout(
@@ -148,6 +158,9 @@ def main():
     parser.add_argument("--ticker", nargs="+", default=["SPY"],
                          help="one or more tickers, space-separated, e.g. --ticker SPY AAPL QQQ")
     parser.add_argument("--strategy", choices=["rule_based", "ml_filtered", "day_trading", "bollinger_breakout"], default="rule_based")
+    parser.add_argument("--model-path", default="models/stock_model.pkl",
+                         help="ml_filtered: saved model to load (see train_stock_model.py). "
+                              "Falls back to training inline if this path doesn't exist yet.")
     parser.add_argument("--interval", default="1d",
                          help="bar size for price data: 1d, 4h, 1h, 30m, 15m, 5m (4h only works for crypto, via Alpaca)")
     parser.add_argument("--lookback-days", type=int, default=None,

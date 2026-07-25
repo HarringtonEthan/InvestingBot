@@ -5,3 +5,4 @@ venv/
 .env
 logs/*
 !logs/trade_log.csv
+!logs/retrain_log.csv
