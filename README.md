@@ -696,11 +696,13 @@ data - a real bug that motivated this rewrite), is archived at
 `logs/trade_log_archive_pre_2026-07-25.csv`.
 
 **`python visualize_log.py`** turns both files into a three-panel PNG
-(`results/trade_dashboard.png` by default): portfolio value over time,
-cumulative realized P&L from executed trades, and win/loss counts per
-ticker. Run it locally whenever you want a current snapshot - it's not
-wired into the automated workflows on purpose, so it doesn't add its own
-image-diff commits on top of the log commits described above.
+(`results/trade_dashboard.png` by default): net account gain/loss over
+time (equity minus its own first logged value, so it reads as a direct
+"+$X"/"-$X"), cumulative realized P&L from executed trades, and win/loss
+counts per ticker. Run it locally whenever you want a current snapshot -
+it's not wired into the automated workflows on purpose, so it doesn't
+add its own image-diff commits on top of the log commits described
+above.
 
 ### Stock automation: ML with periodic retraining
 
