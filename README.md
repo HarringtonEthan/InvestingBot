@@ -706,9 +706,15 @@ Every `live_trade.py` run writes to two separate CSVs, both git-tracked so
   (dry-run or executed): `timestamp_utc`, `mode`, `asset_class`, `ticker`,
   `strategy`, `action`, `price_usd`, `notional_usd`,
   `position_qty_before`, `avg_entry_price_usd`, `unrealized_gain_pct`
-  (already a percentage, e.g. `1.08` means +1.08%, not `0.0108`), and
-  `order_placed` (whether it was a live order vs. a dry run). **HOLD
-  decisions are not logged here** - see below for why.
+  (already a percentage, e.g. `1.08` means +1.08%, not `0.0108`),
+  `order_placed` (whether it was a live order vs. a dry run), and `notes`
+  - a manual annotation slot, empty by default, never written by the bot
+    itself. Use it to flag a specific trade as unrepresentative (e.g.
+    "position was 2x intended size due to a since-fixed bug") without
+    ever deleting or hiding the real result - `visualize_log.py` reads
+    this to show both the honest full history and a "how is the
+    strategy itself actually doing" view side by side, see below.
+  **HOLD decisions are not logged here** - see below for why.
 
 **Why HOLD isn't logged, and whether the crypto log will get "too big"
 eventually:** it would, if every 5-minute crypto run wrote a row per

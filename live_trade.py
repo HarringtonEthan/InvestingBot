@@ -41,8 +41,13 @@ TRADE_LOG_PATH = Path("logs/trade_log.csv")
 TRADE_LOG_FIELDS = [
     "timestamp_utc", "mode", "asset_class", "ticker", "strategy",
     "action", "price_usd", "notional_usd", "position_qty_before",
-    "avg_entry_price_usd", "unrealized_gain_pct", "order_placed",
+    "avg_entry_price_usd", "unrealized_gain_pct", "order_placed", "notes",
 ]
+# "notes" is never auto-populated by the bot - it's a manual annotation
+# slot for flagging a specific trade as unrepresentative (e.g. inflated
+# by a since-fixed bug), so visualize_log.py can show both "as it
+# happened" and "excluding known anomalies" without ever deleting or
+# hiding the real data.
 
 # Deliberately separate from trade_log.csv and always one row per run (not
 # per ticker): trade_log.csv only records actual BUY/SELL decisions - most
@@ -304,6 +309,7 @@ def main():
                 "avg_entry_price_usd": f"{decision['entry_price']:.6f}" if decision["entry_price"] else "",
                 "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
                 "order_placed": executed,
+                "notes": "",
             })
 
     log_equity({

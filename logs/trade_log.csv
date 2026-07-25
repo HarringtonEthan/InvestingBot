@@ -1,3 +1,3 @@
-timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,position_qty_before,avg_entry_price_usd,unrealized_gain_pct,order_placed
-2026-07-25T15:52:39+00:00,PAPER,crypto,DOGE,day_trading,SELL,0.070520,,451052.891908533,0.072513,1.85,True
-2026-07-25T18:40:48+00:00,PAPER,crypto,LTC,day_trading,SELL,46.287300,,87.314062065,45.814242,1.03,True
+timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,position_qty_before,avg_entry_price_usd,unrealized_gain_pct,order_placed,notes
+2026-07-25T15:52:39+00:00,PAPER,crypto,DOGE,day_trading,SELL,0.070520,,451052.891908533,0.072513,1.85,True,"Position ~2x intended size due to a since-fixed position-detection bug (bought the same dip twice without noticing the first purchase) - realized loss driven mainly by slippage on an oversized market order, not the strategy's entry/exit logic itself. See README ""Fixed a serious bug: crypto positions were invisible to the bot."""
+2026-07-25T18:40:48+00:00,PAPER,crypto,LTC,day_trading,SELL,46.287300,,87.314062065,45.814242,1.03,True,

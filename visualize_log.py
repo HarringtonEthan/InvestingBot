@@ -14,9 +14,16 @@ Three panels:
      the *trades themselves* are profitable, separate from e.g. paper cash
      just sitting there or unrealized swings on open positions. Approximate:
      (sell price - entry price) * qty sold, ignoring the exact fee Alpaca
-     charged that trade.
+     charged that trade. If any trade has a note in trade_log.csv's
+     `notes` column (e.g. flagging it as inflated by a since-fixed bug,
+     not representative of the strategy's own decision quality), a
+     second "excluding flagged trades" line is plotted alongside the
+     real one - never hidden, just distinguished, so both the honest
+     full history and the "how is the strategy itself doing" view are
+     visible at once.
   3. Win/loss count per ticker, from the same executed SELL trades - which
-     tickers are actually working vs. not.
+     tickers are actually working vs. not. Flagged trades are hatched in
+     this panel too, same reasoning as above.
 
 Reads whatever data exists; a strategy that trades rarely will produce a
 sparse panel 2/3, not an error. Doesn't hit the network or place any
@@ -70,6 +77,12 @@ def main():
             sells["realized_pnl_usd"] = (
                 sells["price_usd"] - sells["avg_entry_price_usd"]
             ) * sells["position_qty_before"]
+            # Older trade_log.csv files (before "notes" existed) won't have
+            # this column at all - treat that the same as "nothing flagged".
+            if "notes" in sells.columns:
+                sells["flagged"] = sells["notes"].notna() & (sells["notes"].astype(str).str.strip() != "")
+            else:
+                sells["flagged"] = False
 
     fig, axes = plt.subplots(3, 1, figsize=(10, 12))
 
@@ -101,10 +114,34 @@ def main():
     if not sells.empty:
         cum_pnl = sells.set_index("timestamp_utc")["realized_pnl_usd"].cumsum()
         color = "tab:green" if cum_pnl.iloc[-1] >= 0 else "tab:red"
+        has_flagged = sells["flagged"].any()
         # marker="o" so a single trade (a single point - nothing to "step"
         # between yet) still shows up as something visible rather than an
         # empty-looking plot.
-        ax.step(cum_pnl.index, cum_pnl.values, where="post", color=color, marker="o")
+        ax.step(cum_pnl.index, cum_pnl.values, where="post", color=color, marker="o",
+                label="All trades" if has_flagged else None)
+        ax.annotate(
+            f"{cum_pnl.iloc[-1]:+,.2f}",
+            xy=(cum_pnl.index[-1], cum_pnl.iloc[-1]),
+            xytext=(8, 0), textcoords="offset points",
+            fontweight="bold", color=color, va="center",
+        )
+
+        if has_flagged:
+            clean = sells[~sells["flagged"]]
+            if not clean.empty:
+                cum_clean = clean.set_index("timestamp_utc")["realized_pnl_usd"].cumsum()
+                clean_color = "tab:blue"
+                ax.step(cum_clean.index, cum_clean.values, where="post", color=clean_color,
+                        marker="s", linestyle="--", label="Excluding flagged trades")
+                ax.annotate(
+                    f"{cum_clean.iloc[-1]:+,.2f}",
+                    xy=(cum_clean.index[-1], cum_clean.iloc[-1]),
+                    xytext=(8, -14), textcoords="offset points",
+                    fontweight="bold", color=clean_color, va="center",
+                )
+            ax.legend(loc="upper left", fontsize=8)
+
         ax.axhline(0, color="gray", linewidth=0.8)
         ax.set_title("Cumulative realized P&L from executed trades")
         ax.set_ylabel("Realized P&L ($)")
@@ -117,31 +154,44 @@ def main():
         elif len(cum_pnl) == 1:
             pad = pd.Timedelta(hours=1)
             ax.set_xlim(cum_pnl.index[0] - pad, cum_pnl.index[0] + pad)
-        ax.annotate(
-            f"{cum_pnl.iloc[-1]:+,.2f}",
-            xy=(cum_pnl.index[-1], cum_pnl.iloc[-1]),
-            xytext=(8, 0), textcoords="offset points",
-            fontweight="bold", color=color, va="center",
-        )
     else:
         ax.set_title("Cumulative realized P&L from executed trades (no closed trades yet)")
         ax.text(0.5, 0.5, "No executed SELL trades in logs/trade_log.csv yet", ha="center", va="center")
 
     ax = axes[2]
     if not sells.empty:
-        wins = sells[sells["realized_pnl_usd"] > 0].groupby("ticker").size()
-        losses = sells[sells["realized_pnl_usd"] <= 0].groupby("ticker").size()
-        tickers = sorted(set(wins.index) | set(losses.index))
-        wins = wins.reindex(tickers, fill_value=0)
-        losses = losses.reindex(tickers, fill_value=0)
+        is_win = sells["realized_pnl_usd"] > 0
+        tickers = sorted(sells["ticker"].unique())
+
+        def counts(mask):
+            return sells[mask].groupby("ticker").size().reindex(tickers, fill_value=0)
+
+        wins_clean = counts(is_win & ~sells["flagged"])
+        wins_flagged = counts(is_win & sells["flagged"])
+        losses_clean = counts(~is_win & ~sells["flagged"])
+        losses_flagged = counts(~is_win & sells["flagged"])
+
         x = range(len(tickers))
-        ax.bar(x, wins.values, label="Win", color="tab:green")
-        ax.bar(x, losses.values, bottom=wins.values, label="Loss", color="tab:red")
+        ax.bar(x, wins_clean.values, label="Win", color="tab:green")
+        bottom = wins_clean.values
+        if wins_flagged.sum() > 0:
+            ax.bar(x, wins_flagged.values, bottom=bottom, label="Win (flagged - see notes)",
+                   color="tab:green", hatch="//", edgecolor="black")
+            bottom = bottom + wins_flagged.values
+        ax.bar(x, losses_clean.values, bottom=bottom, label="Loss", color="tab:red")
+        bottom = bottom + losses_clean.values
+        if losses_flagged.sum() > 0:
+            ax.bar(x, losses_flagged.values, bottom=bottom, label="Loss (flagged - see notes)",
+                   color="tab:red", hatch="//", edgecolor="black")
+
         ax.set_xticks(list(x))
         ax.set_xticklabels(tickers, rotation=45, ha="right")
-        ax.set_title("Win/loss count per ticker (executed trades)")
+        title = "Win/loss count per ticker (executed trades)"
+        if sells["flagged"].any():
+            title += " - hatched = flagged, see trade_log.csv notes"
+        ax.set_title(title)
         ax.set_ylabel("Trades")
-        ax.legend()
+        ax.legend(fontsize=8)
     else:
         ax.set_title("Win/loss count per ticker (no closed trades yet)")
         ax.text(0.5, 0.5, "No executed SELL trades in logs/trade_log.csv yet", ha="center", va="center")
