@@ -1,0 +1,6 @@
+timestamp,mode,ticker,strategy,price,target_position,current_qty_before,action,executed
+2026-07-25T00:38:58,PAPER,BTC,rule_based,65044.81,0.0,0.0,HOLD,False
+2026-07-25T00:38:58,PAPER,ETH,rule_based,1877.10,0.0,0.0,HOLD,False
+2026-07-25T00:38:58,PAPER,SOL,rule_based,75.86,1.0,0.0,BUY,True
+2026-07-25T00:38:58,PAPER,DOGE,rule_based,0.07,1.0,0.0,BUY,True
+2026-07-25T00:38:58,PAPER,LTC,rule_based,46.93,0.0,0.0,HOLD,False
