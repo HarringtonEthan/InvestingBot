@@ -92,11 +92,11 @@ Everything in this repository is one of three things:
    Python files: logs, charts, a saved ML model. Nobody writes these by
    hand; the code produces them, and they change every time it runs.
 
-So when you ask "is `paper-trade-crypto.yml` a function I wrote?" - no.
-A **function** is a named, reusable piece of Python code (you'll see
-`def get_target_position(...):` in `live_trade.py` - that `def` is what
-defines a function). `paper-trade-crypto.yml` isn't Python at all; it's
-a **workflow**, written in a different, much simpler format called YAML,
+A natural question at this point: is `paper-trade-crypto.yml` a
+**function**? No - a function is a named, reusable piece of Python code
+(see `def get_target_position(...):` in `live_trade.py` - that `def` is
+what defines one). `paper-trade-crypto.yml` isn't Python at all; it's a
+**workflow**, written in a different, much simpler format called YAML,
 whose entire job is to tell GitHub's servers "run this Python file, on
 this schedule, on a fresh computer you spin up for me."
 
@@ -202,8 +202,10 @@ separate script for every settings combination.
    - If it's a BUY or SELL and `--execute` was passed, actually places
      that paper order through Alpaca's API (`src/broker.py`).
 5. If anything was bought or sold, that gets appended to
-   `logs/trade_log.csv`; the account's current value always gets
-   appended to `logs/equity_log.csv`, regardless of outcome.
+   `logs/trade_log.csv`; if the account's current value differs from
+   what it was last time, that gets appended to `logs/equity_log.csv`.
+   An uneventful run (nothing traded, nothing changed) writes to
+   neither file.
 6. If either file changed, the workflow **commits** that change (saves a
    snapshot with a message) and **pushes** it back to this GitHub
    repository - that's why `git pull` on your own machine shows new
@@ -229,8 +231,8 @@ A few concrete reasons, not just "it's what I know":
   most trading and market-data tools support best; picking anything else
   would mean far more code to write ourselves for the exact same result.
 - **It reads close to plain English**, which matters a lot if the goal
-  (as you said) is to actually study and understand the code, not just
-  run it as a black box. Compare `if gain_pct >= args.profit_target:` to
+  is to actually study and understand the code, not just run it as a
+  black box. Compare `if gain_pct >= args.profit_target:` to
   the equivalent in a lower-level language - Python stays close to how
   you'd say the rule out loud.
 - **Speed genuinely doesn't matter here.** This isn't high-frequency
@@ -533,11 +535,13 @@ above - no computer of yours needs to be on at all.
    You can click into any of them and hit **"Run workflow"** to trigger
    it manually right now, instead of waiting for the schedule, to
    confirm it works.
-5. Each run appends to `logs/equity_log.csv` (always) and
-   `logs/trade_log.csv` (only if it actually bought or sold something),
-   then the workflow commits that update back to the repo, so `git pull`
-   locally will show new commits with a "Log ... trading run" message
-   over time. That's the automated bot committing its own log, not you.
+5. Each run may append to `logs/equity_log.csv` (if the account's value
+   changed) and/or `logs/trade_log.csv` (if it actually bought or sold
+   something) - an uneventful run writes to neither. Whenever either
+   file does change, the workflow commits that update back to the repo,
+   so `git pull` locally will show new commits with a "Log ... trading
+   run" message over time. That's the automated bot committing its own
+   log, not you.
    See "Logs and the trade dashboard" below for what's in each file.
 
 **Important - avoid double-trading:** once GitHub Actions is confirmed
@@ -630,10 +634,14 @@ change what it does.
 Every `live_trade.py` run writes to two separate CSVs, both git-tracked so
 `git pull` shows the bot's own history over time:
 
-- **`logs/equity_log.csv`** - one row **per run** (not per ticker):
-  `timestamp_utc`, `mode`, `portfolio_value_usd`, `cash_usd`. Written
-  every single time, whether or not anything traded, so it makes a clean
-  time series of "what was the whole paper account worth" for charting.
+- **`logs/equity_log.csv`** - `timestamp_utc`, `mode`,
+  `portfolio_value_usd`, `cash_usd`, at most one row per run (not per
+  ticker) - and only when the account value actually differs from the
+  last logged row. Most runs change nothing (no trade, no open position
+  whose price moved), so most runs write nothing here at all; a real
+  change, even a small one, is still logged immediately. This keeps the
+  file a clean time series of "what was the account worth, and when did
+  that change" without a row for every unchanged 5-minute check-in.
 - **`logs/trade_log.csv`** - one row **per actual BUY/SELL decision**
   (dry-run or executed): `timestamp_utc`, `mode`, `asset_class`, `ticker`,
   `strategy`, `action`, `price_usd`, `notional_usd`,
@@ -653,9 +661,9 @@ output of that run (visible in the Actions tab for a while after) already
 shows it happened. So `trade_log.csv` only gets a row when something
 actually happened (a BUY or SELL signal fired), which cuts the volume by
 roughly 100x based on this project's own history so far - and
-`equity_log.csv`, which does log every run, stays small on disk (a few
-dozen bytes per row) even accumulating for years, since it's one row per
-run rather than one row per run *per ticker*. The pre-redesign log,
+`equity_log.csv` only writes a row when the value actually changed since
+the last one, which cuts it further still, since a flat, untraded
+account produces zero new rows run after run. The pre-redesign log,
 kept for reference (and because its header didn't actually match its
 data - a real bug that motivated this rewrite), is archived at
 `logs/trade_log_archive_pre_2026-07-25.csv`.
@@ -756,6 +764,44 @@ Both are required; neither alone will trade real money. Don't flip these
 until you've watched the paper version run unattended for a meaningful
 stretch (weeks to months) and you understand and accept its drawdown
 behavior from the backtest above.
+
+## Security: who can see what, and who can change what
+
+This repository is currently **public** on GitHub, meaning anyone on the
+internet can view the source code - every strategy, every threshold,
+every workflow file. That's not a secrets leak by itself; here's exactly
+what is and isn't exposed by that:
+
+- **Your Alpaca API key and secret are not in the code or visible to
+  anyone.** They're stored as encrypted **GitHub Actions secrets**
+  (Settings -> Secrets and variables -> Actions), which are a separate,
+  locked vault from the repository itself. Once saved, a secret's value
+  can never be viewed again by anyone - not other people, not even you -
+  only *used* by a workflow at runtime. If a workflow's console output
+  ever tried to print one, GitHub automatically detects and masks it as
+  `***` before the log is shown, public repo or not.
+- **The cron-job.org GitHub token isn't in this repository at all** - it
+  lives only in your cron-job.org account's job configuration, which
+  nobody browsing GitHub can see. It is a real, live credential though
+  (that's why you were told to revoke the one pasted into this chat
+  earlier) - anyone who obtained it could trigger these workflows to run
+  on demand, but the token was deliberately scoped to only "Actions:
+  read and write" on this one repository, so the worst it could do is
+  spam-trigger trading runs, not push code changes or access your Alpaca
+  account directly.
+- **Only you can currently push or edit code.** Checked directly against
+  GitHub: this repository has exactly one collaborator
+  (`HarringtonEthan`, admin) and nobody else. Being public means anyone
+  *could* fork the repo and open a pull request suggesting a change, but
+  a pull request is just a proposal sitting in a queue - nothing merges
+  into this repository unless you personally review and approve it.
+  Nobody gets write access unless you explicitly add them under
+  Settings -> Collaborators and teams, which nobody has been.
+- **If you'd rather nobody see the strategy/code itself**, you can flip
+  this repository to private anytime under Settings -> General -> Danger
+  Zone -> Change visibility. That's purely a visibility setting - it
+  doesn't touch your secrets, your workflows, or how the automation
+  runs; everything above continues to work identically either way.
 
 ## Before this touches real money
 

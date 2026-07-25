@@ -102,7 +102,27 @@ def log_trade(row: dict):
     _append_row(TRADE_LOG_PATH, TRADE_LOG_FIELDS, row)
 
 
+def _last_equity_values() -> tuple[str, str] | None:
+    """Returns (portfolio_value_usd, cash_usd) from the last row of the
+    equity log, or None if the file doesn't exist yet / has no data rows."""
+    if not EQUITY_LOG_PATH.exists():
+        return None
+    with EQUITY_LOG_PATH.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    if not rows:
+        return None
+    last = rows[-1]
+    return last["portfolio_value_usd"], last["cash_usd"]
+
+
 def log_equity(row: dict):
+    # Most runs change nothing (no trade, no price movement in an open
+    # position) - skip the row entirely when the account value is exactly
+    # what it was last time, rather than writing an identical line every
+    # 5 minutes forever. A real change (even a small one) still gets
+    # logged immediately.
+    if _last_equity_values() == (row["portfolio_value_usd"], row["cash_usd"]):
+        return
     _append_row(EQUITY_LOG_PATH, EQUITY_LOG_FIELDS, row)
 
 
