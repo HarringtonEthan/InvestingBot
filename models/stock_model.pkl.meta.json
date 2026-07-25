@@ -1,0 +1,13 @@
+{
+  "trained_at": "2026-07-25T11:43:37+00:00",
+  "tickers": [
+    "SPY",
+    "AAPL",
+    "QQQ"
+  ],
+  "lookback_days": 730,
+  "horizon": 10,
+  "bounce_pct": 0.03,
+  "train_rows": 1503,
+  "threshold": 0.5723352032854883
+}

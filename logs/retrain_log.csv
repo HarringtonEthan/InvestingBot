@@ -1,0 +1,2 @@
+timestamp,tickers,lookback_days,train_rows,threshold
+2026-07-25T11:43:37+00:00,SPY;AAPL;QQQ,730,1503,0.5723
