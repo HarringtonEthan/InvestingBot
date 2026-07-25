@@ -33,8 +33,8 @@ the live configuration changes.
   -0.5%/+0.8%/-1.5%, which it beat on the tested window) - both still
   lost money on average over that period, this one just lost less, and
   it hasn't been re-validated on a different time window yet. This does
-  not depend on GitHub's own cron (which we found unreliable - see
-  below) or on any computer being on.
+  not depend on GitHub's own cron (found unreliable in testing for this
+  project - see below) or on any computer being on.
 - **Stocks: live and automated, ML-filtered, with periodic retraining.**
   The stock workflow (`paper-trade-stocks.yml`) runs `--strategy
   ml_filtered` on SPY/AAPL/QQQ instead of `rule_based`. Unlike every
@@ -53,10 +53,13 @@ the live configuration changes.
   here" below for what this does and doesn't mean, and "Logs and the
   trade dashboard" for what does/doesn't get recorded going forward - in
   particular, this setup has no real-data track record yet, so
-  "automated" here is not the same claim as "proven to work."
-  There's also still an open QQQ paper position from the old
-  `rule_based` manual test (back before this switch) that hasn't been
-  re-evaluated since - worth checking the Alpaca paper dashboard for it.
+  "automated" here is not the same claim as "proven to work." There's
+  also no actual QQQ position open - two QQQ buy orders from early
+  manual testing never filled (submitted after market close, `Filled
+  Qty: 0.00` on Alpaca's Orders page) - but both are still sitting open
+  and could still fill on a future market open. Cancel them on Alpaca's
+  Orders page if you don't want that; see "Fixed: BUY no longer stacks"
+  below for why the bot itself won't know they're there.
 - **Fixed: `--dip-threshold` now actually controls `rule_based` and
   `ml_filtered`.** Previously those two strategies silently ignored the
   flag and always used a hardcoded 3% dip, regardless of what was passed
@@ -80,9 +83,14 @@ the live configuration changes.
   dashboard, not the bot's own - inaccurate - logs) grew large and sat
   unmanaged despite the sell-check logic itself being correct. Fixed by
   stripping the slash for these specific lookups (order placement is
-  unaffected - it already worked correctly). Existing open positions
-  should be correctly detected, and evaluated for sale, starting with
-  the next crypto cycle.
+  unaffected - it already worked correctly). Confirmed working on the
+  very next cycle after the fix: DOGE was correctly detected and sold
+  once its logged unrealized gain cleared the profit target - though
+  the position was unusually large (a direct result of this bug letting
+  it buy the same dip twice without noticing), and a market order that
+  size moved the price enough while filling that the trade closed at a
+  real loss despite a positive number at decision time. LTC sold later
+  the same way, at a much more typical size, for a real profit.
 - **Fixed: BUY no longer stacks on top of an already-open, unfilled
   order.** `decide()` only ever checked *filled* position size, never
   whether an order for that symbol was already sitting open/unfilled -
@@ -94,12 +102,13 @@ the live configuration changes.
   sitting open - cancel those manually on Alpaca's Orders page if you
   don't want them to fill; this only stops *new* ones from stacking on
   top going forward.
-- **Dashboard: regenerated roughly hourly.** A fourth workflow,
-  `update-dashboard.yml`, runs `visualize_log.py` and commits
-  `results/trade_dashboard.png` back to the repo - view it directly on
-  github.com for a near-current chart without running anything locally.
-  Needs its own cron-job.org job pointed at its `workflow_dispatch`
-  endpoint, same as the other three workflows, to actually fire hourly.
+- **Dashboard: live and automated, regenerated hourly.** A fourth
+  workflow, `update-dashboard.yml`, runs `visualize_log.py --baseline
+  100000` and commits `results/trade_dashboard.png` back to the repo -
+  view it directly on github.com for a chart that's never more than an
+  hour stale, no local setup needed. Driven by its own cron-job.org job
+  hitting its `workflow_dispatch` endpoint, same pattern as the other
+  three workflows, confirmed firing successfully on schedule.
 - **Local Windows Task Scheduler: should be disabled.** Both local tasks
   were used earlier for testing and troubleshooting; cron-job.org now
   handles crypto automation instead. Leaving a local task enabled
@@ -353,9 +362,13 @@ backtest wouldn't mean anything about live behavior.
   never gets mistaken for a real result.
 - `src/features.py` - technical indicators (SMA, RSI, rolling
   volatility, drawdown-from-high) used both to define a "dip" and as ML
-  features. Windows are defined in bars, not calendar days, so the same
-  code produces a 20-day trend on daily data or a 20-hour trend on hourly
-  data.
+  features. Windows are defined in bars, not calendar days, so a
+  "20-period" moving average means whatever 20 *bars* of the requested
+  `--interval` spans - a 20-day trend on daily data, a 20-hour trend on
+  hourly data, or (the live crypto case) a rolling 100-minute window on
+  5-minute bars: 20 x 5 minutes, continuously updated as each new bar
+  arrives and the oldest one drops off, not anchored to any fixed clock
+  time.
 - `src/strategies.py` - five strategies:
   1. **Buy & hold**
   2. **Rule-based dip buy** - buy when price is below its 20-period
@@ -652,9 +665,12 @@ crypto spread/fee (roughly 0.15-0.25% each way, so ~0.3-0.5% per full
 buy-sell cycle). If `--profit-target` is smaller than that fee drag, the
 strategy loses money **on average even when directionally correct** -
 there's a real floor below which "more trades" just means "more fee
-payments," not more profit. The 0.8% target above has been kept
+payments," not more profit. The 1.0% target above has been kept
 deliberately above that floor; going much lower trades against the fee
-structure, not with it.
+structure, not with it. Real fills so far land toward the higher end of
+that fee range - one closed trade paid about 0.25%, another about 0.44%
+- worth treating the floor as a range to stay clear of, not a precise
+number to shave against.
 
 **Backtest it before trusting a threshold change** - same principle as
 the stock strategy, just with intraday data and crypto-realistic fees:
@@ -726,10 +742,11 @@ already open before logging began. Pass `--baseline 100000` (or
 whatever your actual starting cash was) to measure from your real
 starting point instead - the title changes to make clear which one
 you're looking at. Both are valid, they just answer different
-questions, and showing only the "since tracking began" one is what
-caused real confusion once - it can look like it disagrees with what
-Alpaca's own dashboard says, when both are actually correct, just
-measuring from different starting points.
+questions - but showing only the "since tracking began" one risks
+looking like it disagrees with what Alpaca's own dashboard says, when
+both numbers are actually correct, just measuring from different
+starting points. Use `--baseline` whenever you want the number that
+matches Alpaca's own total account P&L.
 
 It also runs on a schedule: `.github/workflows/update-dashboard.yml`
 regenerates and commits `results/trade_dashboard.png` roughly hourly
