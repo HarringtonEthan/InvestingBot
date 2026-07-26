@@ -1,27 +1,27 @@
 # InvestingBot
 
-A "buy the dip" stock and crypto strategy: backtest it, search for better
+A "buy the dip" stock and crypto strategy: I backtest it, search for better
 settings systematically, then optionally run it automatically against a
 paper (fake-money) brokerage account.
 
-**Not investment advice.** It exists to answer a specific question before
-any real money is involved: do these dip-buying rules actually beat just
+**Not investment advice.** I built this to answer a specific question before
+any real money gets involved: do these dip-buying rules actually beat just
 buying and holding? So far, on real recent data, the honest answer is
-**no** - see "Current live status" below for specifics. The code is built
-so you can keep answering that for yourself on real data, and only
+**no** - see "Current live status" below for specifics. I built the code so
+I can keep answering that for myself on real data, and I'm only going to
 consider real money once something actually demonstrates an edge.
 
 **New to this project, or newer to coding in general?** Skip down to
 "How this actually works" for a plain-English walkthrough of every piece
 - what a workflow file is, what those `--strategy day_trading`-style
 options mean, why this is all in Python, and how the automation actually
-runs every 5 minutes without your computer being on.
+runs every 5 minutes without my computer being on.
 
 ## Current live status (as of this writing)
 
-This section exists so nobody - including future us - has to reverse
-engineer what's actually running from workflow files. Update it whenever
-the live configuration changes.
+I keep this section updated so I don't have to reverse engineer what's
+actually running from workflow files six months from now. I update it
+whenever the live configuration changes.
 
 - **Crypto: live and automated, rule-based, no ML.** An external free
   scheduler ([cron-job.org](https://cron-job.org)) calls GitHub's API
@@ -29,12 +29,12 @@ the live configuration changes.
   which runs `live_trade.py --strategy day_trading` against **BTC, ETH,
   SOL, DOGE, LTC, AVAX, LINK, XRP, DOT** on 5-minute bars: buy a 1.0%
   dip, sell at +1.0% profit or -3.0% stop-loss. These are `optimize.py`'s
-  best average-across-all-9-coins combo (replacing the earlier
+  best average-across-all-9-coins combo (replacing an earlier
   -0.5%/+0.8%/-1.5%, which it beat on the tested window) - both still
   lost money on average over that period, this one just lost less, and
-  it hasn't been re-validated on a different time window yet. This does
-  not depend on GitHub's own cron (found unreliable in testing for this
-  project - see below) or on any computer being on.
+  I haven't re-validated it on a different time window yet. This doesn't
+  depend on GitHub's own cron (I found it unreliable in testing - see
+  below) or on any computer being on.
 - **Stocks: live and automated, ML-filtered, with periodic retraining.**
   The stock workflow (`paper-trade-stocks.yml`) runs `--strategy
   ml_filtered` on SPY/AAPL/QQQ instead of `rule_based`. Unlike every
@@ -44,95 +44,98 @@ the live configuration changes.
   `RandomForestClassifier`, saves it to `models/stock_model.pkl`, and
   commits it back to the repo; `live_trade.py` loads that saved model on
   every run instead of retraining from scratch. Two cron-job.org jobs
-  now drive both workflows the same way one already drives crypto -
+  drive both workflows the same way one already drives crypto -
   `retrain-stock-model.yml` weekly, `paper-trade-stocks.yml` daily near
-  market close - confirmed working: a model has been trained (see
+  market close - confirmed working: I've trained a model (see
   `logs/retrain_log.csv`) and manual test runs showed real `ml_filtered`
   decisions for SPY/AAPL/QQQ (all HOLD so far - a legitimate outcome, not
   a failure). See "Machine learning: what it actually does" in "What's
   here" below for what this does and doesn't mean, and "Logs and the
   trade dashboard" for what does/doesn't get recorded going forward - in
   particular, this setup has no real-data track record yet, so
-  "automated" here is not the same claim as "proven to work." There's
+  "automated" here isn't the same claim as "proven to work." There's
   also no actual QQQ position open - two QQQ buy orders from early
   manual testing never filled (submitted after market close, `Filled
   Qty: 0.00` on Alpaca's Orders page) - but both are still sitting open
-  and could still fill on a future market open. Cancel them on Alpaca's
-  Orders page if you don't want that; see "Fixed: BUY no longer stacks"
-  below for why the bot itself won't know they're there.
+  and could still fill on a future market open. I'll cancel them on
+  Alpaca's Orders page if I don't want that; see "Fixed: BUY no longer
+  stacks" below for why the bot itself won't know they're there.
 - **Fixed: `--dip-threshold` now actually controls `rule_based` and
-  `ml_filtered`.** Previously those two strategies silently ignored the
-  flag and always used a hardcoded 3% dip, regardless of what was passed
-  on the command line - only `day_trading` respected `--dip-threshold`.
-  Both now read the same flag `day_trading` always did. The live stock
-  workflow explicitly passes `--dip-threshold -0.03` so this fix doesn't
-  silently change its behavior - that was the effective value all along,
-  it just wasn't controllable before.
+  `ml_filtered`.** Those two strategies used to silently ignore the flag
+  and always use a hardcoded 3% dip, regardless of what I passed on the
+  command line - only `day_trading` respected `--dip-threshold`. Both now
+  read the same flag `day_trading` always did. The live stock workflow
+  explicitly passes `--dip-threshold -0.03` so this fix doesn't silently
+  change its behavior - that was the effective value all along, it just
+  wasn't controllable before.
 - **Fixed a serious bug: crypto positions were invisible to the bot.**
   `src/broker.py` asked Alpaca for a position using the same symbol
   format used for placing orders (e.g. `"DOGE/USD"`, with a slash), but
   Alpaca's client builds that lookup's URL by plain string concatenation
   with no encoding - the literal `/` split `/positions/DOGE/USD` into an
-  invalid 3-segment path, the request failed, and the code's error
-  handling silently treated that failure as "no position held" instead
-  of surfacing it. Net effect: the bot could never detect a crypto
-  position it already held, so the profit-target/stop-loss check never
-  ran on it, and a fresh dip signal on a coin already held could trigger
-  *another* buy instead of being recognized as "already in this trade."
-  This is very likely why real positions (found via the Alpaca paper
-  dashboard, not the bot's own - inaccurate - logs) grew large and sat
-  unmanaged despite the sell-check logic itself being correct. Fixed by
-  stripping the slash for these specific lookups (order placement is
-  unaffected - it already worked correctly). Confirmed working on the
-  very next cycle after the fix: DOGE was correctly detected and sold
-  once its logged unrealized gain cleared the profit target - though
-  the position was unusually large (a direct result of this bug letting
-  it buy the same dip twice without noticing), and a market order that
-  size moved the price enough while filling that the trade closed at a
-  real loss despite a positive number at decision time. LTC sold later
-  the same way, at a much more typical size, for a real profit.
+  invalid 3-segment path, the request failed, and my error handling
+  silently treated that failure as "no position held" instead of
+  surfacing it. Net effect: the bot could never detect a crypto position
+  it already held, so the profit-target/stop-loss check never ran on it,
+  and a fresh dip signal on a coin already held could trigger *another*
+  buy instead of being recognized as "already in this trade." This is
+  very likely why real positions (found via Alpaca's own paper dashboard,
+  not the bot's - inaccurate - logs) grew large and sat unmanaged despite
+  the sell-check logic itself being correct. I fixed it by stripping the
+  slash for these specific lookups (order placement is unaffected - it
+  already worked correctly). Confirmed working on the very next cycle
+  after the fix: DOGE was correctly detected and sold once its logged
+  unrealized gain cleared the profit target - though the position was
+  unusually large (a direct result of this bug letting it buy the same
+  dip twice without noticing), and a market order that size moved the
+  price enough while filling that the trade closed at a real loss
+  despite a positive number at decision time. LTC and SOL both sold
+  later the same way, at much more typical sizes, for real profits.
 - **Fixed: BUY no longer stacks on top of an already-open, unfilled
-  order.** `decide()` only ever checked *filled* position size, never
+  order.** `decide()` used to only check *filled* position size, never
   whether an order for that symbol was already sitting open/unfilled -
-  found via two real stale QQQ orders (submitted after market close,
-  queued for the next session, never filled) that a later BUY signal
-  would have had no way of knowing about and could have duplicated.
-  `Broker.has_open_order()` now checks before every BUY and skips if one
-  already exists. This doesn't retroactively cancel any order already
-  sitting open - cancel those manually on Alpaca's Orders page if you
-  don't want them to fill; this only stops *new* ones from stacking on
-  top going forward.
+  I found this via two real stale QQQ orders (submitted after market
+  close, queued for the next session, never filled) that a later BUY
+  signal would have had no way of knowing about and could have
+  duplicated. `Broker.has_open_order()` now checks before every BUY and
+  skips if one already exists. This doesn't retroactively cancel any
+  order already sitting open - I still need to cancel those manually on
+  Alpaca's Orders page if I don't want them to fill; this only stops
+  *new* ones from stacking on top going forward.
 - **Dashboard: live and automated, regenerated hourly.** A fourth
   workflow, `update-dashboard.yml`, runs `visualize_log.py --baseline
   100000` and commits `results/trade_dashboard.png` back to the repo -
-  view it directly on github.com for a chart that's never more than an
-  hour stale, no local setup needed. Driven by its own cron-job.org job
-  hitting its `workflow_dispatch` endpoint, same pattern as the other
-  three workflows, confirmed firing successfully on schedule.
+  I can view it directly on github.com for a chart that's never more
+  than an hour stale, no local setup needed. Driven by its own
+  cron-job.org job hitting its `workflow_dispatch` endpoint, same
+  pattern as the other three workflows, confirmed firing successfully
+  on schedule.
 - **Current results snapshot (will be stale by the time you read this -
   check `results/trade_dashboard.png` for the live number):** the
-  account is up **+$357.00** against its $100,000 funding baseline. That
-  total is not the same as "the strategy has an edge" - only two trades
-  have actually closed so far, and they tell two different stories
-  depending on whether you count the one affected by the bug above.
-  Counting both, realized P&L is **-$857.64** (dominated by DOGE's
-  oversized, bug-inflated loss); excluding the flagged DOGE trade,
-  realized P&L from LTC alone is **+$41.30**. Neither number is "the
-  real" one on its own - see "Logs and the trade dashboard" below for
-  why both are shown side by side rather than picking one. The account
-  being up overall right now is mostly unrealized gains on whatever's
-  still open, not proof the closed trades are profitable.
-- **Local Windows Task Scheduler: should be disabled.** Both local tasks
-  were used earlier for testing and troubleshooting; cron-job.org now
-  handles crypto automation instead. Leaving a local task enabled
-  alongside cron-job.org would double-trade the same account.
+  account is up **+$292.84** against its $100,000 funding baseline, and
+  right now it's sitting entirely in cash with no open positions. That
+  total isn't the same as "the strategy has an edge" - only three trades
+  have actually closed so far, and they tell different stories depending
+  on whether I count the one affected by the bug above. Counting all
+  three, realized P&L is **-$533.58** (dominated by DOGE's oversized,
+  bug-inflated loss); excluding the flagged DOGE trade, realized P&L from
+  LTC and SOL together is **+$365.37**. Neither number is "the real" one
+  on its own - see "Logs and the trade dashboard" below for why I show
+  both side by side instead of picking one. Three trades is nowhere near
+  enough to call this a proven edge either way - I'm treating the current
+  positive balance as "the debugging period didn't blow up the account,"
+  not as evidence the strategy works.
+- **Local Windows Task Scheduler: should be disabled.** I used both local
+  tasks earlier for testing and troubleshooting; cron-job.org now handles
+  crypto automation instead. Leaving a local task enabled alongside
+  cron-job.org would double-trade the same account.
 - **Bollinger breakout: implemented, not deployed.** `--strategy
   bollinger_breakout` exists (see `src/strategies.py`) but isn't wired
   into any live workflow. Backtested on 5-minute crypto bars during a
   choppy (non-trending) stretch, it performed far worse than the other
   strategies - expected, since it's a trend-following design meant for
-  slower timeframes and genuinely trending markets, not what it was
-  tested against.
+  slower timeframes and genuinely trending markets, not what I tested it
+  against.
 
 ## How this actually works (a plain-English walkthrough)
 
@@ -146,15 +149,15 @@ are, skip to "What's here" below.
 Everything in this repository is one of three things:
 
 1. **Python files (`.py`)** - actual instructions, written as code,
-   telling a computer exactly what to do, step by step, when run. `live_trade.py`,
-   `main.py`, `optimize.py`, everything under `src/` - these are the
-   "brain" of the project.
+   telling a computer exactly what to do, step by step, when run.
+   `live_trade.py`, `main.py`, `optimize.py`, everything under `src/` -
+   these are the "brain" of the project.
 2. **Workflow files (`.yml`, under `.github/workflows/`)** - not code
    that does anything by itself. They're instructions *for GitHub*,
    telling it when to run one of the Python files above and how to set
    up the computer that runs it. More on this below.
 3. **Data files (`.csv`, `.png`, `.pkl`)** - the *output* of running the
-   Python files: logs, charts, a saved ML model. Nobody writes these by
+   Python files: logs, charts, a saved ML model. I never write these by
    hand; the code produces them, and they change every time it runs.
 
 A natural question at this point: is `paper-trade-crypto.yml` a
@@ -167,10 +170,10 @@ this schedule, on a fresh computer you spin up for me."
 
 ### What "every 5 minutes, run `paper-trade-crypto.yml`" actually means
 
-GitHub offers a free feature called **GitHub Actions**: you give it a
-`.yml` file describing a task, and GitHub will boot up a temporary,
+GitHub offers a free feature called **GitHub Actions**: I give it a
+`.yml` file describing a task, and GitHub boots up a temporary,
 disposable Linux computer (they call it a "runner") to carry it out, then
-throw that computer away when it's done. Nothing persists on it between
+throws that computer away when it's done. Nothing persists on it between
 runs - every single run starts from a completely clean machine.
 
 Open `.github/workflows/paper-trade-crypto.yml` and you'll see (in
@@ -181,8 +184,8 @@ plain English, translating the YAML):
    standard way of writing recurring schedules (five slots: minute,
    hour, day-of-month, month, day-of-week; `*/5` in the minute slot
    means "every 5th minute"). GitHub's own version of this trigger
-   turned out to be unreliable in testing for this project (see below
-   for how that's worked around).
+   turned out to be unreliable in my testing (see below for how I
+   worked around it).
 2. **`steps:`** - a numbered list of things to do, in order, on that
    fresh temporary computer:
    - `actions/checkout@v4` - download a fresh copy of this repository's
@@ -197,22 +200,22 @@ plain English, translating the YAML):
      one line that does the real work; everything else in the file is
      just setting the stage for it.
    - A final step that saves any new log rows back to the repository
-     (more on this in "Logs and the trade dashboard" above).
+     (more on this in "Logs and the trade dashboard" below).
 3. The temporary computer is then destroyed. Five minutes later, a brand
-   new one is created and the whole process repeats from scratch,
+   new one gets created and the whole process repeats from scratch,
    picking up whatever code and data is currently on GitHub.
 
 **Why cron-job.org is also involved:** GitHub's own `schedule:` trigger
-(step 1 above) was tested extensively in this project and never reliably
-fired on its own - a real, unexplained platform quirk, not a mistake in
-the file. The fix was to add a second, independent trigger to the
-workflow: `workflow_dispatch: {}`, which means "also allow this workflow
-to be started by an API call, on demand." Then a free external website,
+(step 1 above) never reliably fired on its own when I tested it
+extensively - a real, unexplained platform quirk, not a mistake in the
+file. My fix was to add a second, independent trigger to the workflow:
+`workflow_dispatch: {}`, which means "also allow this workflow to be
+started by an API call, on demand." Then a free external website,
 **[cron-job.org](https://cron-job.org)**, acts as an outside alarm clock:
 every 5 minutes, *it* sends a request to **GitHub's API** (see glossary
 below) saying "please run `paper-trade-crypto.yml` right now" -
-completely bypassing GitHub's own flaky scheduler. That's what the
-cron-job.org jobs you set up are doing.
+completely bypassing GitHub's own flaky scheduler. That's what my
+cron-job.org jobs are doing.
 
 ### What `--strategy day_trading` actually means
 
@@ -220,15 +223,15 @@ cron-job.org jobs you set up are doing.
 fixed thing - it reads **command-line arguments** (also called flags or
 options) that change its behavior each time it's run, the same way you
 might customize a coffee order ("size: large, milk: oat") without
-needing a different barista for every combination. You're not writing
-new code by passing `--strategy day_trading`; you're picking a setting
-inside the code that's already written.
+needing a different barista for every combination. I'm not writing new
+code by passing `--strategy day_trading`; I'm picking a setting inside
+the code that's already written.
 
 Inside `live_trade.py`, this line does the reading:
 ```python
 parser.add_argument("--strategy", choices=["rule_based", "ml_filtered", "day_trading", "bollinger_breakout"], default="rule_based")
 ```
-That uses Python's built-in `argparse` tool, which scans whatever you
+That uses Python's built-in `argparse` tool, which scans whatever I
 typed after `python live_trade.py` and turns it into values the rest of
 the program can use. So the full command GitHub actually runs:
 
@@ -245,9 +248,9 @@ below for what each one means). Look at 5-minute price bars. Treat a 1%
 drop as a dip worth buying. Take profit once up 1%. Cut losses if down
 3%. And `--execute` means actually place these as real (paper) orders,
 not just print what it would have done."* Change any of those words and
-you get a different, but equally valid, way to run the exact same
-program - that's the whole point of arguments instead of writing a
-separate script for every settings combination.
+I get a different, but equally valid, way to run the exact same program
+- that's the whole point of arguments instead of writing a separate
+script for every settings combination.
 
 ### The full chain, step by step (what happens every 5 minutes)
 
@@ -261,51 +264,52 @@ separate script for every settings combination.
    - Asks Alpaca (the broker) for the current price (via
      `src/alpaca_data.py`, not Yahoo Finance - see "Crypto support"
      below for why).
-   - Checks your *actual* current position for that coin against the
+   - Checks my *actual* current position for that coin against the
      day-trading rule (buy a dip / take profit / stop loss).
    - Decides BUY, SELL, or HOLD.
    - If it's a BUY or SELL and `--execute` was passed, actually places
      that paper order through Alpaca's API (`src/broker.py`).
-5. If anything was bought or sold, that gets appended to
+5. If anything got bought or sold, that gets appended to
    `logs/trade_log.csv`; if the account's current value differs from
    what it was last time, that gets appended to `logs/equity_log.csv`.
    An uneventful run (nothing traded, nothing changed) writes to
    neither file.
 6. If either file changed, the workflow **commits** that change (saves a
    snapshot with a message) and **pushes** it back to this GitHub
-   repository - that's why `git pull` on your own machine shows new
+   repository - that's why `git pull` on my own machine shows new
    "Log crypto trading run" commits over time, authored by the bot, not
-   you.
-7. The temporary computer is destroyed. Nothing about this run persists
-   anywhere except what got committed to the repository in step 6 - the
-   *next* run starts completely fresh and re-derives everything (current
-   price, current position, current decision) from scratch.
+   me.
+7. The temporary computer gets destroyed. Nothing about this run
+   persists anywhere except what got committed to the repository in
+   step 6 - the *next* run starts completely fresh and re-derives
+   everything (current price, current position, current decision) from
+   scratch.
 
 ### Why Python?
 
 A few concrete reasons behind the choice, not just familiarity:
 
 - **The entire finance/data-science tooling world is built on it.**
-  This project didn't have to write a spreadsheet engine, a statistics
-  library, or a machine-learning algorithm from scratch - it uses
-  `pandas` (tables of price data), `numpy` (fast math), `scikit-learn`
-  (the `RandomForestClassifier` behind `ml_filtered`), and `matplotlib`
+  I didn't have to write a spreadsheet engine, a statistics library, or
+  a machine-learning algorithm from scratch - I use `pandas` (tables of
+  price data), `numpy` (fast math), `scikit-learn` (the
+  `RandomForestClassifier` behind `ml_filtered`), and `matplotlib`
   (charts), all free, all extremely mature, all Python-first.
 - **Alpaca and Yahoo Finance both publish official/well-maintained
   Python libraries** (`alpaca-py`, `yfinance`). Python is the language
   most trading and market-data tools support best; picking anything else
-  would mean far more code to write ourselves for the exact same result.
-- **It reads close to plain English**, which matters a lot if the goal
-  is to actually study and understand the code, not just run it as a
-  black box. Compare `if gain_pct >= args.profit_target:` to
-  the equivalent in a lower-level language - Python stays close to how
-  you'd say the rule out loud.
+  would've meant writing far more code myself for the exact same result.
+- **It reads close to plain English**, which matters a lot since the
+  goal is to actually study and understand the code, not just run it as
+  a black box. Compare `if gain_pct >= args.profit_target:` to the
+  equivalent in a lower-level language - Python stays close to how you'd
+  say the rule out loud.
 - **Speed genuinely doesn't matter here.** This isn't high-frequency
   trading measured in microseconds - it makes one decision every 5
   minutes at most, and almost all of that time is spent *waiting* for
   Alpaca/Yahoo Finance to respond over the network, not computing
   anything. Python being slower than, say, C++ for raw number-crunching
-  has no practical effect on a bot like this.
+  has zero practical effect on a bot like this.
 
 ### The big picture: two separate pipelines that share code
 
@@ -323,7 +327,7 @@ A few concrete reasons behind the choice, not just familiarity:
   `logs/*.csv` (record what happened).
 
 Both pipelines reuse the same feature/strategy code on purpose - it's
-the only way to trust that a backtest result says anything about what
+the only way I can trust that a backtest result says anything about what
 the live version will actually do; if they used separate logic, a good
 backtest wouldn't mean anything about live behavior.
 
@@ -333,13 +337,13 @@ backtest wouldn't mean anything about live behavior.
   called git and hosted on GitHub.
 - **Commit** - a saved snapshot of changes to the repo, with a message
   describing what changed. `git commit`.
-- **Push / pull** - sending your commits *to* GitHub (`push`), or
+- **Push / pull** - sending my commits *to* GitHub (`push`), or
   downloading others' (including the bot's own) commits *from* GitHub
   (`pull`).
 - **API (Application Programming Interface)** - a way for one program to
   talk to another program automatically, without a human clicking
   anything. "The Alpaca API" is how `live_trade.py` places an order
-  without anyone visiting Alpaca's website.
+  without me visiting Alpaca's website.
 - **Endpoint** - a specific web address an API call gets sent to, e.g.
   `https://paper-api.alpaca.markets`.
 - **Workflow / GitHub Actions** - GitHub's built-in automation feature;
@@ -370,7 +374,7 @@ backtest wouldn't mean anything about live behavior.
   first; if there's no network access it falls back to a synthetic price
   series calibrated to realistic market behavior (~9% annual drift, ~19%
   annual volatility, clustered vol regimes), generated at whatever bar
-  frequency was requested. Every place synthetic data is used, it's
+  frequency I asked for. Every place synthetic data gets used, it's
   labeled loudly - in the console output and in the chart title - so it
   never gets mistaken for a real result.
 - `src/features.py` - technical indicators (SMA, RSI, rolling
@@ -387,20 +391,20 @@ backtest wouldn't mean anything about live behavior.
   2. **Rule-based dip buy** - buy when price is below its 20-period
      moving average by at least `--dip-threshold` (defaults to 2%), sell
      once it recovers back above the average (mean-reversion exit,
-     independent of what you paid). On real recent crypto/5-minute data,
+     independent of what I paid). On real recent crypto/5-minute data,
      even a 2% threshold rarely fires - that timeframe's typical moves
      are well under 1%, so this strategy is a better fit for daily bars
      than 5-minute ones.
   3. **ML-filtered dip buy** - same rule and same `--dip-threshold`, but
      only acts on a dip if a model trained to predict "will this bounce?"
      is confident enough.
-  4. **Day trading (profit target)** - buy a dip, but sell based on your
+  4. **Day trading (profit target)** - buy a dip, but sell based on my
      *actual entry price* instead of the moving average: exits once
-     price is a set % above your entry (a real profit), or cuts losses
-     if price falls a set % below entry first (a stop-loss, so it
-     doesn't ride a sustained downtrend forever waiting for a recovery
-     that may not come). This is the one wired up for the frequent,
-     always-on crypto automation - see "Crypto support" below.
+     price is a set % above my entry (a real profit), or cuts losses if
+     price falls a set % below entry first (a stop-loss, so it doesn't
+     ride a sustained downtrend forever waiting for a recovery that may
+     not come). This is the one wired up for the frequent, always-on
+     crypto automation - see "Crypto support" below.
   5. **Bollinger breakout** - a trend-following (not mean-reversion) bet:
      buy when price breaks above its upper Bollinger Band while also
      above a long-term trend average, sell when it falls back below the
@@ -416,10 +420,10 @@ backtest wouldn't mean anything about live behavior.
   only ML in the project, and only used by `ml_filtered` - `rule_based`,
   `day_trading` (the live crypto strategy), and `bollinger_breakout` are
   pure rules, no model involved. Important to be clear-eyed about:
-  - By default (in a backtest, or via `main.py`) it does not "learn" in
+  - By default (in a backtest, or via `main.py`) it doesn't "learn" in
     an ongoing/online sense: `train_model()` fits a brand-new
-    `RandomForestClassifier` from scratch on whatever training window
-    you give it, uses it once, and discards it.
+    `RandomForestClassifier` from scratch on whatever training window I
+    give it, uses it once, and discards it.
   - The **live stock workflow is the one exception**: it uses
     `train_model_multi()` + `src/model_store.py` to save a model to
     `models/stock_model.pkl` on a schedule (`train_stock_model.py`, see
@@ -428,20 +432,20 @@ backtest wouldn't mean anything about live behavior.
     runs - but it's still periodic batch retraining (e.g. weekly), not
     the model updating itself after every trade the way "a bot that
     learns" often implies.
-  - It has never been shown to beat the plain rule-based version. In the
-    one direct real-data comparison run in this project so far, the ML
-    filter underperformed the plain rule-based strategy out of sample -
-    a common and expected outcome (a filter can easily fit noise in the
-    training window rather than a real pattern). The switch to live
-    ml_filtered for stocks is a bet that periodic retraining on pooled
-    multi-ticker data behaves differently - not yet proven, since that
-    setup has no real-data track record yet.
+  - It's never been shown to beat the plain rule-based version. In the
+    one direct real-data comparison I've run so far, the ML filter
+    underperformed the plain rule-based strategy out of sample - a
+    common and expected outcome (a filter can easily fit noise in the
+    training window rather than a real pattern). Switching live
+    `ml_filtered` on for stocks is a bet that periodic retraining on
+    pooled multi-ticker data behaves differently - not yet proven, since
+    that setup has no real-data track record yet.
   - Its dip threshold (`--dip-threshold`, controllable like the other
     strategies - see "Current live status" above) still needs to be
     sized for the timeframe it runs on: a threshold that makes sense on
     daily bars would rarely fire on 5-minute crypto data, where typical
-    moves are much smaller - one more reason ML stayed off crypto and
-    went to stocks instead.
+    moves are much smaller - one more reason I kept ML off crypto and
+    put it on stocks instead.
 - `src/backtest.py` - a simple long/cash backtest engine: one day of
   execution lag (no lookahead), transaction costs on every position
   change, and standard metrics (annualized return/vol, Sharpe, max
@@ -471,7 +475,7 @@ python main.py --ticker SPY --start 2015-01-01 --split 2022-01-01 --end 2024-12-
 
 `--split` is the train/test cutoff: everything before it is used only to
 fit the ML filter, everything after is the held-out test period the
-strategies are compared on. On a machine with normal internet access this
+strategies get compared on. On a machine with normal internet access this
 pulls real Yahoo Finance data automatically - nothing to change. In this
 sandboxed environment, outbound requests to Yahoo Finance are blocked, so
 it fell back to synthetic data automatically (you'll see this called out
@@ -494,9 +498,9 @@ In an earlier exploratory run against a different synthetic sample (a
 milder, uptrending 2023-2024-style period), buy-and-hold came out ahead of
 both dip-buying variants, and the ML filter underperformed the plain
 rule-based version out of sample. That's a genuinely useful, if humbling,
-result and it's reported here rather than tuned away: an ML filter losing
-to a simpler rule on unseen data is one of the most common outcomes in
-quantitative trading, and exactly the "fits noise, not a real edge"
+result and I'm reporting it here rather than tuning it away: an ML filter
+losing to a simpler rule on unseen data is one of the most common outcomes
+in quantitative trading, and exactly the "fits noise, not a real edge"
 failure mode worth expecting going in. The mechanics (proper time-based
 train/test split, no lookahead, transaction costs modeled) are sound -
 this particular rule on this particular data simply isn't a demonstrated
@@ -505,9 +509,9 @@ different story; that's exactly what the next steps below are for.
 
 ## Automated paper trading
 
-This runs the strategy against a real broker automatically, so you don't
+This runs the strategy against a real broker automatically, so I don't
 have to click anything - but against **paper** trading by default, which
-uses fake money on a real live account. No real cash is at risk until you
+uses fake money on a real live account. No real cash is at risk until I
 deliberately flip a switch described at the end of this section.
 
 ### 1. Create a free Alpaca paper account
@@ -539,7 +543,7 @@ ALPACA_BASE_URL=https://paper-api.alpaca.markets
 python live_trade.py --ticker SPY --strategy rule_based
 ```
 This prints what it *would* do (buy/sell/hold) based on today's real
-price data and your actual paper account position, but doesn't place an
+price data and my actual paper account position, but doesn't place an
 order yet. Run it a few times on different days to get a feel for it.
 
 `--ticker` takes one or more symbols, space-separated:
@@ -547,7 +551,7 @@ order yet. Run it a few times on different days to get a feel for it.
 python live_trade.py --ticker SPY AAPL QQQ --strategy rule_based
 ```
 Each ticker gets its own independent buy/sell/hold decision. If more than
-one signals BUY in the same run, available cash is split evenly across
+one signals BUY in the same run, available cash gets split evenly across
 them rather than the first one spending the whole account (pass
 `--max-notional 1000` to additionally cap the dollar amount per buy).
 
@@ -556,15 +560,15 @@ them rather than the first one spending the whole account (pass
 ```bash
 python live_trade.py --ticker SPY --strategy rule_based --execute
 ```
-This places the order for real against your **paper** account. Check the
+This places the order for real against my **paper** account. I check the
 Alpaca paper dashboard to see the fill. See "Logs and the trade dashboard"
 below for what gets recorded and where.
 
 ### 5. Make it run automatically, on a schedule
 
 The strategy is a once-a-day decision (it's based on daily closing
-prices), so schedule it to run once a day, a few minutes before market
-close (4pm ET / 3:55pm ET), on whatever machine you leave running:
+prices), so I schedule it to run once a day, a few minutes before market
+close (4pm ET / 3:55pm ET), on whatever machine I leave running:
 
 **macOS/Linux (cron):**
 ```bash
@@ -577,7 +581,7 @@ crontab -e
 `live_trade.py --ticker SPY AAPL QQQ --strategy rule_based --execute` in
 the `InvestingBot` folder, triggered daily on weekdays at 3:55pm.
 
-Your laptop needs to be on and awake at that time for cron/Task Scheduler
+My laptop needs to be on and awake at that time for cron/Task Scheduler
 to fire. If that's not realistic, see "Running without your computer on"
 below.
 
@@ -585,8 +589,8 @@ below.
 
 This repo includes `.github/workflows/paper-trade-stocks.yml` and
 `.github/workflows/paper-trade-crypto.yml`, which let GitHub run the bot
-for you on their own servers, for free, on the same schedule described
-above - no computer of yours needs to be on at all.
+for me on their own servers, for free, on the same schedule described
+above - no computer of mine needs to be on at all.
 
 **Setup:**
 1. On GitHub, go to your repo -> **Settings -> Actions -> General ->
@@ -611,7 +615,7 @@ above - no computer of yours needs to be on at all.
    file does change, the workflow commits that update back to the repo,
    so `git pull` locally will show new commits with a "Log ... trading
    run" message over time. That's the automated bot committing its own
-   log, not you.
+   log, not me.
    See "Logs and the trade dashboard" below for what's in each file.
 
 **Important - avoid double-trading:** once GitHub Actions is confirmed
@@ -636,8 +640,8 @@ both Yahoo Finance (`BTC-USD`) and Alpaca (`BTC/USD`) automatically.
 stale for hours without erroring (serving an old price as if it were
 current), so `live_trade.py` uses Alpaca's own crypto market data
 instead: the same venue trades actually execute against, and every
-fetch is checked against a staleness threshold - if the latest bar is
-older than expected for the requested interval, that ticker is skipped
+fetch gets checked against a staleness threshold - if the latest bar is
+older than expected for the requested interval, that ticker gets skipped
 for the run rather than traded on outdated data. Backtesting (`main.py`)
 still uses Yahoo Finance, since staleness doesn't matter for historical
 data and Yahoo's history window is much longer than Alpaca's crypto feed.
@@ -653,19 +657,19 @@ python live_trade.py --ticker BTC ETH SOL DOGE LTC AVAX LINK XRP DOT \
   --execute
 ```
 
-This runs on 5-minute bars, buys a 1.0%+ dip, and sells once your
-*actual* position is up 1.0% - or cuts it at -3.0% if the dip keeps
-falling instead of bouncing. These are `optimize.py`'s best
-average-across-all-9-coins combo as of this writing (see "Searching for
-better thresholds" below) - re-run that search periodically as more real
-trade history accumulates, since "best on the window tested" is not a
-permanent property.
+This runs on 5-minute bars, buys a 1.0%+ dip, and sells once my *actual*
+position is up 1.0% - or cuts it at -3.0% if the dip keeps falling
+instead of bouncing. These are `optimize.py`'s best average-across-all-
+9-coins combo as of this writing (see "Searching for better thresholds"
+below) - I re-run that search periodically as more real trade history
+accumulates, since "best on the window tested" isn't a permanent
+property.
 
 **Thresholds should match real observed volatility, not be picked
 arbitrarily.** The original 2%/2%/4% thresholds never fired a single
 trade in practice - actual short-term crypto moves during a live check
 were closer to 0.05-0.2% over 5-minute windows, so a 2% dip essentially
-never happens on that timeframe. Before changing these numbers, check
+never happens on that timeframe. Before changing these numbers, I check
 what the market is actually doing - pull real price data (e.g. via
 `main.py` or `optimize.py`, both of which fetch it fresh) rather than
 guessing. `trade_log.csv` itself only records actual BUY/SELL decisions
@@ -678,12 +682,12 @@ crypto spread/fee (roughly 0.15-0.25% each way, so ~0.3-0.5% per full
 buy-sell cycle). If `--profit-target` is smaller than that fee drag, the
 strategy loses money **on average even when directionally correct** -
 there's a real floor below which "more trades" just means "more fee
-payments," not more profit. The 1.0% target above has been kept
-deliberately above that floor; going much lower trades against the fee
-structure, not with it. Real fills so far land toward the higher end of
-that fee range - one closed trade paid about 0.25%, another about 0.44%
-- worth treating the floor as a range to stay clear of, not a precise
-number to shave against.
+payments," not more profit. I've kept the 1.0% target above deliberately
+above that floor; going much lower trades against the fee structure, not
+with it. Real fills so far land toward the higher end of that fee range
+- one closed trade paid about 0.25%, another about 0.44% - worth
+treating the floor as a range to stay clear of, not a precise number to
+shave against.
 
 **Backtest it before trusting a threshold change** - same principle as
 the stock strategy, just with intraday data and crypto-realistic fees:
@@ -712,7 +716,7 @@ Every `live_trade.py` run writes to two separate CSVs, both git-tracked so
   ticker) - and only when the account value actually differs from the
   last logged row. Most runs change nothing (no trade, no open position
   whose price moved), so most runs write nothing here at all; a real
-  change, even a small one, is still logged immediately. This keeps the
+  change, even a small one, still gets logged immediately. This keeps the
   file a clean time series of "what was the account worth, and when did
   that change" without a row for every unchanged 5-minute check-in.
 - **`logs/trade_log.csv`** - one row **per actual BUY/SELL decision**
@@ -722,12 +726,12 @@ Every `live_trade.py` run writes to two separate CSVs, both git-tracked so
   (already a percentage, e.g. `1.08` means +1.08%, not `0.0108`),
   `order_placed` (whether it was a live order vs. a dry run), and `notes`
   - a manual annotation slot, empty by default, never written by the bot
-    itself. Use it to flag a specific trade as unrepresentative (e.g.
+    itself. I use it to flag a specific trade as unrepresentative (e.g.
     "position was 2x intended size due to a since-fixed bug") without
     ever deleting or hiding the real result - `visualize_log.py` reads
     this to show both the honest full history and a "how is the
     strategy itself actually doing" view side by side, see below.
-  **HOLD decisions are not logged here** - see below for why.
+  **HOLD decisions aren't logged here** - see below for why.
 
 **Why HOLD isn't logged, and whether the crypto log will get "too big"
 eventually:** it would, if every 5-minute crypto run wrote a row per
@@ -742,20 +746,20 @@ actually happened (a BUY or SELL signal fired), which cuts the volume by
 roughly 100x based on this project's own history so far - and
 `equity_log.csv` only writes a row when the value actually changed since
 the last one, which cuts it further still, since a flat, untraded
-account produces zero new rows run after run. The pre-redesign log,
-kept for reference (and because its header didn't actually match its
-data - a real bug that motivated this rewrite), is archived at
+account produces zero new rows run after run. The pre-redesign log, kept
+for reference (and because its header didn't actually match its data - a
+real bug that motivated this rewrite), is archived at
 `logs/trade_log_archive_pre_2026-07-25.csv`.
 
 **`python visualize_log.py`** turns both files into a three-panel PNG
 (`results/trade_dashboard.png` by default): net account gain/loss,
 cumulative realized P&L from executed trades, and win/loss counts per
-ticker. Run it locally anytime for an on-demand snapshot - harmless, no
+ticker. I run it locally anytime for an on-demand snapshot - harmless, no
 network/broker access needed, just reads the two log files.
 
-**The first and second panels answer different questions and will not
-sum to the same number - that's expected, not a bug.** The first panel
-(net account gain/loss) is built from real account equity, so it's the
+**The first and second panels answer different questions and won't sum
+to the same number - that's expected, not a bug.** The first panel (net
+account gain/loss) is built from real account equity, so it's the
 authoritative "how much has this account actually made" figure. The
 second (cumulative realized P&L) only covers trades present in the
 *current* `trade_log.csv` - since that file gets rebuilt from scratch
@@ -767,38 +771,37 @@ second only for "were the trades I can actually see here profitable."
 
 **The first panel's baseline matters and is easy to misread.** By
 default it's equity minus the *first* row of `logs/equity_log.csv` -
-i.e. "gain/loss since equity logging happened to start," which is not
-the same as "since you funded the account," especially if trades were
-already open before logging began. Pass `--baseline 100000` (or
-whatever your actual starting cash was) to measure from your real
-starting point instead - the title changes to make clear which one
-you're looking at. Both are valid, they just answer different
-questions - but showing only the "since tracking began" one risks
-looking like it disagrees with what Alpaca's own dashboard says, when
-both numbers are actually correct, just measuring from different
-starting points. Use `--baseline` whenever you want the number that
-matches Alpaca's own total account P&L.
+i.e. "gain/loss since equity logging happened to start," which isn't the
+same as "since I funded the account," especially if trades were already
+open before logging began. Pass `--baseline 100000` (or whatever your
+actual starting cash was) to measure from your real starting point
+instead - the title changes to make clear which one you're looking at.
+Both are valid, they just answer different questions - but showing only
+the "since tracking began" one risks looking like it disagrees with what
+Alpaca's own dashboard says, when both numbers are actually correct,
+just measuring from different starting points. Use `--baseline` whenever
+you want the number that matches Alpaca's own total account P&L.
 
 It also runs on a schedule: `.github/workflows/update-dashboard.yml`
 regenerates and commits `results/trade_dashboard.png` roughly hourly
 (with `--baseline 100000`, via an external scheduler - GitHub's own
 `schedule:` trigger isn't reliable enough on its own here either, same
 as the trading workflows), so `results/trade_dashboard.png` on GitHub
-is close to current without needing to run anything locally - just open
-that file's page on github.com. This is deliberately a slower cadence
-than the 5-minute trading workflows: one image commit an hour is a
-small, bounded cost, where committing an image every 5 minutes forever
+stays close to current without me needing to run anything locally - just
+open that file's page on github.com. This is deliberately a slower
+cadence than the 5-minute trading workflows: one image commit an hour is
+a small, bounded cost, where committing an image every 5 minutes forever
 would not be.
 
 ### Stock automation: ML with periodic retraining
 
 Stocks run a different strategy than crypto on purpose - `ml_filtered`
-instead of the rule-based `day_trading`, so this project has one live
-example of each approach to actually compare over time, and so the ML
-path gets exercised somewhere: crypto's 5-minute bars move far less per
-bar than daily stock bars do, so a dip threshold sized for daily data
-(the live stock workflow runs at 3% - see "Current live status" above)
-would rarely fire on 5-minute crypto.
+instead of the rule-based `day_trading`, so I have one live example of
+each approach to actually compare over time, and so the ML path gets
+exercised somewhere: crypto's 5-minute bars move far less per bar than
+daily stock bars do, so a dip threshold sized for daily data (the live
+stock workflow runs at 3% - see "Current live status" above) would
+rarely fire on 5-minute crypto.
 
 `live_trade.py --strategy ml_filtered` loads whatever model is saved at
 `--model-path` (default `models/stock_model.pkl`) rather than training
@@ -808,7 +811,7 @@ one on the spot. That file is produced by a **separate** workflow,
 model (a setting that only works on one stock isn't a real edge, same
 principle as `optimize.py`) and commits the result back to the repo.
 This is what makes the live stock model "learn" in the sense of updating
-over time, instead of being fixed at the moment this code was written:
+over time, instead of being fixed at the moment I wrote this code:
 
 ```bash
 python train_stock_model.py --ticker SPY AAPL QQQ --lookback-days 730
@@ -833,7 +836,7 @@ python train_stock_model.py --ticker SPY AAPL QQQ --lookback-days 730
    `paper-trade-stocks.yml` daily near market close.
 
 Every retrain also appends a row to `logs/retrain_log.csv` (tickers
-used, training window, row count, calibrated threshold) so you can see
+used, training window, row count, calibrated threshold) so I can see
 the model's history over time, the same way `logs/trade_log.csv` tracks
 trade history.
 
@@ -858,15 +861,16 @@ leading `-` for a new flag.)
 
 It prints the top combinations by average return and writes the full
 grid to `results/param_sweep.csv`. **Before trusting whatever comes out
-on top:** open that CSV and check whether nearby parameter values also
+on top:** I open that CSV and check whether nearby parameter values also
 perform reasonably well (a real signal) or whether the winner is an
 isolated spike surrounded by much worse neighbors (almost always noise
 from testing many combinations - exactly the "parameter sensitivity
 check" step that separates a real strategy from an overfit one). Even a
-robust-looking winner should still be re-validated on a later, different
-time window before it's trusted with anything beyond fake money -
-finding good settings on one stretch of history is the easy part;
-knowing they'll hold up going forward is the part that actually matters.
+robust-looking winner still needs to be re-validated on a later,
+different time window before I'd trust it with anything beyond fake
+money - finding good settings on one stretch of history is the easy
+part; knowing they'll hold up going forward is the part that actually
+matters.
 
 ### 6. Going live (real money) - deliberately, later
 
@@ -874,60 +878,58 @@ knowing they'll hold up going forward is the part that actually matters.
 account by accident:
 1. `ALPACA_BASE_URL` must be explicitly changed to Alpaca's live endpoint
    (`https://api.alpaca.markets`) with real (non-paper) API keys.
-2. You must also pass `--i-understand-this-is-live` on the command line.
+2. I also have to pass `--i-understand-this-is-live` on the command line.
 
-Both are required; neither alone will trade real money. Don't flip these
-until you've watched the paper version run unattended for a meaningful
-stretch (weeks to months) and you understand and accept its drawdown
-behavior from the backtest above.
+Both are required; neither alone will trade real money. I'm not flipping
+these until I've watched the paper version run unattended for a
+meaningful stretch (weeks to months) and I understand and accept its
+drawdown behavior from the backtest above.
 
 ## Security: who can see what, and who can change what
 
 A public GitHub repository means the source code is visible to anyone -
-every strategy, every threshold, every workflow file. That does not mean
+every strategy, every threshold, every workflow file. That doesn't mean
 credentials are exposed; a few separate mechanisms decide what actually
 is and isn't visible or changeable:
 
-- **API keys and secrets are never in the code, and are not visible to
+- **API keys and secrets are never in the code, and aren't visible to
   anyone once saved.** They belong in **GitHub Actions secrets**
   (Settings -> Secrets and variables -> Actions), a separate, encrypted
   vault from the repository itself. A secret's value can never be viewed
-  again after saving - not by other people, not by the account owner,
-  only *used* by a workflow at runtime. If a workflow's console output
-  ever tried to print one, GitHub automatically detects and masks it as
-  `***` before the log is shown, public repo or not. This is why
-  `ALPACA_API_KEY` / `ALPACA_SECRET_KEY` live there rather than in
-  `.env` (which is git-ignored precisely so it's never committed by
-  accident either).
+  again after saving - not by other people, not by me, only *used* by a
+  workflow at runtime. If a workflow's console output ever tried to
+  print one, GitHub automatically detects and masks it as `***` before
+  the log is shown, public repo or not. This is why `ALPACA_API_KEY` /
+  `ALPACA_SECRET_KEY` live there rather than in `.env` (which is
+  git-ignored precisely so it's never committed by accident either).
 - **Tokens used by an external scheduler (e.g. cron-job.org) live
   entirely outside this repository** - in that service's own account
   configuration, invisible to anyone browsing GitHub. Such a token is
   still a real, live credential: anyone who obtained it could trigger
-  the linked workflows on demand. Scoping it as narrowly as
-  possible - e.g. "Actions: read and write" on only this one
-  repository, nothing else - limits the damage a leaked token could
-  do to spam-triggering workflow runs, not pushing code or reaching a
-  broker account directly.
+  the linked workflows on demand. Scoping it as narrowly as possible -
+  e.g. "Actions: read and write" on only this one repository, nothing
+  else - limits the damage a leaked token could do to spam-triggering
+  workflow runs, not pushing code or reaching a broker account directly.
 - **Only explicitly added collaborators can push or edit code.** Check
   Settings -> Collaborators and teams on GitHub to see exactly who
-  currently has write access - by default, that's just the repository
-  owner. Being public means anyone can fork the repo and open a pull
-  request proposing a change, but a pull request is only a proposal
-  sitting in a queue: nothing merges into the repository unless someone
-  with write access reviews and approves it.
+  currently has write access - by default, that's just me, the
+  repository owner. Being public means anyone can fork the repo and open
+  a pull request proposing a change, but a pull request is only a
+  proposal sitting in a queue: nothing merges into the repository unless
+  someone with write access reviews and approves it.
 - **Making a repository private** (Settings -> General -> Danger Zone ->
   Change visibility) hides the source code from public view entirely.
   It's purely a visibility toggle - it doesn't touch secrets or
-  workflows, and the automation described throughout this README
-  continues to work identically either way.
+  workflows, and the automation described throughout this README keeps
+  working identically either way.
 
 ## Before this touches real money
 
 1. **Re-run on real data, multiple tickers, multiple periods.** One
-   ticker and one train/test split proves nothing. Loop over several
-   tickers (different sectors, not just SPY) and several non-overlapping
-   time windows, including at least one real bear market and one real
-   bull run.
+   ticker and one train/test split proves nothing. I need to loop over
+   several tickers (different sectors, not just SPY) and several
+   non-overlapping time windows, including at least one real bear market
+   and one real bull run.
 2. **Walk-forward validation**, not a single train/test split - retrain
    periodically on a rolling window and test only on the period
    immediately after, repeated across the full history.
@@ -942,10 +944,12 @@ is and isn't visible or changeable:
 5. **Understand the failure mode going in**: this strategy is
    mean-reversion. It does reasonably in choppy, range-bound markets and
    can lose significantly in a sustained downtrend, where "the dip" just
-   keeps dropping. Know that going in rather than discovering it live.
+   keeps dropping. I want to know that going in rather than discover it
+   live.
 
 ## Disclaimer
 
 This project is for education and research. Nothing here is financial
-advice, and past backtest performance - synthetic or real - does not
-predict future results.
+advice, and past backtest performance - synthetic or real - doesn't
+predict future results. I built this to learn, not to manage anyone's
+money, including my own, until it earns that.
