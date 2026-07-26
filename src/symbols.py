@@ -47,8 +47,6 @@ def resolve_symbol(ticker: str) -> Symbol:
 
     # Case 1: already in Alpaca's "BASE/QUOTE" form, e.g. "BTC/USD".
     if "/" in t:
-        # Everything before the "/" - e.g. "BTC" out of "BTC/USD".
-        base = t.split("/")[0]
         # Yahoo wants a dash instead of a slash; Alpaca's format is already
         # exactly what was passed in, so reuse it as-is. Assumed crypto,
         # since only crypto pairs use this slash notation in this project.

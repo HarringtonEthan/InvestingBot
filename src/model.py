@@ -37,7 +37,16 @@ def build_labels(df: pd.DataFrame, horizon: int = 10, bounce_pct: float = 0.03) 
     # today's close within the lookahead window? True/False as a 0.0/1.0
     # float (astype(float) below) since that's what the classifier wants.
     bounced = (future_max / close - 1.0) >= bounce_pct
-    return bounced.astype(float)
+    labels = bounced.astype(float)
+    # The comparison above turns a NaN future_max (the last `horizon - 1`
+    # rows, which don't have enough future bars left to know the real
+    # answer) into False, and astype(float) then turns that into a
+    # confident-looking 0.0 - i.e. "confirmed did not bounce," when the
+    # truth is genuinely unknown. Explicitly re-mask those rows back to
+    # NaN so _labeled_features() below actually excludes them instead of
+    # training on a fabricated answer.
+    labels[future_max.isna()] = np.nan
+    return labels
 
 
 def _labeled_features(df: pd.DataFrame, horizon: int, bounce_pct: float):

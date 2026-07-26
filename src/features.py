@@ -73,9 +73,21 @@ def _rsi(series: pd.Series, window: int) -> pd.Series:
     rs = avg_gain / avg_loss.replace(0, np.nan)
     # The standard RSI formula, converting that ratio into a 0-100 scale.
     rsi = 100 - (100 / (1 + rs))
-    # Wherever RSI came out as NaN (not enough history yet, or the
-    # divide-by-zero case above), default to 50 - the neutral midpoint,
-    # meaning "no opinion" rather than leaving a gap in the data.
+    # A window with zero losses and at least one gain is a pure uptrend -
+    # by the standard RSI convention that's 100 (maximally overbought),
+    # not "unknown." The rs calculation above turns this case into NaN
+    # (avg_loss was replaced with NaN before dividing), so it has to be
+    # patched in explicitly here rather than left to fall through to the
+    # generic NaN handling below, which would otherwise mute a genuinely
+    # strong uptrend signal down to a neutral 50.
+    rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+    # The symmetric all-losses case (avg_gain == 0, avg_loss > 0) needs no
+    # patch - rs is a real 0.0 there (0 divided by a nonzero number, not a
+    # divide-by-zero), so the formula above already correctly computes 0.
+    # Wherever RSI is still NaN at this point - not enough history yet for
+    # the rolling window, or price didn't move at all during the window
+    # (avg_gain and avg_loss both exactly 0) - default to 50, the neutral
+    # midpoint, since there's genuinely no directional signal to report.
     return rsi.fillna(50)
 
 

@@ -37,8 +37,10 @@ import pandas as pd
 
 # The backtest engine that turns a position series into an equity curve.
 from src.backtest import run_backtest
-# Loads real (or synthetic fallback) price data.
-from src.data import get_price_data
+# Loads real (or synthetic fallback) price data; also has the table of how
+# many bars occur per year at each intraday interval, reused below so
+# annualized stats scale correctly for non-daily bars.
+from src.data import PERIODS_PER_YEAR_24_7, get_price_data
 # Computes technical indicator columns from raw price data.
 from src.features import add_features
 # Trains the ML dip-filter model.
@@ -63,6 +65,12 @@ def run_for_ticker(ticker: str, args):
     print(f"=== {ticker} ===")
     print(f"Data source: {label}")
     print(f"Rows: {len(raw)}  Range: {raw.index.min().date()} -> {raw.index.max().date()}\n")
+
+    # How many bars occur per year at this --interval, so annualized
+    # return/vol/Sharpe are scaled correctly below - 252 (standard US
+    # trading days) for daily bars, or the 24/7 bars-per-year figure for
+    # anything intraday (matches how crypto actually trades around the clock).
+    periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
 
     # Add all the technical indicator columns (SMA, RSI, etc.) used by
     # both the rule-based strategies and the ML model.
@@ -111,7 +119,7 @@ def run_for_ticker(ticker: str, args):
     for name, position in strategies.items():
         # Turn this strategy's position series into an actual simulated
         # equity curve and performance stats.
-        result = run_backtest(test_df["Close"], position, cost_bps=args.cost_bps)
+        result = run_backtest(test_df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
         results[name] = result
         print(
             f"{name:<28}{result.total_return:>11.1%} {result.annualized_return:>11.1%} "
@@ -169,9 +177,10 @@ def main():
                               "day-trading-style strategies - and keep --start recent, since Yahoo "
                               "Finance only keeps a limited window of intraday history.")
     parser.add_argument("--cost-bps", type=float, default=5.0,
-                         help="round-trip cost assumption in basis points; crypto fees run higher "
-                              "than stocks (try 15-25) so don't leave this at the stock default "
-                              "when backtesting day_trading on crypto")
+                         help="cost in basis points charged on EACH position change (so a full "
+                              "buy-then-sell round trip pays this twice, not once); crypto fees "
+                              "run higher than stocks (try 15-25) so don't leave this at the "
+                              "stock default when backtesting day_trading on crypto")
     parser.add_argument("--dip-threshold", type=float, default=-0.02,
                          help="day-trading strategy: dip entry threshold, e.g. -0.02 = 2%% below rolling average")
     parser.add_argument("--profit-target", type=float, default=0.02,

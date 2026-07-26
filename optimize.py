@@ -35,20 +35,22 @@ import pandas as pd
 
 # The backtest engine used to score every parameter combination.
 from src.backtest import run_backtest
-# Price data loading.
-from src.data import get_price_data
+# Price data loading; also the bars-per-year table for intraday intervals,
+# reused so the Sharpe column here is scaled correctly for --interval 5m
+# and similar, not silently assuming daily bars.
+from src.data import PERIODS_PER_YEAR_24_7, get_price_data
 # Technical indicator computation.
 from src.features import add_features
 # The one strategy this script sweeps parameters for.
 from src.strategies import dip_buy_profit_target
 
 
-def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_bps: float, min_trades: float):
+def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_bps: float, min_trades: float, periods_per_year: float):
     returns, sharpes, trades = [], [], []
     for test_df in test_dfs.values():
         # Run this one parameter combination against every ticker's data.
         position = dip_buy_profit_target(test_df, dip_threshold=dip, profit_target=profit, stop_loss=stop)
-        result = run_backtest(test_df["Close"], position, cost_bps=cost_bps)
+        result = run_backtest(test_df["Close"], position, cost_bps=cost_bps, periods_per_year=periods_per_year)
         returns.append(result.total_return)
         if result.sharpe == result.sharpe:  # skip NaN (zero-trade combos)
             # A NaN never equals itself, so this comparison is a compact
@@ -85,7 +87,9 @@ def main():
     parser.add_argument("--split", required=True, help="only data from here onward is used (held-out test period)")
     parser.add_argument("--end", required=True)
     parser.add_argument("--interval", default="5m")
-    parser.add_argument("--cost-bps", type=float, default=20.0)
+    parser.add_argument("--cost-bps", type=float, default=20.0,
+                         help="cost in basis points charged on EACH position change - a full "
+                              "buy-then-sell round trip pays this twice, not once")
     parser.add_argument("--dip-values", default="-0.003,-0.005,-0.008,-0.01,-0.015,-0.02")
     parser.add_argument("--profit-values", default="0.005,0.008,0.01,0.015,0.02")
     parser.add_argument("--stop-values", default="0.01,0.015,0.02,0.03")
@@ -126,6 +130,12 @@ def main():
         # Every single ticker failed to produce usable data - nothing to sweep.
         raise SystemExit("\nNo usable ticker data - this needs real network access to Yahoo Finance.")
 
+    # How many bars occur per year at this --interval, so the avg_sharpe
+    # column is annualized correctly - 252 for daily bars, or the 24/7
+    # bars-per-year figure for anything intraday (this script mostly runs
+    # against 5-minute crypto data, which is drastically different from 252).
+    periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
+
     # Every possible (dip, profit, stop) triple from the three value lists -
     # this is the actual "grid" the grid search tests exhaustively.
     combos = list(itertools.product(dip_values, profit_values, stop_values))
@@ -138,7 +148,7 @@ def main():
     # both be tested for "is not None" and used in the list comprehension
     # without calling evaluate_combo twice.
     rows = [r for dip, profit, stop in combos
-            if (r := evaluate_combo(test_dfs, dip, profit, stop, args.cost_bps, args.min_trades)) is not None]
+            if (r := evaluate_combo(test_dfs, dip, profit, stop, args.cost_bps, args.min_trades, periods_per_year)) is not None]
 
     if not rows:
         raise SystemExit("No combination met --min-trades; lower it or widen the parameter ranges.")

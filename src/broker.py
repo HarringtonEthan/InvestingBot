@@ -97,25 +97,47 @@ class Broker:
         # slash form - only these per-symbol lookups need it stripped.
         return symbol.replace("/", "")
 
+    @staticmethod
+    def _is_position_not_found(err: APIError) -> bool:
+        # Alpaca returns HTTP 404 specifically when the position genuinely
+        # doesn't exist - that's the ONLY case that should be silently
+        # treated as "holding zero." Anything else (401 auth failure, 429
+        # rate limit, 5xx server error, a malformed request, ...) is a
+        # real problem that looks identical to "no position" if every
+        # APIError is caught the same way - which is exactly how a
+        # transient failure could get mistaken for "not holding this
+        # coin" and let a fresh dip signal buy into it a second time, the
+        # same failure shape as the slash-URL bug above. status_code can
+        # be None if the SDK didn't attach an HTTP response (e.g. a
+        # connection-level failure) - treat that as "not confirmed 404"
+        # too, so it re-raises rather than being silently swallowed.
+        return err.status_code == 404
+
     def get_position_qty(self, symbol: str) -> float:
         try:
             # Ask Alpaca for the currently open position in this symbol
             # (using the slash-stripped form - see _position_symbol above).
             pos = self.client.get_open_position(self._position_symbol(symbol))
             return float(pos.qty)
-        except APIError:
-            # No open position (or the lookup failed) - treat as holding
-            # zero rather than propagating the error up.
-            return 0.0
+        except APIError as e:
+            if self._is_position_not_found(e):
+                # Genuinely no position held - zero is the correct answer.
+                return 0.0
+            # Some other real failure (auth, rate limit, server error) -
+            # let it propagate instead of silently reporting "no position"
+            # for a problem that has nothing to do with position size.
+            raise
 
     def get_position_avg_entry_price(self, symbol: str) -> float | None:
         """Your actual real cost basis for an open position, or None if you don't hold one."""
         try:
             pos = self.client.get_open_position(self._position_symbol(symbol))
             return float(pos.avg_entry_price)
-        except APIError:
-            # No position to have an entry price for.
-            return None
+        except APIError as e:
+            if self._is_position_not_found(e):
+                # No position to have an entry price for.
+                return None
+            raise
 
     def has_open_order(self, symbol: str) -> bool:
         """
@@ -132,6 +154,14 @@ class Broker:
         orders = self.client.get_orders(filter=request)
         # Any result at all means there's already an order out there.
         return len(orders) > 0
+
+    def get_order(self, order_id):
+        """
+        Look up an order by its ID - used right after submitting one, to
+        check whether it's actually filled yet (status, filled_qty,
+        filled_avg_price) rather than assuming submission == execution.
+        """
+        return self.client.get_order_by_id(order_id)
 
     def buy_notional(self, symbol: str, notional: float, is_crypto: bool = False):
         # Crypto orders on Alpaca don't support DAY (there's no market

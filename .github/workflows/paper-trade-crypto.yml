@@ -16,6 +16,11 @@ concurrency:
 jobs:
   trade:
     runs-on: ubuntu-latest
+    # A hung run has no cutoff otherwise (GitHub's own default is 6
+    # hours) and, since cancel-in-progress is false above, would just
+    # queue up every subsequent 5-minute trigger behind it instead of
+    # replacing it. 4 minutes leaves margin before the next scheduled run.
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
 

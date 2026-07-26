@@ -55,11 +55,14 @@ def get_price_data(
         # anyway, so it's better to fall back to synthetic in that case.
         if df is not None and len(df) > 50:
             return df, False  # False = "this is NOT synthetic data"
-    except Exception:
+    except Exception as e:
         # Deliberately swallow any error type here - whatever went wrong
         # with the real fetch, the fallback below is the recovery path,
-        # not re-raising the exception.
-        pass
+        # not re-raising the exception. Still print what happened, though -
+        # a fully silent `pass` here would hide a genuine bug in
+        # _fetch_real() itself behind what looks like an ordinary "no
+        # network access" fallback.
+        print(f"[{ticker}] Real data fetch failed ({type(e).__name__}: {e}) - falling back to synthetic data.")
 
     # Real data unavailable or too sparse - generate a fake-but-realistic
     # series instead, and flag it as such (the True at the end).

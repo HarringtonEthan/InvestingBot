@@ -22,16 +22,22 @@ Safety defaults:
 from __future__ import annotations
 
 # argparse for command-line flags; csv for reading/writing the log files;
-# datetime for timestamps; math for isnan() checks; Path for file handling.
+# datetime for timestamps; math for isnan() checks; time for the brief
+# post-order fill-polling pause; Path for file handling.
 import argparse
 import csv
 import datetime as dt
 import math
+import time
 from pathlib import Path
 
 # Loads ALPACA_API_KEY / ALPACA_SECRET_KEY / ALPACA_BASE_URL from a local
 # .env file into the environment, so they don't need to be exported by hand.
 from dotenv import load_dotenv
+
+# The status value that means an order has actually been executed - used
+# to distinguish a confirmed fill from a merely-submitted order.
+from alpaca.trading.enums import OrderStatus
 
 # Alpaca-sourced crypto price bars (used instead of Yahoo for crypto - see
 # module docstring in src/alpaca_data.py).
@@ -159,6 +165,27 @@ def log_equity(row: dict):
     if _last_equity_values() == (row["portfolio_value_usd"], row["cash_usd"]):
         return
     _append_row(EQUITY_LOG_PATH, EQUITY_LOG_FIELDS, row)
+
+
+def poll_for_fill(broker: Broker, order, attempts: int = 3, delay_seconds: float = 2.0):
+    """
+    Briefly poll Alpaca for whether a just-submitted order has actually
+    filled, instead of assuming submission == execution (a market order
+    can take a moment, or - as happened with two real QQQ orders in this
+    project's history - never fill at all if submitted outside market
+    hours). Returns (filled, filled_qty, filled_avg_price); the last two
+    are None if it hasn't filled within the polling window - that's a
+    legitimate outcome (it may still fill later on its own), not an error.
+    """
+    for attempt in range(attempts):
+        # No need to sleep before the very first check - the order may
+        # already be filled by the time submit_order() returned.
+        if attempt > 0:
+            time.sleep(delay_seconds)
+        current = broker.get_order(order.id)
+        if current.status == OrderStatus.FILLED:
+            return True, float(current.filled_qty), float(current.filled_avg_price)
+    return False, None, None
 
 
 def decide(ticker: str, args, broker: Broker):
@@ -308,11 +335,19 @@ def main():
     tickers = args.ticker
     decisions = []
     for ticker in tickers:
-        # decide() may return None (data unusable/skipped) - only keep
-        # the tickers that produced an actual decision.
-        decision = decide(ticker, args, broker)
-        if decision is not None:
-            decisions.append(decision)
+        try:
+            # decide() may return None (data unusable/skipped) - only keep
+            # the tickers that produced an actual decision.
+            decision = decide(ticker, args, broker)
+            if decision is not None:
+                decisions.append(decision)
+        except Exception as e:
+            # One ticker's API call failing (network blip, rate limit,
+            # etc.) used to have no containment here - an uncaught
+            # exception from decide() would crash the whole run, silently
+            # skipping every other ticker for this cycle too, not just the
+            # one that failed. Catch, report, and move on instead.
+            print(f"[{ticker}] ERROR during decide(): {type(e).__name__}: {e} - skipping this ticker this run.")
 
     # Split whatever cash is available evenly across tickers being watched
     # this run, so several simultaneous BUY signals don't let the first
@@ -325,75 +360,101 @@ def main():
         symbol = decision["symbol"]
         action = decision["action"]
 
-        kind = "crypto" if symbol.is_crypto else "stock"
-        gain_str = f"  unrealized={decision['gain_pct']:+.2%}" if decision["gain_pct"] is not None else ""
-        # When not holding, gain_pct is always None (nothing to compute a
-        # gain on) - show how close price is to the dip threshold instead,
-        # so "is it about to buy this?" has an actual answer in the log.
-        dip_str = ""
-        if decision["gain_pct"] is None and decision["pct_below_sma20"] is not None and args.strategy == "day_trading":
-            dip_str = f"  vs_20period_avg={decision['pct_below_sma20']:+.2%} (buys at {args.dip_threshold:+.2%})"
-        print(f"[{mode}] {ticker} ({kind}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
-              f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}{dip_str}  -> {action}")
+        try:
+            kind = "crypto" if symbol.is_crypto else "stock"
+            gain_str = f"  unrealized={decision['gain_pct']:+.2%}" if decision["gain_pct"] is not None else ""
+            # When not holding, gain_pct is always None (nothing to compute a
+            # gain on) - show how close price is to the dip threshold instead,
+            # so "is it about to buy this?" has an actual answer in the log.
+            dip_str = ""
+            if decision["gain_pct"] is None and decision["pct_below_sma20"] is not None and args.strategy == "day_trading":
+                dip_str = f"  vs_20period_avg={decision['pct_below_sma20']:+.2%} (buys at {args.dip_threshold:+.2%})"
+            print(f"[{mode}] {ticker} ({kind}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
+                  f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}{dip_str}  -> {action}")
 
-        executed = False
-        notional = None
-        if action != "HOLD" and args.execute:
-            if action == "BUY":
-                if broker.has_open_order(symbol.alpaca):
-                    # Already an unfilled order sitting out there for this
-                    # symbol (e.g. a DAY order queued after market close) -
-                    # don't stack a second one on top of it.
-                    print(f"[{ticker}] Skipping BUY - an order for this symbol is already open/unfilled.")
-                else:
-                    # Re-check cash right before spending it (not the
-                    # earlier starting_cash snapshot), in case an earlier
-                    # ticker in this same loop already spent some of it.
-                    cash_now = broker.get_cash()
-                    budget = min(per_ticker_budget, args.max_notional) if args.max_notional else per_ticker_budget
-                    notional = min(budget, cash_now)
-                    if notional < 1.0:
-                        # Too little cash left to place a meaningful order.
-                        print(f"[{ticker}] Not enough cash to buy; skipping.")
-                        notional = None
+            executed = False
+            notional = None
+            # The logged trade price - starts as the decision-time market
+            # price, replaced below with the real confirmed fill price
+            # when poll_for_fill() finds one; see its docstring above.
+            fill_note = ""
+            fill_price = decision["last_price"]
+            if action != "HOLD" and args.execute:
+                if action == "BUY":
+                    if broker.has_open_order(symbol.alpaca):
+                        # Already an unfilled order sitting out there for this
+                        # symbol (e.g. a DAY order queued after market close) -
+                        # don't stack a second one on top of it.
+                        print(f"[{ticker}] Skipping BUY - an order for this symbol is already open/unfilled.")
                     else:
-                        broker.buy_notional(symbol.alpaca, notional, is_crypto=symbol.is_crypto)
-                        print(f"[{ticker}] Submitted BUY order for ${notional:.2f}.")
-                        executed = True
-            elif action == "SELL":
-                broker.close_position(symbol.alpaca)
-                print(f"[{ticker}] Submitted order to close position.")
-                executed = True
-        elif action != "HOLD":
-            # A real BUY/SELL signal fired, but --execute wasn't passed -
-            # report what would have happened without actually doing it.
-            print(f"[{ticker}] Dry run (pass --execute to actually place this order).")
+                        # Re-check cash right before spending it (not the
+                        # earlier starting_cash snapshot), in case an earlier
+                        # ticker in this same loop already spent some of it.
+                        cash_now = broker.get_cash()
+                        budget = min(per_ticker_budget, args.max_notional) if args.max_notional else per_ticker_budget
+                        notional = min(budget, cash_now)
+                        if notional < 1.0:
+                            # Too little cash left to place a meaningful order.
+                            print(f"[{ticker}] Not enough cash to buy; skipping.")
+                            notional = None
+                        else:
+                            order = broker.buy_notional(symbol.alpaca, notional, is_crypto=symbol.is_crypto)
+                            filled, filled_qty, filled_avg_price = poll_for_fill(broker, order)
+                            if filled:
+                                # Use the real fill price, not the decision-time
+                                # market price - that's what realized P&L should
+                                # actually be computed from later.
+                                fill_price = filled_avg_price
+                                print(f"[{ticker}] BUY filled: {filled_qty} @ ${filled_avg_price:.6f}.")
+                            else:
+                                fill_note = "Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
+                                print(f"[{ticker}] Submitted BUY order for ${notional:.2f} (fill not yet confirmed).")
+                            executed = True
+                elif action == "SELL":
+                    order = broker.close_position(symbol.alpaca)
+                    filled, filled_qty, filled_avg_price = poll_for_fill(broker, order)
+                    if filled:
+                        fill_price = filled_avg_price
+                        print(f"[{ticker}] SELL filled: {filled_qty} @ ${filled_avg_price:.6f}.")
+                    else:
+                        fill_note = "Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
+                        print(f"[{ticker}] Submitted order to close position (fill not yet confirmed).")
+                    executed = True
+            elif action != "HOLD":
+                # A real BUY/SELL signal fired, but --execute wasn't passed -
+                # report what would have happened without actually doing it.
+                print(f"[{ticker}] Dry run (pass --execute to actually place this order).")
 
-        # Only real decisions get a row - HOLD is the overwhelming majority
-        # of runs (especially on the 5-minute crypto schedule) and isn't
-        # informative enough to justify a permanent, git-committed row every
-        # single time. Full per-run detail, including HOLDs, is still
-        # visible in that run's GitHub Actions console log if you need it.
-        if action != "HOLD":
-            log_trade({
-                "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-                "mode": mode,
-                "asset_class": kind,
-                "ticker": ticker,
-                "strategy": args.strategy,
-                "action": action,
-                # 2 decimals rounds sub-$1 assets (e.g. DOGE at $0.07) down to
-                # nothing - price_usd and avg_entry_price_usd need enough
-                # precision to tell entry and exit price apart, since that
-                # difference is exactly what realized P&L is computed from.
-                "price_usd": f"{decision['last_price']:.6f}",
-                "notional_usd": f"{notional:.2f}" if notional is not None else "",
-                "position_qty_before": decision["current_qty"],
-                "avg_entry_price_usd": f"{decision['entry_price']:.6f}" if decision["entry_price"] else "",
-                "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
-                "order_placed": executed,
-                "notes": "",
-            })
+            # Only real decisions get a row - HOLD is the overwhelming majority
+            # of runs (especially on the 5-minute crypto schedule) and isn't
+            # informative enough to justify a permanent, git-committed row every
+            # single time. Full per-run detail, including HOLDs, is still
+            # visible in that run's GitHub Actions console log if you need it.
+            if action != "HOLD":
+                log_trade({
+                    "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                    "mode": mode,
+                    "asset_class": kind,
+                    "ticker": ticker,
+                    "strategy": args.strategy,
+                    "action": action,
+                    # 2 decimals rounds sub-$1 assets (e.g. DOGE at $0.07) down to
+                    # nothing - price_usd and avg_entry_price_usd need enough
+                    # precision to tell entry and exit price apart, since that
+                    # difference is exactly what realized P&L is computed from.
+                    "price_usd": f"{fill_price:.6f}",
+                    "notional_usd": f"{notional:.2f}" if notional is not None else "",
+                    "position_qty_before": decision["current_qty"],
+                    "avg_entry_price_usd": f"{decision['entry_price']:.6f}" if decision["entry_price"] else "",
+                    "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
+                    "order_placed": executed,
+                    "notes": fill_note,
+                })
+        except Exception as e:
+            # Same reasoning as the decide() loop above - one ticker's
+            # order placement or logging failing shouldn't stop the rest
+            # of this run's tickers from being processed.
+            print(f"[{ticker}] ERROR while executing/logging: {type(e).__name__}: {e}")
 
     # Always log account-level equity/cash at the end of every run
     # (subject to the "only if it changed" dedup inside log_equity above),

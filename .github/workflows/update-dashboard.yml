@@ -20,6 +20,8 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
+    # A hung run has no cutoff otherwise (GitHub's own default is 6 hours).
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

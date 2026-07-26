@@ -29,6 +29,7 @@ def run_backtest(
     target_position: pd.Series,
     initial_capital: float = 10_000.0,
     cost_bps: float = 5.0,
+    periods_per_year: float = 252,
 ) -> BacktestResult:
     """
     target_position[t] is the desired fraction of capital in the asset
@@ -36,6 +37,14 @@ def run_backtest(
     assumed executed at day t+1's close (no lookahead, one day of
     execution lag), and each change in position incurs `cost_bps` basis
     points of the traded notional as a simple slippage/fee model.
+
+    `periods_per_year` controls the annualized-return/vol/Sharpe scaling
+    and must match whatever bar size `close`/`target_position` actually
+    use - 252 (the default) is correct for daily stock bars, but wrong
+    for anything else: 5-minute crypto bars, for example, have ~105,120
+    periods in a year, not 252. Passing the wrong value doesn't affect
+    total_return or max_drawdown (those aren't annualized), only the
+    annualized_return/annualized_vol/sharpe fields.
     """
     # Line up the price series to exactly the same dates as the strategy's
     # position series, in case they came in with different date ranges.
@@ -72,23 +81,23 @@ def run_backtest(
 
     # Overall return from the very first to the very last equity value.
     total_return = equity.iloc[-1] / equity.iloc[0] - 1
-    n_days = len(equity)
-    years = n_days / 252  # 252 = standard number of US trading days per year
+    n_bars = len(equity)
+    years = n_bars / periods_per_year  # e.g. 252 trading days/year for daily bars
     # Convert the total return into an equivalent constant annual rate -
     # e.g. doubling your money over 2 years is a ~41%/year annualized
     # return, not 100%/year. Guarded against years <= 0 (degenerate case
     # of a near-empty backtest) to avoid a divide-by-zero/negative-power error.
     annualized_return = (equity.iloc[-1] / equity.iloc[0]) ** (1 / years) - 1 if years > 0 else np.nan
 
-    # Standard deviation of daily returns, scaled up to a yearly figure by
-    # multiplying by sqrt(252) - volatility scales with the square root of
-    # time, not time itself.
-    vol = strategy_ret.std() * np.sqrt(252)
+    # Standard deviation of per-bar returns, scaled up to a yearly figure
+    # by multiplying by sqrt(periods_per_year) - volatility scales with
+    # the square root of time, not time itself.
+    vol = strategy_ret.std() * np.sqrt(periods_per_year)
     # Sharpe ratio: annualized average return divided by annualized
     # volatility - a measure of return per unit of risk taken. Guarded
     # against vol == 0 (a strategy that never actually took a position,
     # for example) to avoid dividing by zero.
-    sharpe = (strategy_ret.mean() * 252) / vol if vol > 0 else np.nan
+    sharpe = (strategy_ret.mean() * periods_per_year) / vol if vol > 0 else np.nan
 
     # Running peak equity value seen so far at each point in time.
     running_max = equity.cummax()
