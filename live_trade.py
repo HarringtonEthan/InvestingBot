@@ -18,26 +18,43 @@ Safety defaults:
   - Aborts a ticker instead of trading it on synthetic/fallback data.
 """
 
+# Lets type hints work without issue in this Python version.
 from __future__ import annotations
 
+# argparse for command-line flags; csv for reading/writing the log files;
+# datetime for timestamps; math for isnan() checks; Path for file handling.
 import argparse
 import csv
 import datetime as dt
 import math
 from pathlib import Path
 
+# Loads ALPACA_API_KEY / ALPACA_SECRET_KEY / ALPACA_BASE_URL from a local
+# .env file into the environment, so they don't need to be exported by hand.
 from dotenv import load_dotenv
 
+# Alpaca-sourced crypto price bars (used instead of Yahoo for crypto - see
+# module docstring in src/alpaca_data.py).
 from src.alpaca_data import get_crypto_bars
+# The Alpaca account/order wrapper.
 from src.broker import Broker
+# Yahoo Finance (or synthetic fallback) price data, used for stocks.
 from src.data import get_price_data
+# Technical indicator computation.
 from src.features import add_features
+# Inline ML model training, used as a fallback if no saved model exists.
 from src.model import train_model
+# Loading a previously-trained-and-saved ML model from disk.
 from src.model_store import load_model as load_saved_model
+# The trading strategies this script can be told to run.
 from src.strategies import bollinger_breakout, ml_filtered_dip_buy, rule_based_dip_buy
+# Resolves a bare ticker string into its Yahoo/Alpaca symbol forms.
 from src.symbols import resolve_symbol
 
+# Where every actual BUY/SELL decision gets appended as a row.
 TRADE_LOG_PATH = Path("logs/trade_log.csv")
+# Fixed column order for trade_log.csv - see the comment on _append_row
+# below for why this is a fixed list rather than derived from each row.
 TRADE_LOG_FIELDS = [
     "timestamp_utc", "mode", "asset_class", "ticker", "strategy",
     "action", "price_usd", "notional_usd", "position_qty_before",
@@ -69,12 +86,17 @@ def get_target_position(df, args) -> float:
     if strategy == "rule_based":
         series = rule_based_dip_buy(df, dip_threshold=args.dip_threshold)
     elif strategy == "ml_filtered":
+        # Prefer a model that was trained ahead of time and saved to disk
+        # (via train_stock_model.py on a schedule) over training one from
+        # scratch on every single live run.
         saved = load_saved_model(args.model_path) if args.model_path else None
         if saved is not None:
             model, threshold, meta = saved
             print(f"[ml_filtered] Using saved model from {args.model_path} "
                   f"(trained {meta.get('trained_at', '?')} on {meta.get('tickers', '?')})")
         else:
+            # No saved model found - fall back to training inline just for
+            # this run, but warn that this result won't persist.
             print(f"[ml_filtered] No saved model at {args.model_path!r} - training one inline "
                   f"from just this run's data instead (won't persist between runs). Run "
                   f"train_stock_model.py on a schedule to avoid this - see README.md.")
@@ -86,6 +108,8 @@ def get_target_position(df, args) -> float:
         )
     else:
         raise ValueError(f"unknown strategy: {strategy}")
+    # Only the most recent bar's decision matters for a live run - past
+    # bars in the series were just needed to compute it correctly.
     return float(series.iloc[-1])
 
 
@@ -95,7 +119,11 @@ def _append_row(path: Path, fieldnames: list[str], row: dict):
     # changed after the file (and its header) already existed, every
     # subsequent row silently drifted out of alignment with its own header.
     path.parent.mkdir(parents=True, exist_ok=True)
+    # Whether the file exists yet, checked before opening it, decides
+    # whether a header row needs to be written first.
     is_new = not path.exists()
+    # "a" = append mode (never overwrites existing rows); newline="" is
+    # required by Python's csv module to avoid extra blank lines on Windows.
     with path.open("a", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         if is_new:
@@ -113,6 +141,8 @@ def _last_equity_values() -> tuple[str, str] | None:
     if not EQUITY_LOG_PATH.exists():
         return None
     with EQUITY_LOG_PATH.open(newline="") as f:
+        # Read every row into a list of dicts (one dict per row, keyed by
+        # the header column names) so the last one can be grabbed easily.
         rows = list(csv.DictReader(f))
     if not rows:
         return None
@@ -133,7 +163,11 @@ def log_equity(row: dict):
 
 def decide(ticker: str, args, broker: Broker):
     """Returns a dict describing the decision for one ticker, or None if data was unusable."""
+    # Figures out both the Yahoo-format and Alpaca-format symbol strings,
+    # and whether this ticker is crypto or a stock/ETF.
     symbol = resolve_symbol(ticker)
+    # Use the explicit --lookback-days if given, otherwise pick a sane
+    # default for whatever bar interval was requested.
     lookback_days = args.lookback_days or DEFAULT_LOOKBACK_DAYS.get(args.interval, 30)
 
     if symbol.is_crypto:
@@ -144,21 +178,33 @@ def decide(ticker: str, args, broker: Broker):
         try:
             raw = get_crypto_bars(symbol.alpaca, args.interval, lookback_days)
         except Exception as e:
+            # Any failure fetching crypto bars (network error, stale-data
+            # rejection, etc.) - skip this ticker for this run rather than
+            # crash the whole script over one bad ticker.
             print(f"[{ticker}] SKIPPED: {e}")
             return None
     else:
+        # Stocks use plain Yahoo Finance, looking back lookback_days from today.
         end = dt.date.today()
         start = end - dt.timedelta(days=lookback_days)
         raw, is_synthetic = get_price_data(symbol.yfinance, start.isoformat(), end.isoformat(), interval=args.interval)
         if is_synthetic:
+            # Never trade real (paper) money on made-up fallback data -
+            # bail out for this ticker if Yahoo Finance wasn't reachable.
             print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
                   f"(no real network access to Yahoo Finance from here).")
             return None
 
+    # Compute technical indicators on whatever price data was fetched.
     df = add_features(raw)
+    # The most recent closing price and the timestamp it belongs to -
+    # what the trading decision is actually based on.
     last_price = float(df["Close"].iloc[-1])
     last_date = df.index[-1]
 
+    # Ask the broker (Alpaca, ground truth) how much of this asset is
+    # actually currently held - not derived from the log file, which
+    # could be stale or incomplete.
     current_qty = broker.get_position_qty(symbol.alpaca)
     currently_holding = current_qty > 0
 
@@ -167,8 +213,13 @@ def decide(ticker: str, args, broker: Broker):
     pct_below = None
 
     if args.strategy == "day_trading":
+        # How far below (negative) or above the 20-period average price
+        # currently sits - the dip signal this strategy buys on.
         pct_below = float(df["pct_below_sma20"].iloc[-1])
         if currently_holding:
+            # Already holding - decide whether to sell based on real
+            # profit/loss versus the broker's actual average entry price
+            # (not the moving average, which is irrelevant to actual P&L).
             entry_price = broker.get_position_avg_entry_price(symbol.alpaca)
             if entry_price:
                 gain_pct = last_price / entry_price - 1.0
@@ -177,13 +228,23 @@ def decide(ticker: str, args, broker: Broker):
                 else:
                     action = "HOLD"
             else:
+                # No entry price available (shouldn't normally happen if
+                # currently_holding is True, but guard against it anyway).
                 action = "HOLD"
         elif not math.isnan(pct_below) and pct_below <= args.dip_threshold:
+            # Not holding, and today's dip is deep enough to buy.
             action = "BUY"
         else:
             action = "HOLD"
+        # Express the decision as a target position fraction too, for
+        # consistency with the other strategies' return shape (even
+        # though day_trading's own action/entry-price logic above is
+        # what actually drives behavior).
         target_position = 1.0 if (action == "BUY" or (action == "HOLD" and currently_holding)) else 0.0
     else:
+        # The other strategies work purely off a computed target position
+        # fraction (0.0 = flat, 1.0 = fully in) rather than day_trading's
+        # entry-price-aware profit target/stop loss logic.
         target_position = get_target_position(df, args)
         if target_position >= 1.0 and not currently_holding:
             action = "BUY"
@@ -236,14 +297,19 @@ def main():
     parser.add_argument("--i-understand-this-is-live", action="store_true", dest="allow_live")
     args = parser.parse_args()
 
+    # Populate environment variables (ALPACA_API_KEY etc.) from .env, if present.
     load_dotenv()
 
+    # Constructing the Broker enforces the paper/live safety checks
+    # described in the module docstring above.
     broker = Broker(allow_live=args.allow_live)
     mode = "PAPER" if broker.is_paper else "LIVE"
 
     tickers = args.ticker
     decisions = []
     for ticker in tickers:
+        # decide() may return None (data unusable/skipped) - only keep
+        # the tickers that produced an actual decision.
         decision = decide(ticker, args, broker)
         if decision is not None:
             decisions.append(decision)
@@ -275,12 +341,19 @@ def main():
         if action != "HOLD" and args.execute:
             if action == "BUY":
                 if broker.has_open_order(symbol.alpaca):
+                    # Already an unfilled order sitting out there for this
+                    # symbol (e.g. a DAY order queued after market close) -
+                    # don't stack a second one on top of it.
                     print(f"[{ticker}] Skipping BUY - an order for this symbol is already open/unfilled.")
                 else:
+                    # Re-check cash right before spending it (not the
+                    # earlier starting_cash snapshot), in case an earlier
+                    # ticker in this same loop already spent some of it.
                     cash_now = broker.get_cash()
                     budget = min(per_ticker_budget, args.max_notional) if args.max_notional else per_ticker_budget
                     notional = min(budget, cash_now)
                     if notional < 1.0:
+                        # Too little cash left to place a meaningful order.
                         print(f"[{ticker}] Not enough cash to buy; skipping.")
                         notional = None
                     else:
@@ -292,6 +365,8 @@ def main():
                 print(f"[{ticker}] Submitted order to close position.")
                 executed = True
         elif action != "HOLD":
+            # A real BUY/SELL signal fired, but --execute wasn't passed -
+            # report what would have happened without actually doing it.
             print(f"[{ticker}] Dry run (pass --execute to actually place this order).")
 
         # Only real decisions get a row - HOLD is the overwhelming majority
@@ -320,6 +395,9 @@ def main():
                 "notes": "",
             })
 
+    # Always log account-level equity/cash at the end of every run
+    # (subject to the "only if it changed" dedup inside log_equity above),
+    # regardless of whether any individual ticker traded this time.
     log_equity({
         "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "mode": mode,

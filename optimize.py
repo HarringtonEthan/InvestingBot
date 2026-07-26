@@ -22,31 +22,46 @@ this script tells you what looked best on the period you gave it, not
 what will keep working going forward.
 """
 
+# Lets type hints work without issue in this Python version.
 from __future__ import annotations
 
+# argparse for command-line flags; itertools for generating every
+# combination of parameter values to test (the "grid" in grid search).
 import argparse
 import itertools
 
+# pandas to assemble the results grid and write it out as a CSV.
 import pandas as pd
 
+# The backtest engine used to score every parameter combination.
 from src.backtest import run_backtest
+# Price data loading.
 from src.data import get_price_data
+# Technical indicator computation.
 from src.features import add_features
+# The one strategy this script sweeps parameters for.
 from src.strategies import dip_buy_profit_target
 
 
 def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_bps: float, min_trades: float):
     returns, sharpes, trades = [], [], []
     for test_df in test_dfs.values():
+        # Run this one parameter combination against every ticker's data.
         position = dip_buy_profit_target(test_df, dip_threshold=dip, profit_target=profit, stop_loss=stop)
         result = run_backtest(test_df["Close"], position, cost_bps=cost_bps)
         returns.append(result.total_return)
         if result.sharpe == result.sharpe:  # skip NaN (zero-trade combos)
+            # A NaN never equals itself, so this comparison is a compact
+            # way to check "is this a real number, not NaN" without
+            # importing math.isnan just for this one check.
             sharpes.append(result.sharpe)
         trades.append(result.num_trades)
 
     avg_trades = sum(trades) / len(trades)
     if avg_trades < min_trades:
+        # This combination barely trades at all across the given tickers -
+        # too few data points for its return/Sharpe numbers to mean
+        # anything, so drop it from the results entirely.
         return None
 
     return {
@@ -56,6 +71,9 @@ def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_
         "avg_total_return": sum(returns) / len(returns),
         "avg_sharpe": sum(sharpes) / len(sharpes) if sharpes else float("nan"),
         "avg_trades": avg_trades,
+        # The single worst-performing ticker under this combo - a combo
+        # that looks great on average but wrecks one ticker is a red flag
+        # worth seeing directly, not just averaged away.
         "worst_ticker_return": min(returns),
     }
 
@@ -77,6 +95,8 @@ def main():
     parser.add_argument("--out", default="results/param_sweep.csv")
     args = parser.parse_args()
 
+    # Parse each comma-separated string flag into a list of actual floats,
+    # e.g. "-0.003,-0.005" -> [-0.003, -0.005].
     dip_values = [float(x) for x in args.dip_values.split(",")]
     profit_values = [float(x) for x in args.profit_values.split(",")]
     stop_values = [float(x) for x in args.stop_values.split(",")]
@@ -86,9 +106,15 @@ def main():
     for ticker in args.ticker:
         raw, is_synthetic = get_price_data(ticker, args.start, args.end, interval=args.interval)
         if is_synthetic:
+            # Never let a parameter search draw conclusions from fake
+            # data - drop any ticker Yahoo Finance couldn't actually serve.
             print(f"  {ticker}: SKIPPED (only synthetic fallback data available - no real network access)")
             continue
         df = add_features(raw)
+        # Only the held-out test period (on/after --split) is used here -
+        # this script is meant to be run against a period you're willing
+        # to treat as "unseen," not the same data a model might have
+        # trained on.
         test_df = df[df.index >= args.split]
         if len(test_df) < 50:
             print(f"  {ticker}: SKIPPED (not enough test-period rows; widen --start/--split/--end)")
@@ -97,18 +123,29 @@ def main():
         print(f"  {ticker}: {len(test_df)} test-period rows")
 
     if not test_dfs:
+        # Every single ticker failed to produce usable data - nothing to sweep.
         raise SystemExit("\nNo usable ticker data - this needs real network access to Yahoo Finance.")
 
+    # Every possible (dip, profit, stop) triple from the three value lists -
+    # this is the actual "grid" the grid search tests exhaustively.
     combos = list(itertools.product(dip_values, profit_values, stop_values))
     print(f"\nSweeping {len(combos)} parameter combinations across {len(test_dfs)} tickers "
           f"({len(combos) * len(test_dfs)} backtests)...\n")
 
+    # Evaluate every combination, keeping only the ones that passed the
+    # --min-trades filter (evaluate_combo returns None for the rest).
+    # The walrus operator (:=) assigns the result to r inline so it can
+    # both be tested for "is not None" and used in the list comprehension
+    # without calling evaluate_combo twice.
     rows = [r for dip, profit, stop in combos
             if (r := evaluate_combo(test_dfs, dip, profit, stop, args.cost_bps, args.min_trades)) is not None]
 
     if not rows:
         raise SystemExit("No combination met --min-trades; lower it or widen the parameter ranges.")
 
+    # Sort every surviving combination best-average-return first, and
+    # save the whole grid to disk for later inspection (checking whether
+    # the winner has healthy neighbors, per the module docstring above).
     results_df = pd.DataFrame(rows).sort_values("avg_total_return", ascending=False)
     results_df.to_csv(args.out, index=False)
 
@@ -120,6 +157,8 @@ def main():
             f"{row['worst_ticker_return']:>12.1%}"
         )
 
+    # The single best row by average return, called out explicitly below
+    # the ranked table.
     best = results_df.iloc[0]
     print(
         f"\nBest average combo: dip={best['dip_threshold']:.1%} profit={best['profit_target']:.1%} "
