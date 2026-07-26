@@ -164,6 +164,7 @@ def decide(ticker: str, args, broker: Broker):
 
     entry_price = None
     gain_pct = None
+    pct_below = None
 
     if args.strategy == "day_trading":
         pct_below = float(df["pct_below_sma20"].iloc[-1])
@@ -200,6 +201,7 @@ def decide(ticker: str, args, broker: Broker):
         "current_qty": current_qty,
         "entry_price": entry_price,
         "gain_pct": gain_pct,
+        "pct_below_sma20": pct_below,
         "action": action,
     }
 
@@ -259,8 +261,14 @@ def main():
 
         kind = "crypto" if symbol.is_crypto else "stock"
         gain_str = f"  unrealized={decision['gain_pct']:+.2%}" if decision["gain_pct"] is not None else ""
+        # When not holding, gain_pct is always None (nothing to compute a
+        # gain on) - show how close price is to the dip threshold instead,
+        # so "is it about to buy this?" has an actual answer in the log.
+        dip_str = ""
+        if decision["gain_pct"] is None and decision["pct_below_sma20"] is not None and args.strategy == "day_trading":
+            dip_str = f"  vs_20period_avg={decision['pct_below_sma20']:+.2%} (buys at {args.dip_threshold:+.2%})"
         print(f"[{mode}] {ticker} ({kind}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
-              f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}  -> {action}")
+              f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}{dip_str}  -> {action}")
 
         executed = False
         notional = None
