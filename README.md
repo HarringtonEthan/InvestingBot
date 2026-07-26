@@ -753,6 +753,18 @@ cumulative realized P&L from executed trades, and win/loss counts per
 ticker. Run it locally anytime for an on-demand snapshot - harmless, no
 network/broker access needed, just reads the two log files.
 
+**The first and second panels answer different questions and will not
+sum to the same number - that's expected, not a bug.** The first panel
+(net account gain/loss) is built from real account equity, so it's the
+authoritative "how much has this account actually made" figure. The
+second (cumulative realized P&L) only covers trades present in the
+*current* `trade_log.csv` - since that file gets rebuilt from scratch
+whenever the logging format changes (see the archived-log note above),
+it can't see anything that happened before its own most recent rebuild,
+even though that activity is still baked into the account equity the
+first panel reads. Trust the first panel for the account total; use the
+second only for "were the trades I can actually see here profitable."
+
 **The first panel's baseline matters and is easy to misread.** By
 default it's equity minus the *first* row of `logs/equity_log.csv` -
 i.e. "gain/loss since equity logging happened to start," which is not

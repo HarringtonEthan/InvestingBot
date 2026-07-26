@@ -20,7 +20,13 @@ Three panels:
      second "excluding flagged trades" line is plotted alongside the
      real one - never hidden, just distinguished, so both the honest
      full history and the "how is the strategy itself doing" view are
-     visible at once.
+     visible at once. NOT the same number as panel 1's total account
+     P&L, and won't sum to it - trade_log.csv only goes back to whenever
+     it was last rebuilt (see the archived-log note in the README), so
+     this panel can't see anything that happened before that. Panel 1,
+     built from account equity directly, is the authoritative "how much
+     has this account actually made" answer; this panel is only ever a
+     read on the specific trades it has visibility into.
   3. Win/loss count per ticker, from the same executed SELL trades - which
      tickers are actually working vs. not. Flagged trades are hatched in
      this panel too, same reasoning as above.
@@ -143,7 +149,7 @@ def main():
             ax.legend(loc="upper left", fontsize=8)
 
         ax.axhline(0, color="gray", linewidth=0.8)
-        ax.set_title("Cumulative realized P&L from executed trades")
+        ax.set_title("Cumulative realized P&L, trades in this log only (not total account P&L - see panel above)")
         ax.set_ylabel("Realized P&L ($)")
         # A single data point gives matplotlib's date auto-scaling nothing
         # to infer a sensible range from - it can default to spanning
