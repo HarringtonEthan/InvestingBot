@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.4.0
+# InvestingBot — Version Richards 0.5.0
 
 Version history lives in `CHANGELOG.md`.
 
@@ -170,6 +170,36 @@ whenever the live configuration changes.
     hung run can't block its own concurrency group indefinitely, and
     real-data fetch failures in `src/data.py` now get printed instead of
     silently swallowed before falling back to synthetic data.
+- **New: a real test suite, a shared decision function, and two actual
+  risk controls.** These are genuine additions, not just bug fixes -
+  the first two don't change crypto's behavior at all, the last two do:
+  - `tests/` now has 40 pytest tests covering the areas that already
+    broke once (RSI, label leakage, symbol resolution, backtest
+    annualization) plus the broker's error handling and the new
+    decision logic below - run with `pytest tests/`.
+  - **`day_trading_decision()`** in `src/strategies.py` is now the one
+    place the buy/sell/hold rule for day trading lives - both the
+    backtest (`dip_buy_profit_target`) and `live_trade.py`'s `decide()`
+    call this exact same function instead of each keeping its own
+    hand-written copy of the same logic, which is exactly how the
+    earlier `--dip-threshold` bug happened (one copy got fixed, the
+    other didn't, because they were never really the same code).
+    Verified behavior-preserving against the old logic across 200,000
+    randomized scenarios before this went live - this is a pure
+    refactor, not a strategy change.
+  - **A daily-loss circuit breaker** (`--daily-loss-limit`, default
+    5%): blocks new BUYs for the rest of the day once the account is
+    down 5%+ from that day's starting equity. Never blocks SELLs - an
+    existing position's own profit-target/stop-loss exit still runs
+    normally, since blocking that would be the opposite of what a
+    circuit breaker is for.
+  - **`--max-notional` is now actually wired into the live crypto
+    workflow** (capped at $2,000/trade) - it existed as a flag before
+    but was never passed by the workflow itself, so real position size
+    was only ever bounded by the even 9-way cash split (which can run
+    well above $2,000/trade as the account grows). This is a real,
+    deliberate change to position sizing, not a bug fix - both this and
+    the circuit breaker threshold are starting points, not tuned values.
 - **Dashboard: live and automated, regenerated hourly.** A fourth
   workflow, `update-dashboard.yml`, runs `visualize_log.py --baseline
   100000` and commits `results/trade_dashboard.png` back to the repo -
@@ -515,6 +545,8 @@ InvestingBot/
 │   ├── paper-trade-stocks.yml    # Runs live_trade.py for stocks daily near market close
 │   ├── retrain-stock-model.yml   # Runs train_stock_model.py weekly
 │   └── update-dashboard.yml      # Runs visualize_log.py hourly
+├── tests/                        # pytest suite - run with `pytest tests/`
+│   └── fake_broker.py            # In-memory stand-in for src/broker.py, used only in tests
 ├── logs/                         # Generated: trade_log.csv, equity_log.csv, retrain_log.csv
 ├── models/                       # Generated: the saved stock_model.pkl and its metadata
 ├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv
@@ -1165,6 +1197,28 @@ Semantic versioning (`MAJOR.MINOR.PATCH`) - staying under `1.0.0` on
 purpose until the strategy has actually demonstrated a real edge on
 real data, not just that the code runs correctly. Full history also
 tracked in `CHANGELOG.md`.
+
+### Version Richards 0.5.0 - 2026-07-27
+
+Test suite, a shared decision function, and two real risk controls -
+the first two don't change crypto's behavior at all, the last two do.
+
+- Added: `tests/` - 40 pytest tests covering RSI, label leakage, symbol
+  resolution, backtest annualization, broker error handling, and the
+  new shared decision logic below
+- Added: `day_trading_decision()` in `src/strategies.py` - the one
+  place the day-trading buy/sell/hold rule now lives, called by both
+  the backtest (`dip_buy_profit_target`) and live trading (`decide()`)
+  instead of each keeping its own copy that could quietly drift apart.
+  Verified behavior-preserving against the old logic across 200,000
+  randomized scenarios before going live - a pure refactor, not a
+  strategy change
+- Added: a daily-loss circuit breaker (`--daily-loss-limit`, default
+  5%) - blocks new BUYs for the rest of the day once the account is
+  down 5%+ from that day's starting equity; never blocks SELLs
+- Added: `--max-notional` is now actually wired into the live crypto
+  workflow (capped at $2,000/trade) - it existed as a flag before but
+  was never passed by the workflow itself
 
 ### Version Richards 0.4.0 - 2026-07-27
 

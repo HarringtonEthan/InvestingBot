@@ -6,3 +6,4 @@ matplotlib==3.11.1
 yfinance==1.5.2
 alpaca-py==0.43.5
 python-dotenv==1.2.2
+pytest==9.1.1

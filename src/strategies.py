@@ -85,6 +85,46 @@ def rule_based_dip_buy(
     return pd.Series(position, index=df.index)
 
 
+def day_trading_decision(
+    holding: bool,
+    entry_price: float | None,
+    current_price: float,
+    pct_below_sma20: float,
+    dip_threshold: float,
+    profit_target: float,
+    stop_loss: float,
+) -> str:
+    """
+    The single-step buy/sell/hold rule behind the day_trading strategy,
+    factored out into its own pure function so the backtest
+    (`dip_buy_profit_target` below) and the live decision in
+    `live_trade.py`'s `decide()` both call this exact same code instead
+    of each maintaining their own hand-written copy of the same logic.
+    Two copies that happen to agree today can silently drift apart later
+    - that's exactly how the earlier `--dip-threshold` bug happened, not
+    a hypothetical risk.
+
+    Returns "BUY", "SELL", or "HOLD".
+    """
+    if not holding:
+        # Not holding - the only decision available is whether today's
+        # dip is deep enough to buy. A NaN pct_below_sma20 (not enough
+        # history yet to compute the rolling average) means "no opinion,"
+        # not "buy" - stay flat rather than guess.
+        if not np.isnan(pct_below_sma20) and pct_below_sma20 <= dip_threshold:
+            return "BUY"
+        return "HOLD"
+    else:
+        # Holding - measure how far price has moved from the actual
+        # entry price (not from the moving average) as a fraction.
+        gain = current_price / entry_price - 1.0
+        if gain >= profit_target or gain <= -stop_loss:
+            # Either the profit target or the stop-loss has been
+            # crossed - sell either way, whichever happened first.
+            return "SELL"
+        return "HOLD"
+
+
 def dip_buy_profit_target(
     df: pd.DataFrame,
     dip_threshold: float = -0.02,
@@ -104,7 +144,8 @@ def dip_buy_profit_target(
     Whichever threshold is hit first wins. For backtesting, entry price is
     this bar's close; live trading uses the broker's actual average entry
     price instead (see live_trade.py), which is the real number that
-    matters once money is involved.
+    matters once money is involved - both call `day_trading_decision`
+    above for the actual buy/sell/hold rule itself.
     """
     pct_below = df["pct_below_sma20"].to_numpy()  # dip signal, same as the rule-based version above
     close = df["Close"].to_numpy()                # actual prices, needed to track real profit/loss
@@ -116,22 +157,19 @@ def dip_buy_profit_target(
         pb = pct_below[i]
         price = close[i]
         if np.isnan(pb):
+            # Not enough history yet to compute the SMA - stay flat
+            # rather than guess, regardless of the shared decision
+            # function (which would only ever get consulted with real,
+            # non-NaN data anyway once past this warm-up period).
             position[i] = 0.0
             continue
-        if not holding:
-            # Not holding - only decision available is whether to buy.
-            if pb <= dip_threshold:
-                holding = True
-                entry_price = price  # remember what we paid, so profit/loss can be measured later
-        else:
-            # Holding - measure how far price has moved from the actual
-            # entry price (not from the moving average) as a fraction.
-            gain = price / entry_price - 1.0
-            if gain >= profit_target or gain <= -stop_loss:
-                # Either the profit target or the stop-loss has been
-                # crossed - sell either way, whichever happened first.
-                holding = False
-                entry_price = None  # clear it - nothing to compare against until the next buy
+        action = day_trading_decision(holding, entry_price, price, pb, dip_threshold, profit_target, stop_loss)
+        if action == "BUY":
+            holding = True
+            entry_price = price  # remember what we paid, so profit/loss can be measured later
+        elif action == "SELL":
+            holding = False
+            entry_price = None  # clear it - nothing to compare against until the next buy
         position[i] = 1.0 if holding else 0.0
 
     return pd.Series(position, index=df.index)

@@ -22,12 +22,11 @@ Safety defaults:
 from __future__ import annotations
 
 # argparse for command-line flags; csv for reading/writing the log files;
-# datetime for timestamps; math for isnan() checks; time for the brief
-# post-order fill-polling pause; Path for file handling.
+# datetime for timestamps; time for the brief post-order fill-polling
+# pause; Path for file handling.
 import argparse
 import csv
 import datetime as dt
-import math
 import time
 from pathlib import Path
 
@@ -52,8 +51,11 @@ from src.features import add_features
 from src.model import train_model
 # Loading a previously-trained-and-saved ML model from disk.
 from src.model_store import load_model as load_saved_model
-# The trading strategies this script can be told to run.
-from src.strategies import bollinger_breakout, ml_filtered_dip_buy, rule_based_dip_buy
+# The trading strategies this script can be told to run. day_trading_decision
+# is the single-step rule day_trading uses below - shared with the backtest
+# version of the same strategy (dip_buy_profit_target) so the two can never
+# quietly drift apart from each other.
+from src.strategies import bollinger_breakout, day_trading_decision, ml_filtered_dip_buy, rule_based_dip_buy
 # Resolves a bare ticker string into its Yahoo/Alpaca symbol forms.
 from src.symbols import resolve_symbol
 
@@ -167,6 +169,48 @@ def log_equity(row: dict):
     _append_row(EQUITY_LOG_PATH, EQUITY_LOG_FIELDS, row)
 
 
+def _first_equity_today(now: dt.datetime) -> float | None:
+    """
+    Returns the first portfolio_value_usd logged today (UTC calendar
+    day), or None if nothing's been logged yet today - e.g. the very
+    first run of the day, or a completely flat day where log_equity()
+    never wrote a row. None means "no baseline to compare against yet,"
+    not "no loss" - callers should treat that as "can't check, allow
+    trading" rather than blocking on missing data.
+    """
+    if not EQUITY_LOG_PATH.exists():
+        return None
+    with EQUITY_LOG_PATH.open(newline="") as f:
+        rows = list(csv.DictReader(f))
+    today = now.date().isoformat()
+    for row in rows:
+        # timestamp_utc looks like "2026-07-27T00:01:00+00:00" - the
+        # date portion is always the first 10 characters.
+        if row["timestamp_utc"][:10] == today:
+            return float(row["portfolio_value_usd"])
+    return None
+
+
+def daily_loss_exceeded(broker: Broker, threshold_pct: float) -> bool:
+    """
+    True if the account is currently down threshold_pct or more from
+    today's first logged equity value - a simple circuit breaker so a
+    genuinely bad day can't compound itself by continuing to open new
+    positions. Only ever blocks new BUYs (see main() below) - an
+    existing position's own profit-target/stop-loss exit still runs
+    normally, since cutting a loss is exactly what should keep
+    happening even on a day this breaker has tripped.
+    """
+    day_start_equity = _first_equity_today(dt.datetime.now(dt.timezone.utc))
+    if day_start_equity is None or day_start_equity <= 0:
+        # No baseline yet today - nothing to compare against, so don't
+        # block trading over missing data.
+        return False
+    current_equity = broker.get_equity()
+    drawdown = (day_start_equity - current_equity) / day_start_equity
+    return drawdown >= threshold_pct
+
+
 def poll_for_fill(broker: Broker, order, attempts: int = 3, delay_seconds: float = 2.0):
     """
     Briefly poll Alpaca for whether a just-submitted order has actually
@@ -244,25 +288,28 @@ def decide(ticker: str, args, broker: Broker):
         # currently sits - the dip signal this strategy buys on.
         pct_below = float(df["pct_below_sma20"].iloc[-1])
         if currently_holding:
-            # Already holding - decide whether to sell based on real
-            # profit/loss versus the broker's actual average entry price
-            # (not the moving average, which is irrelevant to actual P&L).
+            # Already holding - the real cost basis comes from the
+            # broker's actual average entry price (not the moving
+            # average, which is irrelevant to actual P&L).
             entry_price = broker.get_position_avg_entry_price(symbol.alpaca)
-            if entry_price:
-                gain_pct = last_price / entry_price - 1.0
-                if gain_pct >= args.profit_target or gain_pct <= -args.stop_loss:
-                    action = "SELL"
-                else:
-                    action = "HOLD"
-            else:
-                # No entry price available (shouldn't normally happen if
-                # currently_holding is True, but guard against it anyway).
-                action = "HOLD"
-        elif not math.isnan(pct_below) and pct_below <= args.dip_threshold:
-            # Not holding, and today's dip is deep enough to buy.
-            action = "BUY"
-        else:
+        if currently_holding and not entry_price:
+            # Held according to Alpaca, but its own entry-price lookup
+            # came back empty (shouldn't normally happen) - can't
+            # compute a gain without it, so do nothing this run rather
+            # than guess.
             action = "HOLD"
+        else:
+            # Same single-step rule the backtest version of this
+            # strategy uses (see day_trading_decision in
+            # src/strategies.py) - both call this exact function so live
+            # trading and a backtest of "day trading" can never quietly
+            # diverge from each other.
+            action = day_trading_decision(
+                currently_holding, entry_price, last_price, pct_below,
+                args.dip_threshold, args.profit_target, args.stop_loss,
+            )
+        if currently_holding and entry_price:
+            gain_pct = last_price / entry_price - 1.0
         # Express the decision as a target position fraction too, for
         # consistency with the other strategies' return shape (even
         # though day_trading's own action/entry-price logic above is
@@ -320,6 +367,10 @@ def main():
                          help="bollinger_breakout: long SMA period required to confirm a breakout")
     parser.add_argument("--max-notional", type=float, default=None,
                          help="cap $ amount per buy; default = an even split of available cash across tickers")
+    parser.add_argument("--daily-loss-limit", type=float, default=0.05,
+                         help="circuit breaker: block new BUYs (not SELLs) once the account is down this "
+                              "fraction from today's first logged equity value, e.g. 0.05 = 5%%. "
+                              "Existing positions' own profit-target/stop-loss exits still run normally.")
     parser.add_argument("--execute", action="store_true", help="actually submit orders; without this, dry-run only")
     parser.add_argument("--i-understand-this-is-live", action="store_true", dest="allow_live")
     args = parser.parse_args()
@@ -355,6 +406,17 @@ def main():
     starting_cash = broker.get_cash()
     per_ticker_budget = starting_cash / len(tickers) if tickers else 0.0
 
+    # Checked once per run, not per ticker - the account is either
+    # having a bad enough day or it isn't, regardless of which ticker is
+    # being evaluated. Only ever blocks new BUYs below; SELLs (including
+    # a strategy's own profit-target/stop-loss exit) are never blocked
+    # by this, since letting an existing position ride out a bad day
+    # unmanaged would be the opposite of what a circuit breaker is for.
+    breaker_tripped = args.execute and daily_loss_exceeded(broker, args.daily_loss_limit)
+    if breaker_tripped:
+        print(f"[circuit breaker] Account is down {args.daily_loss_limit:.0%}+ from today's starting equity - "
+              f"blocking new BUYs for the rest of the run. SELLs are unaffected.")
+
     for decision in decisions:
         ticker = decision["ticker"]
         symbol = decision["symbol"]
@@ -381,7 +443,12 @@ def main():
             fill_price = decision["last_price"]
             if action != "HOLD" and args.execute:
                 if action == "BUY":
-                    if broker.has_open_order(symbol.alpaca):
+                    if breaker_tripped:
+                        # Circuit breaker already reported once above -
+                        # just skip this specific BUY without repeating
+                        # the same message once per ticker.
+                        print(f"[{ticker}] Skipping BUY - daily loss circuit breaker is active.")
+                    elif broker.has_open_order(symbol.alpaca):
                         # Already an unfilled order sitting out there for this
                         # symbol (e.g. a DAY order queued after market close) -
                         # don't stack a second one on top of it.

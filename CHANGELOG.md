@@ -5,6 +5,28 @@ staying under `1.0.0` on purpose until the strategy has actually
 demonstrated a real edge on real data, not just that the code runs
 correctly.
 
+## Version Richards 0.5.0 - 2026-07-27
+
+Test suite, a shared decision function, and two real risk controls -
+the first two don't change crypto's behavior at all, the last two do.
+
+- Added: `tests/` - 40 pytest tests covering RSI, label leakage, symbol
+  resolution, backtest annualization, broker error handling, and the
+  new shared decision logic below
+- Added: `day_trading_decision()` in `src/strategies.py` - the one
+  place the day-trading buy/sell/hold rule now lives, called by both
+  the backtest (`dip_buy_profit_target`) and live trading (`decide()`)
+  instead of each keeping its own copy that could quietly drift apart.
+  Verified behavior-preserving against the old logic across 200,000
+  randomized scenarios before going live - a pure refactor, not a
+  strategy change
+- Added: a daily-loss circuit breaker (`--daily-loss-limit`, default
+  5%) - blocks new BUYs for the rest of the day once the account is
+  down 5%+ from that day's starting equity; never blocks SELLs
+- Added: `--max-notional` is now actually wired into the live crypto
+  workflow (capped at $2,000/trade) - it existed as a flag before but
+  was never passed by the workflow itself
+
 ## Version Richards 0.4.0 - 2026-07-27
 
 Measurement and reliability audit - no changes to the actual crypto
