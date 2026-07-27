@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.5.2
+# InvestingBot — Version Richards 0.6.0
 
 Version history lives in `CHANGELOG.md`.
 
@@ -52,6 +52,14 @@ whenever the live configuration changes.
   I haven't re-validated it on a different time window yet. This doesn't
   depend on GitHub's own cron (I found it unreliable in testing - see
   below) or on any computer being on.
+- **Added: `walk_forward.py`, for validating that "on a different time
+  window" gap above.** It re-scores a fixed parameter combination across
+  several sequential, non-overlapping periods instead of one, so a good
+  result isn't just a single lucky window. The live -1%/+1%/-3% crypto
+  parameters are unchanged - I'm letting the strategy keep running as-is
+  and collecting more real trade history before deciding whether the
+  thresholds themselves need to change. See "Validating across time
+  (walk_forward.py)" below for how to run it.
 - **Stocks: live and automated, ML-filtered, with periodic retraining.**
   The stock workflow (`paper-trade-stocks.yml`) runs `--strategy
   ml_filtered` on SPY/AAPL/QQQ instead of `rule_based`. Unlike every
@@ -538,6 +546,7 @@ InvestingBot/
 ├── requirements.txt              # Pinned third-party Python dependencies
 ├── main.py                       # Backtest entry point (research only, no real broker involved)
 ├── optimize.py                   # Multi-ticker parameter sweep for the day-trading strategy
+├── walk_forward.py               # Validates a parameter combo across multiple time periods, not just one
 ├── train_stock_model.py          # Trains and saves the stock ML dip-filter model
 ├── live_trade.py                 # Automated live (paper) trading entry point
 ├── visualize_log.py              # Builds the trade dashboard PNG from the logs below
@@ -557,7 +566,8 @@ InvestingBot/
 │   ├── retrain-stock-model.yml   # Runs train_stock_model.py weekly
 │   └── update-dashboard.yml      # Runs visualize_log.py hourly
 ├── tests/                        # pytest suite - run with `pytest tests/`
-│   └── fake_broker.py            # In-memory stand-in for src/broker.py, used only in tests
+│   ├── fake_broker.py            # In-memory stand-in for src/broker.py, used only in tests
+│   └── test_walk_forward.py      # Tests walk_forward.py's window-splitting logic
 ├── logs/                         # Generated: trade_log.csv, equity_log.csv, retrain_log.csv
 ├── models/                       # Generated: the saved stock_model.pkl and its metadata
 ├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv
@@ -1119,6 +1129,35 @@ different time window before I'd trust it with anything beyond fake
 money - finding good settings on one stretch of history is the easy
 part; knowing they'll hold up going forward is the part that actually
 matters.
+
+### Validating across time (walk_forward.py)
+
+`optimize.py` (above) still only scores each combination against one
+held-out test period - even a "robust-looking" winner there could just be
+a combination that happened to suit that one stretch of history.
+`walk_forward.py` addresses that directly: it splits a date range into
+several sequential, non-overlapping windows and re-evaluates the same
+fixed parameters independently on each one, so "does this actually hold
+up over time" has a real answer instead of a guess:
+
+```bash
+python walk_forward.py --ticker BTC-USD ETH-USD SOL-USD --start 2026-06-01 --end 2026-07-25 --windows 4 --interval 5m
+```
+
+Run with no `--dip-threshold`/`--profit-target`/`--stop-loss` flags, it
+defaults to the exact parameters the live crypto workflow actually trades
+with (-1% dip / +1% profit / -3% stop), so this validates the strategy
+currently running, not a hypothetical one. It reports each window's
+return/Sharpe/drawdown/trade count individually, then flags how many
+windows were net losers and how many never traded at all (an untested
+window, not a proven-safe one) - a combo worth trusting should look
+reasonable across most windows, not just win on average because one
+window carried the rest.
+
+Yahoo Finance only keeps a limited window of intraday history (roughly 60
+days for 5-minute bars) - keep `--start` recent at `--interval 5m`, or use
+a coarser interval (`1h`, `1d`) to validate over a longer stretch of
+calendar time.
 
 ### 6. Going live (real money) - deliberately, later
 

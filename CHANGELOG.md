@@ -14,6 +14,22 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   picked on.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.6.0 - 2026-07-27
+
+- Added: `walk_forward.py` - splits a date range into several
+  sequential, non-overlapping windows and re-scores a fixed
+  dip/profit/stop combination independently on each one, instead of the
+  single train/test split `main.py`/`optimize.py` use. A combo that only
+  looks good on one window can still be luck; this is the "walk-forward
+  validation across multiple distinct, non-overlapping time periods"
+  named above as a 1.0.0 requirement. Defaults to the exact parameters
+  the live crypto workflow trades with, so it validates the strategy
+  actually running, not a hypothetical one. Read-only research tool -
+  no change to live crypto behavior, and the -1%/+1%/-3% thresholds
+  themselves are untouched pending more real trade history.
+- Added: `tests/test_walk_forward.py` - covers the window-splitting
+  logic (sequential, non-overlapping, covers the full requested range).
+
 ## Version Richards 0.5.2 - 2026-07-27
 
 Full codebase sweep (every `src/*.py` file, `live_trade.py`, `main.py`,
