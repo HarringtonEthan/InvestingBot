@@ -1,13 +1,19 @@
 {
-  "trained_at": "2026-07-27T00:00:59+00:00",
+  "trained_at": "2026-07-27T17:12:34+00:00",
   "tickers": [
     "SPY",
     "AAPL",
-    "QQQ"
+    "QQQ",
+    "JPM",
+    "XOM",
+    "JNJ",
+    "KO",
+    "CAT",
+    "DIS"
   ],
   "lookback_days": 730,
   "horizon": 10,
   "bounce_pct": 0.03,
-  "train_rows": 1494,
-  "threshold": 0.5775066763265948
+  "train_rows": 4482,
+  "threshold": 0.5857135576600125
 }
