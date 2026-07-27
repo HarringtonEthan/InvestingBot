@@ -1,9 +1,38 @@
 # Changelog
 
-Uses [semantic versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) -
-staying under `1.0.0` on purpose until the strategy has actually
-demonstrated a real edge on real data, not just that the code runs
-correctly.
+Uses [semantic versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
+
+**Naming**: the `0.x.x` line is "Version Richards," after Mike Richards.
+Whenever this project reaches `1.0.0`, the name switches to "Version
+Giroux," after Claude Giroux - Richards was the young, developing
+player; Giroux was the one who'd actually proven himself. That's the
+intended arc: `0.x.x` is "code runs correctly, nothing proven yet,"
+`1.0.0`+ is "this has actually earned it."
+
+**What "earning it" means before `1.0.0` gets declared** (not yet met):
+- Dozens to hundreds of real closed paper trades on the strategy
+  actually running live - not the 3 currently on record - with positive
+  net expectancy after real observed costs/slippage, not backtested
+  ones.
+- Walk-forward validation across multiple distinct, non-overlapping time
+  periods (including at least one trending and one choppy/range-bound
+  stretch), not just the single window the current thresholds were
+  picked on.
+- No known open correctness bugs (true as of 0.5.1).
+
+## Version Richards 0.5.1 - 2026-07-27
+
+Bug found during a follow-up audit of 0.5.0's own changes.
+
+- Fixed: `starting_cash = broker.get_cash()`, the circuit breaker's
+  `broker.get_equity()` call, and the final per-run equity logging call
+  had no error handling, unlike every per-ticker call - a transient
+  Alpaca API failure on any of those three specific calls would still
+  have crashed the entire run instead of failing gracefully and letting
+  the next scheduled run retry. Wrapped in try/except, same pattern as
+  the per-ticker isolation added in 0.4.0.
+- Also brought `tests/fake_broker.py` and two other test files up to
+  the same line-by-line comment standard as the rest of the codebase.
 
 ## Version Richards 0.5.0 - 2026-07-27
 

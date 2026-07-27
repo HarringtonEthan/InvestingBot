@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.5.0
+# InvestingBot — Version Richards 0.5.1
 
 Version history lives in `CHANGELOG.md`.
 
@@ -200,6 +200,11 @@ whenever the live configuration changes.
     well above $2,000/trade as the account grows). This is a real,
     deliberate change to position sizing, not a bug fix - both this and
     the circuit breaker threshold are starting points, not tuned values.
+  - **Fixed in a follow-up audit of the above:** the account-level calls
+    (`get_cash()` for budgeting, `get_equity()` for the circuit breaker,
+    and the final per-run equity log) had no error handling, unlike
+    every per-ticker call - a transient API failure on any of those
+    three would still have crashed the whole run. Wrapped in try/except.
 - **Dashboard: live and automated, regenerated hourly.** A fourth
   workflow, `update-dashboard.yml`, runs `visualize_log.py --baseline
   100000` and commits `results/trade_dashboard.png` back to the repo -
@@ -1193,10 +1198,25 @@ money, including my own, until it earns that.
 
 ## Version history
 
-Semantic versioning (`MAJOR.MINOR.PATCH`) - staying under `1.0.0` on
-purpose until the strategy has actually demonstrated a real edge on
-real data, not just that the code runs correctly. Full history also
-tracked in `CHANGELOG.md`.
+Semantic versioning (`MAJOR.MINOR.PATCH`). The `0.x.x` line is "Version
+Richards" (young, unproven); `1.0.0`+ becomes "Version Giroux" once the
+strategy has actually demonstrated a real edge on real data over enough
+trades and time periods to mean something - not just that the code runs
+correctly. See `CHANGELOG.md` for the exact bar and full history.
+
+### Version Richards 0.5.1 - 2026-07-27
+
+Bug found during a follow-up audit of 0.5.0's own changes.
+
+- Fixed: `starting_cash = broker.get_cash()`, the circuit breaker's
+  `broker.get_equity()` call, and the final per-run equity logging call
+  had no error handling, unlike every per-ticker call - a transient
+  Alpaca API failure on any of those three specific calls would still
+  have crashed the entire run instead of failing gracefully and letting
+  the next scheduled run retry. Wrapped in try/except, same pattern as
+  the per-ticker isolation added in 0.4.0.
+- Also brought `tests/fake_broker.py` and two other test files up to
+  the same line-by-line comment standard as the rest of the codebase.
 
 ### Version Richards 0.5.0 - 2026-07-27
 
