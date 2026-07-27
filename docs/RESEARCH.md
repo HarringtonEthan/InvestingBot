@@ -446,3 +446,80 @@ three daily candidates above, but on noticeably thinner trade counts per
 ticker (Alpaca's free feed only covers about a trailing year, versus
 daily's 11), so it isn't committed as evidence yet - unlike the daily
 results above, this one needs the stop-loss re-test first.
+
+## Final tally: 8 candidates walk-forward tested, none cleared the bar
+
+This is the honest conclusion after the full search across daily and
+5-minute bars, plain `rule_based`, `rule_based` with a stop-loss +
+re-entry cooldown, and `ml_filtered` (the same rule gated by a trained
+model): **no candidate came out as a robust, walk-forward-consistent
+edge.** Every one landed in roughly the same 17-32% ticker-window loss
+rate, regardless of strategy variant, bar size, or whether an ML filter
+was layered on top:
+
+| Candidate | Interval | Avg return/ticker | Losing ticker-windows |
+|---|---|---|---|
+| dip=-3% exit=1% | daily | 5.1% | 20/63 (32%) |
+| dip=-6% exit=1% | daily | 3.3% | 19/63 (30%) |
+| dip=-8% exit=1% | daily | 2.7% | 16/63 (25%) |
+| dip=-3% exit=1% stop=15% cooldown=5 | daily | 5.1% | 18/63 (29%) |
+| dip=-1.5% exit=2.0% | 5-minute | 3.1% | 11/63 (18%) |
+| dip=-1.5% exit=0.8% | 5-minute | 0.7% | 18/63 (29%) |
+| dip=-1.5% exit=0.8% stop=3% cooldown=78 | 5-minute | 0.2% | 20/63 (32%) |
+| ml_filtered dip=-7% exit=2% | daily | 1.1% | 16/54 (30%) |
+
+Full table: [`results/walk_forward_stocks_summary.csv`](../results/walk_forward_stocks_summary.csv).
+Every candidate's raw per-window data is also committed:
+[`results/walk_forward_stocks.csv`](../results/walk_forward_stocks.csv)
+(the first 7 rule_based/rule_based+stop candidates, daily and 5-minute)
+and [`results/walk_forward_stocks_ml_filtered.csv`](../results/walk_forward_stocks_ml_filtered.csv).
+Every grid search behind these candidates is committed too:
+[`results/param_sweep_stocks.csv`](../results/param_sweep_stocks.csv),
+[`results/param_sweep_stocks_daily_stop.csv`](../results/param_sweep_stocks_daily_stop.csv),
+[`results/param_sweep_stocks_daily_ml_filtered.csv`](../results/param_sweep_stocks_daily_ml_filtered.csv),
+[`results/param_sweep_stocks_5m.csv`](../results/param_sweep_stocks_5m.csv),
+[`results/param_sweep_stocks_5m_stop.csv`](../results/param_sweep_stocks_5m_stop.csv),
+[`results/param_sweep_stocks_5m_ml_filtered.csv`](../results/param_sweep_stocks_5m_ml_filtered.csv).
+
+<img src="../results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant. Returns vary from about 0 to 5 percent; loss rates cluster tightly between roughly 17 and 32 percent across every candidate regardless of variant." width="720">
+
+<img src="../results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered - average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points sit in a visibly lower return band than the plain-rule points." width="720">
+
+<img src="../results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered. All three variants are intermixed in a loose cloud with no variant clearly separated from the others." width="720">
+
+**Important caveat on the two grid-search overview charts above**: the
+three daily grids were NOT all tested over the same held-out period, and
+neither were the three 5-minute grids - see each chart's own title for
+the exact dates. The `ml_filtered` grids in particular stop well before
+today (2024-06-01 for daily, 2026-07-27 for the 5-minute one, but that
+one started from 2026-05-01 rather than 2025-07-27 like the other two
+5-minute grids) specifically to stay before their model's own training
+window - see the leakage-avoidance caveat earlier in this document.
+That means the x-axis positions across categories aren't perfectly
+apples-to-apples; the useful signal in these two charts is the overall
+shape and spread of each category, not a precise combo-by-combo
+comparison across categories.
+
+**Note on the walk-forward summary table/chart above**: the
+`ml_filtered` candidate's walk-forward range (2015-01-01 to 2024-06-01)
+deliberately stops about two years before the other 7 candidates' range
+(which run through 2026-07-27, the actual present at the time of this
+research). This is intentional, not an oversight - the saved model was
+trained on the trailing ~2 years, so testing it against that same
+window would be partially in-sample. The tradeoff is real: the
+`ml_filtered` result hasn't been tested against the most recent two
+years of data (including whatever regime shift or recovery happened
+during the period the other candidates were validated against), so it's
+not a perfectly like-for-like comparison against the other 7 rows. A
+genuinely fair, fully out-of-sample comparison would need a model
+trained on an even older window, leaving a longer untouched stretch to
+validate against - not done here.
+
+**Where this leaves stocks**: paused, as they have been since the QQQ
+incident (see "Current live status" in the main README and
+`CHANGELOG.md` 0.8.0). Nothing found this session clears the bar for
+resuming live stock trading. That's a legitimate, useful answer in its
+own right - the same honest "no" crypto's own validation started from
+before `walk_forward.py` eventually found something worth trusting -
+not a reason to keep searching indefinitely without a new idea worth
+testing.

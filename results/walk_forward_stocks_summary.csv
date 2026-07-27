@@ -1,0 +1,9 @@
+candidate,strategy,interval,avg_return_pct,losing_windows,total_windows,pct_losing
+daily -3%/1%,rule_based,1d,5.13,20,63,31.7
+daily -6%/1%,rule_based,1d,3.34,19,63,30.2
+daily -8%/1%,rule_based,1d,2.74,16,63,25.4
+daily -3%/1%/stop15%/cd5,rule_based+stop,1d,5.11,18,63,28.6
+5m -1.5%/2.0%,rule_based,5m,3.06,11,63,17.5
+5m -1.5%/0.8%,rule_based,5m,0.72,18,63,28.6
+5m -1.5%/0.8%/stop3%/cd78,rule_based+stop,5m,0.19,20,63,31.7
+daily ml_filtered -7%/2%,ml_filtered,1d,1.07,16,54,29.6

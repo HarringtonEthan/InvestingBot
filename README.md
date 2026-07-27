@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.8.9
+# InvestingBot — Version Richards 0.9.0
 
 Version history lives in `CHANGELOG.md`.
 
@@ -109,33 +109,32 @@ This is a snapshot and will be stale by the time you read it - check
   (healthcare), KO (staples), CAT (industrials), DIS (media) - spanning
   several sectors on purpose, the same "one ticker isn't a real edge"
   principle crypto's validation already leans on.
-- **Stock validation: three candidates tested, none chosen yet.** A
-  grid search and three walk-forward runs (dip=-3%/exit=1%,
-  dip=-6%/exit=1%, dip=-8%/exit=1%, all `--strategy rule_based`, 9
-  tickers, 7 sequential windows spanning 2015-2026) are committed as
-  real evidence - [`results/param_sweep_stocks.csv`](results/param_sweep_stocks.csv)
-  and [`results/walk_forward_stocks.csv`](results/walk_forward_stocks.csv).
-  Unlike crypto, the daily-bar version of this search doesn't have a
-  clean winner: the best-average combo trades often but isn't
-  consistent (32% of ticker-windows lost money), and the combo that
-  looks safest trades so rarely (KO: 1 trade in 11 years) that its
-  safety is mostly untested rather than proven. `get_stock_bars_range()`
-  (`src/alpaca_data.py`) was added so stocks can now pull intraday bars
-  from Alpaca too, the same way crypto already does, removing Yahoo's
-  ~60-day intraday cap as a reason to stay on daily bars. A first
-  5-minute grid search (real Alpaca data, trailing year) found a
-  candidate (dip=-1.5%/exit=2.0%) with a lower ticker-window loss rate
-  than any of the three daily candidates above, but on thinner trade
-  counts per ticker - still being evaluated, not yet committed as
-  evidence. `rule_based_dip_buy()` also gained an optional `stop_loss`
-  (`src/strategies.py`) - a hard downside cap like crypto's strategy
-  always had, since the daily walk-forward runs found drawdowns as deep
-  as -40% (XOM) while this rule just waited for a mean-reversion that
-  happened to eventually come. Full writeup in `docs/RESEARCH.md`.
+- **Stock validation: 8 candidates walk-forward tested, none cleared the
+  bar.** Across an extensive search - daily and 5-minute bars, the plain
+  `rule_based` rule, a version with a hard stop-loss and re-entry
+  cooldown added, and `ml_filtered` (the same rule gated by a trained ML
+  model) - every candidate's walk-forward loss rate landed in roughly
+  the same 17-32% range, and no combination of return/consistency/trade
+  count stood out as genuinely robust. This is an honest result, not a
+  dead end: it means dip-buying these 9 stocks hasn't shown a real edge
+  yet at either resolution, with or without an ML filter, the same
+  place crypto's own validation started before `walk_forward.py` found
+  something worth trusting. `get_stock_bars_range()`
+  (`src/alpaca_data.py`) lets stocks pull intraday bars from Alpaca now,
+  the same way crypto does; `rule_based_dip_buy()` gained an optional
+  `stop_loss` + `stop_cooldown_bars` (a real walk-forward run found the
+  stop-loss alone could backfire - SPY's 2019-2021 window went from
+  -3.2% to -27.4% - fixed by adding the cooldown); `optimize.py`/
+  `walk_forward.py`/`train_stock_model.py` all gained `--strategy
+  ml_filtered` support. Every grid and walk-forward run is committed as
+  real evidence in `results/` (see `docs/RESEARCH.md` for the full
+  candidate-by-candidate breakdown and every command used).
 
-  <img src="results/param_sweep_overview_stocks.png" alt="Scatter plot of the stock grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. The highest-return combo trades far more often than most of the cluster below it, unlike crypto's chart where fewer trades meant a better result." width="720">
+  <img src="results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant (plain rule, rule plus stop-loss, ML-filtered). Returns vary from about 0 to 5 percent; loss rates cluster tightly between roughly 17 and 32 percent across every candidate regardless of variant." width="720">
 
-  <img src="results/walk_forward_stocks_candidate.png" alt="Nine small-multiple bar charts, one per stock ticker, showing the dip=-6%/exit=1% candidate's return in each of 7 sequential windows from 2015 to 2026. Mixed green and red bars throughout, with SPY/JNJ/KO showing a shared red window around 2019-2021 - evidence of correlated market-wide moves, similar to what crypto's validation found." width="720">
+  <img src="results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered), average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points (triangles) sit in a visibly lower return band than the plain-rule points (circles and squares), which cluster together around 20-25 percent." width="720">
+
+  <img src="results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return, with no variant clearly separated from the others." width="720">
 - **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
   is committed automatically, viewable directly on github.com: one
   whole-account net gain/loss panel, plus cumulative realized P&L and

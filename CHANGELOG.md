@@ -17,6 +17,35 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.0 - 2026-07-27
+
+- **Stock validation concluded (for now): 8 candidates walk-forward
+  tested this session, none cleared the bar.** Daily and 5-minute bars,
+  plain `rule_based`, `rule_based` with a stop-loss + re-entry cooldown,
+  and `ml_filtered` (the same rule gated by a trained model) all landed
+  in roughly the same 17-32% ticker-window loss rate - no combination of
+  return, consistency, and real trade count stood out as robust. This is
+  an honest result, not a dead end: dip-buying these 9 stocks hasn't
+  shown a real edge yet at either resolution, with or without an ML
+  filter - the same place crypto's own validation started before
+  `walk_forward.py` eventually found something worth trusting. Stocks
+  remain paused; nothing here resumes live stock trading on its own.
+- Added 3 new committed charts summarizing the entire search:
+  [`results/walk_forward_stocks_summary.png`](results/walk_forward_stocks_summary.png)
+  (all 8 candidates' return/consistency side by side),
+  [`results/param_sweep_overview_stocks_daily_all.png`](results/param_sweep_overview_stocks_daily_all.png)
+  and
+  [`results/param_sweep_overview_stocks_5m_all.png`](results/param_sweep_overview_stocks_5m_all.png)
+  (all three daily/5-minute grid-search variants combined). Every
+  underlying grid and walk-forward run behind these charts is also
+  committed as CSV - see `docs/RESEARCH.md`'s "Final tally" section for
+  the full list and the important caveats about differing held-out
+  periods across variants (particularly `ml_filtered`, which stops
+  before its model's own training window rather than reaching the
+  present the way every other candidate here does).
+- README's stock section rewritten to lead with this consolidated
+  conclusion instead of a running list of individual candidates.
+
 ## Version Richards 0.8.9 - 2026-07-27
 
 - Added: `--end` to `train_stock_model.py` - trains up through a given
