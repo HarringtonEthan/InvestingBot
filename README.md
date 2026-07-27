@@ -1,4 +1,15 @@
-# InvestingBot — Version Richards 0.9.1
+<div align="center">
+
+# InvestingBot — Version Richards 0.9.2
+
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Tests: 71 passing](https://img.shields.io/badge/tests-71%20passing-4c9a2a)](tests/)
+[![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
+[![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
+
+*A systematic "buy the dip" strategy for stocks and crypto — backtested, searched, validated, and paper-traded in the open.*
+
+</div>
 
 Version history lives in `CHANGELOG.md`.
 
@@ -6,17 +17,29 @@ A "buy the dip" stock and crypto strategy: I backtest it, search for better
 settings systematically, then optionally run it automatically against a
 paper (fake-money) brokerage account.
 
-**Not investment advice.** I built this to answer a specific question before
-any real money gets involved: do these dip-buying rules actually beat just
-buying and holding? For a long time the honest answer was no. As of
-2026-07-27, walk-forward validation against a real year of data found a
-configuration that may have found something real - **meaningfully
-de-risked, not yet a proven steady edge** - which is exactly why it's
-running live on the paper account now instead of just sitting in a
-backtest. See "Current live status" below for the full picture, caveats
-included. I'm only going to consider real money once
-something actually demonstrates an edge with real trades, not just
-backtested ones.
+> [!WARNING]
+> **Not investment advice.** I built this to answer a specific question before
+> any real money gets involved: do these dip-buying rules actually beat just
+> buying and holding? For a long time the honest answer was no. As of
+> 2026-07-27, walk-forward validation against a real year of data found a
+> configuration that may have found something real - **meaningfully
+> de-risked, not yet a proven steady edge** - which is exactly why it's
+> running live on the paper account now instead of just sitting in a
+> backtest. See "Current live status" below for the full picture, caveats
+> included. I'm only going to consider real money once
+> something actually demonstrates an edge with real trades, not just
+> backtested ones.
+
+## Contents
+
+- [Documentation](#documentation)
+- [Current live status](#current-live-status-as-of-this-writing)
+- [Setup](#setup)
+- [Architecture](#architecture)
+- [Security: who can see what, and who can change what](#security-who-can-see-what-and-who-can-change-what)
+- [Disclaimer](#disclaimer)
+
+---
 
 ## Documentation
 
@@ -39,6 +62,8 @@ architecture. Deeper material lives in `docs/`:
   strategy and the ML model actually do, and the two tools for searching
   and validating parameter choices (`optimize.py`, `walk_forward.py`).
 - **[CHANGELOG.md](CHANGELOG.md)** - full version-by-version history.
+
+---
 
 ## Current live status (as of this writing)
 
@@ -154,6 +179,8 @@ This is a snapshot and will be stale by the time you read it - check
   crypto config hasn't closed a trade yet. Full history of every bug and
   change that shaped these numbers is in `CHANGELOG.md`.
 
+---
+
 ## Setup
 
 Everything below takes you from a completely fresh machine (nothing
@@ -245,6 +272,8 @@ Once setup is done, see `docs/AUTOMATION.md` to connect a real (paper)
 Alpaca account and run this on a schedule, or `docs/RESEARCH.md` to run
 and interpret a backtest first.
 
+---
+
 ## Architecture
 
 ```
@@ -304,6 +333,8 @@ See `docs/RESEARCH.md` for what each strategy and the ML model actually
 do, and `docs/AUTOMATION.md` for the live-trading, logging, and dashboard
 files.
 
+---
+
 ## Security: who can see what, and who can change what
 
 A public GitHub repository means the source code is visible to anyone -
@@ -342,9 +373,12 @@ is and isn't visible or changeable:
   workflows, and the automation described throughout this project keeps
   working identically either way.
 
+---
+
 ## Disclaimer
 
-This project is for education and research. Nothing here is financial
-advice, and past backtest performance - synthetic or real - doesn't
-predict future results. I built this to learn, not to manage anyone's
-money, including my own, until it earns that.
+> [!NOTE]
+> This project is for education and research. Nothing here is financial
+> advice, and past backtest performance - synthetic or real - doesn't
+> predict future results. I built this to learn, not to manage anyone's
+> money, including my own, until it earns that.

@@ -17,6 +17,16 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.2 - 2026-07-27
+
+- README given a visual pass - not a single word of its actual content
+  changed. Added: badges (Python version, test count, paper-trading-only
+  mode, demonstrated-edge status) in a centered header block; a "Contents"
+  section linking to every major heading; horizontal-rule dividers
+  between sections; the existing "Not investment advice" and Disclaimer
+  paragraphs converted to GitHub's `[!WARNING]`/`[!NOTE]` alert-style
+  blockquotes (same text, just visually set apart). Purely presentational.
+
 ## Version Richards 0.9.1 - 2026-07-27
 
 - Fixed: `live_trade.py` and `main.py` had no way to actually configure
