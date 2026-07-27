@@ -19,6 +19,21 @@ consider real money once something actually demonstrates an edge.
 options mean, why this is all in Python, and how the automation actually
 runs every 5 minutes without my computer being on.
 
+## Contents
+
+- [Current live status](#current-live-status-as-of-this-writing)
+- [Setup](#setup)
+- [How this actually works](#how-this-actually-works-a-plain-english-walkthrough)
+- [What's here](#whats-here)
+- [Running it](#running-it)
+- [Results](#results-synthetic-data-demo-run)
+- [Automated paper trading](#automated-paper-trading)
+- [Security](#security-who-can-see-what-and-who-can-change-what)
+- [Before this touches real money](#before-this-touches-real-money)
+- [Disclaimer](#disclaimer)
+- [Version history](#version-history)
+- [Glossary](#glossary)
+
 ## Current live status (as of this writing)
 
 I keep this section updated so I don't have to reverse engineer what's
@@ -189,6 +204,96 @@ whenever the live configuration changes.
   strategies - expected, since it's a trend-following design meant for
   slower timeframes and genuinely trending markets, not what I tested it
   against.
+
+## Setup
+
+Everything below takes you from a completely fresh machine (nothing
+installed) to being able to run every command in this README. Pick
+whichever section matches your operating system - both end up in the
+exact same place.
+
+**Prerequisites, either way:**
+- Python 3.12 or newer
+- git
+- A free [Alpaca](https://alpaca.markets) account - only needed for
+  live paper trading later on, not for the backtesting steps below
+
+### Windows
+
+1. **Install Python.** Download the installer from
+   [python.org/downloads](https://www.python.org/downloads/). On the
+   first install screen, check **"Add python.exe to PATH"** before
+   clicking Install - easy to miss, and without it `python` won't be
+   recognized in a terminal.
+2. **Install git.** Download from
+   [git-scm.com/download/win](https://git-scm.com/download/win) and run
+   the installer, default options are fine.
+3. **Open a terminal.** PowerShell works (search "PowerShell" in the
+   Start menu).
+4. **Clone the repository:**
+   ```powershell
+   git clone https://github.com/HarringtonEthan/InvestingBot.git
+   cd InvestingBot
+   ```
+5. **Create and activate a virtual environment** - keeps this project's
+   Python packages separate from anything else on your machine:
+   ```powershell
+   python -m venv venv
+   venv\Scripts\activate
+   ```
+   The prompt should now start with `(venv)` - that confirms it worked.
+6. **Install dependencies:**
+   ```powershell
+   pip install -r requirements.txt
+   ```
+7. **Verify it works:**
+   ```powershell
+   python main.py --ticker SPY --start 2015-01-01 --split 2022-01-01 --end 2024-12-31
+   ```
+   This should print a strategy comparison table and save a chart to
+   `results/equity_curve.png`.
+
+### macOS
+
+1. **Install Python.** macOS ships with an old system Python that
+   shouldn't be used for this - install a current version instead.
+   Easiest path is [Homebrew](https://brew.sh):
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   brew install python@3.12
+   ```
+   Or download the installer directly from
+   [python.org/downloads](https://www.python.org/downloads/).
+2. **Install git.** Usually already present - check with
+   `git --version` in Terminal. If it's missing, macOS will prompt to
+   install the Xcode Command Line Tools, or install it via Homebrew:
+   `brew install git`.
+3. **Open Terminal** (Applications -> Utilities -> Terminal, or
+   Spotlight search "Terminal").
+4. **Clone the repository:**
+   ```bash
+   git clone https://github.com/HarringtonEthan/InvestingBot.git
+   cd InvestingBot
+   ```
+5. **Create and activate a virtual environment:**
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+   The prompt should now start with `(venv)` - that confirms it worked.
+6. **Install dependencies:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+7. **Verify it works:**
+   ```bash
+   python main.py --ticker SPY --start 2015-01-01 --split 2022-01-01 --end 2024-12-31
+   ```
+   This should print a strategy comparison table and save a chart to
+   `results/equity_curve.png`.
+
+Once setup is done, see "Automated paper trading" below to connect a
+real (paper) Alpaca account and run this on a schedule.
 
 ## How this actually works (a plain-English walkthrough)
 
@@ -485,8 +590,11 @@ backtest wouldn't mean anything about live behavior.
 
 ## Running it
 
+Assumes "Setup" above is already done (dependencies installed, virtual
+environment activated). The same command that verified setup works is
+also the general pattern for every backtest in this project:
+
 ```bash
-pip install -r requirements.txt
 python main.py --ticker SPY --start 2015-01-01 --split 2022-01-01 --end 2024-12-31
 ```
 
