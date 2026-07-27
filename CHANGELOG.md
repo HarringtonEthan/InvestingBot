@@ -17,6 +17,18 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.7.3 - 2026-07-27
+
+- Updated README's opening framing: it stated flatly that the honest
+  answer to "does this beat buy-and-hold" was no. As of 0.7.0 that's no
+  longer the whole story - reworded to say a validated configuration may
+  have found something real, not proven, and is now running live
+  specifically to gather forward evidence rather than trust the backtest
+  alone. Still points to "Current live status" for the full picture and
+  caveats, and still ties "real money" to real trade evidence, not
+  backtested numbers. Documentation-only; no code or live-trading
+  behavior changed.
+
 ## Version Richards 0.7.2 - 2026-07-27
 
 Full sweep: comments, docs, and stale-reference check across everything
