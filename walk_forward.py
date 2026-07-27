@@ -18,12 +18,14 @@ does. Defaults match the parameters the live crypto workflow actually
 runs with, so running this with no threshold flags evaluates the
 strategy currently trading real (paper) money.
 
-Caveat: Yahoo Finance only keeps a limited window of intraday history
-(roughly 60 days for 5-minute bars). Walk-forwarding at --interval 5m
-over a long --start/--end range will just produce early windows that
-fall back to synthetic data (and get skipped) or fail outright - use a
-recent --start, or a coarser --interval (1h, 1d) to validate over a
-longer stretch of calendar time.
+Data source: crypto tickers pull historical bars from Alpaca first (see
+src/data.py's get_price_data_smart()), since Yahoo Finance's ~60-day
+intraday history window would otherwise cap any real validation at a
+couple months. Falls back to Yahoo (then synthetic, which gets skipped)
+if Alpaca has nothing for a given range - needs ALPACA_API_KEY /
+ALPACA_SECRET_KEY in your .env, same as live trading, even though this
+never places an order. Non-crypto tickers still go through Yahoo
+directly and remain capped at its intraday window.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -35,12 +37,17 @@ import argparse
 # pandas for date_range (splitting the overall range into windows) and
 # Series (computing mean/std/min across each window's result).
 import pandas as pd
+# Loads ALPACA_API_KEY / ALPACA_SECRET_KEY from a local .env file, same
+# as live_trade.py - needed here too now that crypto windows may pull
+# real historical bars from Alpaca, not just Yahoo Finance.
+from dotenv import load_dotenv
 
 # The backtest engine used to score every window.
 from src.backtest import run_backtest
-# Price data loading; also the bars-per-year table for intraday
-# intervals, reused so each window's Sharpe is annualized correctly.
-from src.data import PERIODS_PER_YEAR_24_7, get_price_data
+# Price data loading (Alpaca-first for crypto, Yahoo otherwise); also
+# the bars-per-year table for intraday intervals, reused so each
+# window's Sharpe is annualized correctly.
+from src.data import PERIODS_PER_YEAR_24_7, get_price_data_smart
 # Technical indicator computation.
 from src.features import add_features
 # The strategy actually running live on crypto.
@@ -64,8 +71,13 @@ def make_windows(start: str, end: str, n_windows: int) -> list[tuple[str, str]]:
 
 
 def evaluate_window(ticker: str, window_start: str, window_end: str, args, periods_per_year: float):
-    """Runs one ticker's backtest over one window. Returns a BacktestResult, or None if skipped."""
-    raw, is_synthetic = get_price_data(ticker, window_start, window_end, interval=args.interval)
+    """
+    Runs one ticker's backtest over one window. Returns (BacktestResult,
+    source) - source is "alpaca", "yahoo", or "synthetic" (see
+    get_price_data_smart()'s docstring) - or None if this window should
+    be skipped entirely (no real data, or too few bars to mean anything).
+    """
+    raw, is_synthetic, source = get_price_data_smart(ticker, window_start, window_end, interval=args.interval)
     if is_synthetic:
         # Never let a validation run draw conclusions from fake data -
         # a window with no real data available is reported as skipped,
@@ -80,7 +92,8 @@ def evaluate_window(ticker: str, window_start: str, window_end: str, args, perio
     position = dip_buy_profit_target(
         df, dip_threshold=args.dip_threshold, profit_target=args.profit_target, stop_loss=args.stop_loss,
     )
-    return run_backtest(df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
+    result = run_backtest(df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
+    return result, source
 
 
 def main():
@@ -102,6 +115,11 @@ def main():
     parser.add_argument("--stop-loss", type=float, default=0.03)
     args = parser.parse_args()
 
+    # Populate ALPACA_API_KEY / ALPACA_SECRET_KEY from .env, if present -
+    # needed now that crypto windows may pull real historical bars from
+    # Alpaca (see get_price_data_smart()), not just Yahoo Finance.
+    load_dotenv()
+
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
     windows = make_windows(args.start, args.end, args.windows)
 
@@ -112,21 +130,22 @@ def main():
 
     for ticker in args.ticker:
         print(f"=== {ticker} ===")
-        print(f"{'Window':<24}{'Return':>10}{'Sharpe':>10}{'MaxDD':>10}{'Trades':>9}")
+        print(f"{'Window':<24}{'Return':>10}{'Sharpe':>10}{'MaxDD':>10}{'Trades':>9}  Source")
         # Collected only from windows that actually produced a result -
         # a skipped window (no real data / too short) contributes nothing
         # to the consistency check below rather than counting as a zero.
         window_returns = []
         for w_start, w_end in windows:
             label = f"{w_start} -> {w_end}"
-            result = evaluate_window(ticker, w_start, w_end, args, periods_per_year)
-            if result is None:
+            outcome = evaluate_window(ticker, w_start, w_end, args, periods_per_year)
+            if outcome is None:
                 print(f"{label:<24}{'SKIPPED (no real data / window too short)':>39}")
                 continue
+            result, source = outcome
             window_returns.append((result.total_return, result.num_trades))
             print(
                 f"{label:<24}{result.total_return:>9.1%} {result.sharpe:>10.2f} "
-                f"{result.max_drawdown:>9.1%} {result.num_trades:>9}"
+                f"{result.max_drawdown:>9.1%} {result.num_trades:>9}  {source}"
             )
 
         if len(window_returns) < 2:

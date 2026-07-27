@@ -192,13 +192,26 @@ Run with no `--dip-threshold`/`--profit-target`/`--stop-loss` flags, it
 defaults to the exact parameters the live crypto workflow actually trades
 with (-1% dip / +1% profit / -3% stop), so this validates the strategy
 currently running, not a hypothetical one. It reports each window's
-return/Sharpe/drawdown/trade count individually, then flags how many
-windows were net losers and how many never traded at all (an untested
-window, not a proven-safe one) - a combo worth trusting should look
-reasonable across most windows, not just win on average because one
-window carried the rest.
+return/Sharpe/drawdown/trade count individually (plus which data source
+that window actually came from - see below), then flags how many windows
+were net losers and how many never traded at all (an untested window, not
+a proven-safe one) - a combo worth trusting should look reasonable across
+most windows, not just win on average because one window carried the rest.
 
-Yahoo Finance only keeps a limited window of intraday history (roughly 60
-days for 5-minute bars) - keep `--start` recent at `--interval 5m`, or use
-a coarser interval (`1h`, `1d`) to validate over a longer stretch of
+**Data source:** Yahoo Finance only keeps a limited window of intraday
+history (roughly 60 days for 5-minute bars), which used to cap any real
+5-minute walk-forward test at a couple of months. For crypto tickers,
+this tool now tries **Alpaca's historical crypto bars first**
+(`src/data.py`'s `get_price_data_smart()`) - Alpaca isn't subject to
+Yahoo's free-tier intraday retention limit, so a much longer `--start`
+(a year or more back) can work for crypto specifically. It needs
+`ALPACA_API_KEY`/`ALPACA_SECRET_KEY` in your `.env` (see
+`docs/AUTOMATION.md`) even though this never places an order - only
+reads market data. Each window's output line ends with which source
+actually served it (`alpaca`, `yahoo`, or a `SKIPPED` line if neither
+had enough real data): if a window shows `yahoo` or gets skipped instead
+of `alpaca`, that's worth noticing - it means Alpaca didn't have data
+that far back for that pair/range and it fell back. Non-crypto tickers
+still go through Yahoo only and remain capped at its intraday window; use
+a coarser interval (`1h`, `1d`) for those if you need a longer stretch of
 calendar time.

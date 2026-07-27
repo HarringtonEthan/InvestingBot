@@ -14,6 +14,30 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   picked on.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.6.2 - 2026-07-27
+
+- Added: `walk_forward.py` now pulls crypto history from **Alpaca first**
+  instead of only Yahoo Finance, via a new `get_price_data_smart()` in
+  `src/data.py`. Yahoo's intraday history is capped at roughly 60 days
+  regardless of ticker, which made a real multi-window validation of the
+  5-minute crypto strategy impossible past that; Alpaca (the actual
+  venue this project trades against) isn't subject to that same
+  free-tier retention limit, so a much longer `--start` can now work for
+  crypto specifically. Falls back to Yahoo, then synthetic (skipped), if
+  Alpaca has too little data for a given range - each window's output
+  now shows exactly which source served it (`alpaca`/`yahoo`), so a
+  fallback is visible, not silent.
+- Added: `src/alpaca_data.py`'s `get_crypto_bars()` (live trading) was
+  refactored to share its bar-fetching logic with the new
+  `get_crypto_bars_range()` (historical/backtesting) instead of
+  duplicating it - behavior-preserving for live trading, which still
+  goes through the exact same staleness check as before.
+- Added: `tests/test_data.py` - covers `get_price_data_smart()`'s
+  routing (Alpaca-first for crypto, straight-to-Yahoo for stocks, and
+  the fallback chain when Alpaca comes up short or unreachable).
+- Read-only research-tooling change; no live crypto trading behavior
+  affected - `live_trade.py`'s own price-fetching path is untouched.
+
 ## Version Richards 0.6.1 - 2026-07-27
 
 Documentation restructure - no code or live-trading behavior changed.

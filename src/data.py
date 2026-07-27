@@ -69,6 +69,54 @@ def get_price_data(
     return _generate_synthetic(ticker, start, end, interval=interval, seed=seed), True
 
 
+def get_price_data_smart(
+    ticker: str, start: str, end: str, interval: str = "1d", seed: int | None = None
+) -> tuple[pd.DataFrame, bool, str]:
+    """
+    Same contract as get_price_data() (a Close-only DataFrame), but for
+    crypto tickers tries Alpaca's historical crypto bars FIRST, not Yahoo
+    Finance. Yahoo's ~60-day intraday history window is a hard ceiling
+    that makes real walk-forward validation of a 5-minute crypto strategy
+    impossible past that; Alpaca - the actual venue this project trades
+    against - isn't subject to that same free-tier retention cap, and may
+    carry deeper history for the same pair.
+
+    Returns (dataframe, is_synthetic, source), where source is one of
+    "alpaca", "yahoo", or "synthetic" - so a caller can report exactly
+    where a given window's data actually came from, not just whether it
+    was real. Non-crypto tickers go straight to get_price_data() - Yahoo
+    has always been a perfectly deep source for stocks. Crypto tickers
+    fall back to get_price_data() too (Yahoo, then synthetic) if Alpaca
+    has too little data for this range or isn't reachable (missing
+    credentials, rate limited, a range older than Alpaca has on file for
+    this pair).
+    """
+    # Imported here, not at module level, so this module can still be
+    # imported in an environment where alpaca-py or its credentials
+    # aren't available - only pays that cost if a crypto ticker actually
+    # reaches this branch, same reasoning as the deferred yfinance import
+    # in _fetch_real() above.
+    from .symbols import resolve_symbol
+
+    symbol = resolve_symbol(ticker)
+
+    if symbol.is_crypto:
+        try:
+            from .alpaca_data import get_crypto_bars_range
+
+            df = get_crypto_bars_range(symbol.alpaca, interval, start, end)
+            # Same "enough to be useful" bar as get_price_data() uses
+            # below - a handful of stray bars isn't worth treating as a
+            # real result either.
+            if len(df) > 50:
+                return df, False, "alpaca"
+        except Exception as e:
+            print(f"[{ticker}] Alpaca historical fetch failed ({type(e).__name__}: {e}) - falling back to Yahoo Finance.")
+
+    df, is_synthetic = get_price_data(symbol.yfinance, start, end, interval=interval, seed=seed)
+    return df, is_synthetic, ("synthetic" if is_synthetic else "yahoo")
+
+
 def _fetch_real(ticker: str, start: str, end: str, interval: str) -> pd.DataFrame | None:
     # Imported inside the function (not at the top of the file) so this
     # module can still be imported even in an environment where yfinance

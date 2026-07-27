@@ -1,17 +1,19 @@
 """
-Crypto price data via Alpaca's own market data API, for live trading.
+Crypto price data via Alpaca's own market data API.
 
-Yahoo Finance's intraday crypto bars can go stale for hours without
-throwing an error - it just silently serves an old bar as if it were
-current, which is worse than an outright failure since nothing looks
-wrong. This pulls from Alpaca instead: the same venue trades actually
-execute against, continuously updating, and explicitly checked for
-staleness before being trusted.
-
-Only used for crypto in live_trade.py. Backtesting (main.py) still uses
-Yahoo Finance via src/data.py - staleness doesn't matter for historical
-data, and Yahoo gives a much longer history window than Alpaca's crypto
-feed does.
+Used two ways:
+  - Live trading (`get_crypto_bars`): Yahoo Finance's intraday crypto bars
+    can go stale for hours without throwing an error - it just silently
+    serves an old bar as if it were current, which is worse than an
+    outright failure since nothing looks wrong. This pulls from Alpaca
+    instead: the same venue trades actually execute against, continuously
+    updating, and explicitly checked for staleness before being trusted.
+  - Historical/backtesting (`get_crypto_bars_range`): Yahoo Finance's
+    intraday history is capped at roughly 60 days regardless of ticker,
+    which makes real walk-forward validation of a 5-minute strategy
+    impossible past that window. Alpaca isn't subject to that same
+    free-tier retention cap, so `src/data.py`'s `get_price_data_smart()`
+    tries this first for crypto tickers before falling back to Yahoo.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -54,13 +56,16 @@ _STALENESS_MINUTES = {
 }
 
 
-def get_crypto_bars(symbol: str, interval: str, lookback_days: int) -> pd.DataFrame:
+def _fetch_bars(symbol: str, interval: str, start: dt.datetime, end: dt.datetime) -> pd.DataFrame:
     """
-    symbol: Alpaca-format crypto symbol, e.g. "BTC/USD".
-    Returns a DataFrame with a DatetimeIndex and a "Close" column
+    Shared Alpaca fetch used by both get_crypto_bars() and
+    get_crypto_bars_range() below: requests bars for [start, end] and
+    returns a DataFrame with a DatetimeIndex and a "Close" column
     (freshest bar last) - same shape src/data.py produces, so it drops
-    straight into add_features(). Raises if Alpaca has no bars, or if
-    the latest bar is older than a sane threshold for that interval.
+    straight into add_features(). Raises if Alpaca has no bars at all
+    for this symbol/range; doesn't check staleness - that's only
+    meaningful for the live-trading caller, not a deliberately historical
+    range.
     """
     # Look up the (amount, unit) pair for the requested interval; default
     # to 5-minute bars if given an interval string not in the map.
@@ -73,10 +78,6 @@ def get_crypto_bars(symbol: str, interval: str, lookback_days: int) -> pd.DataFr
         api_key=os.environ.get("ALPACA_API_KEY"),
         secret_key=os.environ.get("ALPACA_SECRET_KEY"),
     )
-    # Request bars from lookback_days ago up through right now.
-    end = dt.datetime.now(dt.timezone.utc)
-    start = end - dt.timedelta(days=lookback_days)
-
     request = CryptoBarsRequest(
         symbol_or_symbols=symbol,
         timeframe=TimeFrame(amount, unit),
@@ -100,7 +101,19 @@ def get_crypto_bars(symbol: str, interval: str, lookback_days: int) -> pd.DataFr
     # Alpaca's column is lowercase "close"; rename to "Close" to match the
     # convention used everywhere else in this project (src/data.py's
     # output), then keep only that column.
-    df = df.rename(columns={"close": "Close"})[["Close"]]
+    return df.rename(columns={"close": "Close"})[["Close"]]
+
+
+def get_crypto_bars(symbol: str, interval: str, lookback_days: int) -> pd.DataFrame:
+    """
+    Live-trading path: symbol is an Alpaca-format crypto symbol, e.g.
+    "BTC/USD". Fetches the last lookback_days of bars and raises if the
+    latest one is older than a sane threshold for that interval - a
+    live trading decision should never act on stale data.
+    """
+    end = dt.datetime.now(dt.timezone.utc)
+    start = end - dt.timedelta(days=lookback_days)
+    df = _fetch_bars(symbol, interval, start, end)
 
     # Timestamp of the most recent bar received.
     last_ts = df.index[-1]
@@ -121,3 +134,18 @@ def get_crypto_bars(symbol: str, interval: str, lookback_days: int) -> pd.DataFr
         )
 
     return df
+
+
+def get_crypto_bars_range(symbol: str, interval: str, start: str, end: str) -> pd.DataFrame:
+    """
+    Historical/backtesting path: symbol is an Alpaca-format crypto symbol
+    (e.g. "BTC/USD"); start/end are date strings (e.g. "2024-06-01").
+    Unlike get_crypto_bars() above, this takes an explicit date range
+    instead of "lookback_days from right now," and never raises for
+    staleness - a deliberately historical range is expected to be old.
+    Raises if Alpaca has no bars at all for this symbol/range (e.g. the
+    range predates when Alpaca started carrying this pair).
+    """
+    start_ts = pd.Timestamp(start, tz="UTC")
+    end_ts = pd.Timestamp(end, tz="UTC")
+    return _fetch_bars(symbol, interval, start_ts, end_ts)
