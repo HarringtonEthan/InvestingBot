@@ -115,7 +115,11 @@ def main():
     parser.add_argument("--start", required=True)
     parser.add_argument("--split", required=True, help="only data from here onward is used (held-out test period)")
     parser.add_argument("--end", required=True)
-    parser.add_argument("--interval", default="5m")
+    parser.add_argument("--interval", default="5m",
+                         help="bar size, e.g. 5m for crypto (the default - matches the live crypto "
+                              "schedule) or 1d for stocks - don't leave this at 5m for a multi-year "
+                              "--strategy rule_based stock search, Yahoo's 5-minute history only goes "
+                              "back about 60 days regardless of ticker")
     parser.add_argument("--cost-bps", type=float, default=20.0,
                          help="cost in basis points charged on EACH position change - a full "
                               "buy-then-sell round trip pays this twice, not once")

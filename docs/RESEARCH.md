@@ -212,11 +212,15 @@ so they can't quietly drift apart on it). The live stock workflow's
 just picked:
 
 ```bash
-python optimize.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy rule_based \
+python optimize.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy rule_based --interval 1d \
   --start 2015-01-01 --split 2022-01-01 --end 2024-12-31 --cost-bps 5 \
   --dip-values=-0.01,-0.02,-0.03,-0.04,-0.05 \
   --exit-values 0.0,0.01,0.02
 ```
+(`--interval 1d` matters here - `optimize.py`'s own default is `5m`,
+crypto's interval; leaving it off for a 2015-2024 stock range hits the
+exact same Yahoo 60-day intraday cap crypto ran into, just for the
+wrong reason.)
 
 Nine tickers, spanning several sectors on purpose (broad market, tech,
 financials, energy, healthcare, staples, industrials, media) - the same

@@ -112,7 +112,11 @@ def main():
     parser.add_argument("--end", required=True)
     parser.add_argument("--windows", type=int, default=4,
                          help="how many sequential, non-overlapping windows to split --start/--end into")
-    parser.add_argument("--interval", default="5m", help="matches the live crypto schedule by default")
+    parser.add_argument("--interval", default="5m",
+                         help="bar size, e.g. 5m for crypto (the default - matches the live crypto "
+                              "schedule) or 1d for stocks - don't leave this at 5m for a multi-year "
+                              "--strategy rule_based stock validation, Yahoo's 5-minute history only "
+                              "goes back about 60 days regardless of ticker")
     parser.add_argument("--cost-bps", type=float, default=20.0,
                          help="cost in basis points charged on EACH position change; crypto fees "
                               "run higher than stocks, so don't leave this at a stock-sized default")

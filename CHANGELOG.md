@@ -17,6 +17,21 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.3 - 2026-07-27
+
+- Fixed: `docs/RESEARCH.md`'s `optimize.py --strategy rule_based`
+  example command for stocks was missing `--interval 1d` - since
+  `optimize.py`'s own default is `5m` (crypto's interval), running that
+  example as written for a 2015-2024 stock range hit the exact same
+  Yahoo 60-day intraday cap crypto ran into, just for the wrong reason.
+  Found running it for real. Added `--interval 1d` to the example and a
+  warning note explaining why.
+- Added: `--interval`'s help text in both `optimize.py` and
+  `walk_forward.py` now explicitly calls out that leaving it at the
+  crypto-matching `5m` default for a multi-year stock search will hit
+  that same cap, instead of only documenting it in prose elsewhere.
+- Documentation/help-text only; no code behavior changed.
+
 ## Version Richards 0.8.2 - 2026-07-27
 
 - Changed: stock ticker list grew from 3 (SPY, AAPL, QQQ) to 9, adding
