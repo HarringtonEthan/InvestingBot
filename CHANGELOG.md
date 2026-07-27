@@ -12,7 +12,23 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   periods (including at least one trending and one choppy/range-bound
   stretch), not just the single window the current thresholds were
   picked on.
-- No known open correctness bugs (true as of 0.5.1).
+- No known open correctness bugs (true as of 0.5.2).
+
+## Version Richards 0.5.2 - 2026-07-27
+
+Full codebase sweep (every `src/*.py` file, `live_trade.py`, `main.py`,
+`optimize.py`, `train_stock_model.py`, `visualize_log.py`, all 4
+workflow files, and every test) re-read line by line looking for bugs
+and comment gaps.
+
+- Fixed: `--max-notional 0` was silently treated the same as
+  `--max-notional` not being passed at all, because `if args.max_notional:`
+  treats 0 and None identically in Python - an explicit zero cap should
+  mean "never buy," not "fall back to the uncapped per-ticker split."
+  Extracted into a small, directly-tested `compute_buy_budget()`
+  function so this class of truthiness bug can't quietly return. Zero
+  effect on current live behavior (the configured cap is $2,000, not 0).
+- No other bugs found; everything else re-verified clean.
 
 ## Version Richards 0.5.1 - 2026-07-27
 

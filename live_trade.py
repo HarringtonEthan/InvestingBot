@@ -211,6 +211,19 @@ def daily_loss_exceeded(broker: Broker, threshold_pct: float) -> bool:
     return drawdown >= threshold_pct
 
 
+def compute_buy_budget(per_ticker_budget: float, max_notional: float | None) -> float:
+    """
+    How much a single BUY is allowed to spend: the even per-ticker split,
+    capped by --max-notional if one was given. Checks `is not None`, not
+    plain truthiness - an explicit --max-notional 0 must mean "cap every
+    buy at $0" (never buy), not silently fall back to the uncapped split
+    the way `if max_notional:` would (0 is falsy in Python).
+    """
+    if max_notional is not None:
+        return min(per_ticker_budget, max_notional)
+    return per_ticker_budget
+
+
 def poll_for_fill(broker: Broker, order, attempts: int = 3, delay_seconds: float = 2.0):
     """
     Briefly poll Alpaca for whether a just-submitted order has actually
@@ -471,7 +484,7 @@ def main():
                         # earlier starting_cash snapshot), in case an earlier
                         # ticker in this same loop already spent some of it.
                         cash_now = broker.get_cash()
-                        budget = min(per_ticker_budget, args.max_notional) if args.max_notional else per_ticker_budget
+                        budget = compute_buy_budget(per_ticker_budget, args.max_notional)
                         notional = min(budget, cash_now)
                         if notional < 1.0:
                             # Too little cash left to place a meaningful order.

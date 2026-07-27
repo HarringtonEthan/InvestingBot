@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.5.1
+# InvestingBot — Version Richards 0.5.2
 
 Version history lives in `CHANGELOG.md`.
 
@@ -205,6 +205,12 @@ whenever the live configuration changes.
     and the final per-run equity log) had no error handling, unlike
     every per-ticker call - a transient API failure on any of those
     three would still have crashed the whole run. Wrapped in try/except.
+  - **Fixed in a full codebase sweep:** `--max-notional 0` was silently
+    treated the same as not passing the flag at all (`if
+    args.max_notional:` treats 0 and None identically in Python) -
+    extracted into a small, directly-tested `compute_buy_budget()`
+    function. No effect on current behavior, since the configured cap
+    is $2,000, not 0.
 - **Dashboard: live and automated, regenerated hourly.** A fourth
   workflow, `update-dashboard.yml`, runs `visualize_log.py --baseline
   100000` and commits `results/trade_dashboard.png` back to the repo -
@@ -1201,6 +1207,22 @@ money, including my own, until it earns that.
 Semantic versioning (`MAJOR.MINOR.PATCH`). The `0.x.x` line is "Version
 Richards"; `1.0.0`+ becomes "Version Giroux." See `CHANGELOG.md` for
 the exact bar and full history.
+
+### Version Richards 0.5.2 - 2026-07-27
+
+Full codebase sweep (every `src/*.py` file, `live_trade.py`, `main.py`,
+`optimize.py`, `train_stock_model.py`, `visualize_log.py`, all 4
+workflow files, and every test) re-read line by line looking for bugs
+and comment gaps.
+
+- Fixed: `--max-notional 0` was silently treated the same as
+  `--max-notional` not being passed at all, because `if args.max_notional:`
+  treats 0 and None identically in Python - an explicit zero cap should
+  mean "never buy," not "fall back to the uncapped per-ticker split."
+  Extracted into a small, directly-tested `compute_buy_budget()`
+  function so this class of truthiness bug can't quietly return. Zero
+  effect on current live behavior (the configured cap is $2,000, not 0).
+- No other bugs found; everything else re-verified clean.
 
 ### Version Richards 0.5.1 - 2026-07-27
 
