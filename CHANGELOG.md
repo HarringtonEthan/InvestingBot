@@ -14,6 +14,20 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   picked on.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.7.1 - 2026-07-27
+
+- Added: `results/param_sweep_overview.png` and
+  `results/walk_forward_winner.png` - rendered charts of the 0.7.0
+  evidence CSVs, generated straight from `results/param_sweep.csv` and
+  `results/walk_forward.csv` (not hand-edited), embedded in README's
+  "Current live status" and `docs/RESEARCH.md`'s worked example. The
+  scatter plot makes the "trading less often did better" pattern visible
+  at a glance; the small-multiples grid makes clear where the 0.7.0
+  combo's gains are concentrated (two specific calendar windows across
+  several coins), the same caveat already in the 0.7.0 writeup, now
+  visible instead of just described.
+- Documentation-only; no code or live-trading behavior changed.
+
 ## Version Richards 0.7.0 - 2026-07-27
 
 **Live crypto trading rules changed** - the first threshold change since

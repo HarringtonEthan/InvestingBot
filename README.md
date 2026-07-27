@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.7.0
+# InvestingBot — Version Richards 0.7.1
 
 Version history lives in `CHANGELOG.md`.
 
@@ -80,6 +80,11 @@ This is a snapshot and will be stale by the time you read it - check
   -31.8%) that their final positive return doesn't show. Now
   accumulating fresh real trade history under the new settings - see
   `CHANGELOG.md` 0.7.0 for the full writeup.
+
+  <img src="results/param_sweep_overview.png" alt="Scatter plot of the 90-combination grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. Return climbs sharply as trade count drops, and the chosen combo (circled) sits at the top-left with the fewest trades and the best return." width="720">
+
+  <img src="results/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
+
 - **Stocks: ML-filtered, with periodic retraining.** The stock workflow
   runs `--strategy ml_filtered` on SPY/AAPL/QQQ, loading a model that's
   retrained weekly and saved to `models/stock_model.pkl` (see
