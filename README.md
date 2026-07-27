@@ -491,6 +491,37 @@ backtest wouldn't mean anything about live behavior.
 
 ## What's here
 
+```
+InvestingBot/
+├── .env.example                  # Template for local Alpaca credentials - copy to .env, never commit .env itself
+├── requirements.txt              # Pinned third-party Python dependencies
+├── main.py                       # Backtest entry point (research only, no real broker involved)
+├── optimize.py                   # Multi-ticker parameter sweep for the day-trading strategy
+├── train_stock_model.py          # Trains and saves the stock ML dip-filter model
+├── live_trade.py                 # Automated live (paper) trading entry point
+├── visualize_log.py              # Builds the trade dashboard PNG from the logs below
+├── src/
+│   ├── data.py                   # Price data loading (Yahoo Finance, with synthetic fallback)
+│   ├── alpaca_data.py            # Live crypto price data (Alpaca, used instead of Yahoo)
+│   ├── features.py               # Technical indicators (SMA, RSI, volatility, drawdown)
+│   ├── strategies.py             # The five trading strategies
+│   ├── model.py                  # ML dip-filter: training and label logic
+│   ├── model_store.py            # Save/load a trained model to disk
+│   ├── backtest.py               # Backtest engine: turns a position series into results
+│   ├── broker.py                 # Alpaca account/order wrapper
+│   └── symbols.py                # Resolves a ticker into Yahoo/Alpaca symbol formats
+├── .github/workflows/
+│   ├── paper-trade-crypto.yml    # Runs live_trade.py for crypto every 5 minutes
+│   ├── paper-trade-stocks.yml    # Runs live_trade.py for stocks daily near market close
+│   ├── retrain-stock-model.yml   # Runs train_stock_model.py weekly
+│   └── update-dashboard.yml      # Runs visualize_log.py hourly
+├── logs/                         # Generated: trade_log.csv, equity_log.csv, retrain_log.csv
+├── models/                       # Generated: the saved stock_model.pkl and its metadata
+├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv
+├── CHANGELOG.md                  # Full version history
+└── README.md                     # This file
+```
+
 - `src/data.py` - loads price data at daily or intraday resolution
   (`--interval 1d`, `1h`, `15m`, etc.). Tries Yahoo Finance (`yfinance`)
   first; if there's no network access it falls back to a synthetic price
