@@ -17,6 +17,26 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.3 - 2026-07-27
+
+- Clarified: of the 8 stock candidates walk-forward tested this session,
+  `rule_based` on 5-minute bars (`dip=-1.5% exit=2.0%`) is the clear
+  best - its ticker-window loss rate (17.5%) is well below every other
+  candidate's (25-32%), while its average return (3.06%/ticker) still
+  sits mid-pack rather than being traded away for that consistency.
+  Previously the README/`docs/RESEARCH.md` reported all 8 candidates
+  side by side with no single one called out, which understated a real
+  finding: this one is a meaningfully better result than the rest, not
+  just a different one. Still explicitly **not** a proven edge - one
+  year of 5-minute data and 8.6 average trades/ticker is a thin sample -
+  and stocks remain paused either way.
+- `results/walk_forward_stocks_summary.png`,
+  `results/param_sweep_overview_stocks_5m_all.png`, and
+  `results/param_sweep_overview_stocks_daily_all.png` regenerated to
+  visually mark this candidate (outlined/circled with an annotation)
+  instead of showing all 8 with no distinction. README's "Current live
+  status" table now has a dedicated row for it.
+
 ## Version Richards 0.9.2 - 2026-07-27
 
 - README given a visual pass - not a single word of its actual content

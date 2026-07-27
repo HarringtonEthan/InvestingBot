@@ -447,15 +447,14 @@ ticker (Alpaca's free feed only covers about a trailing year, versus
 daily's 11), so it isn't committed as evidence yet - unlike the daily
 results above, this one needs the stop-loss re-test first.
 
-## Final tally: 8 candidates walk-forward tested, none cleared the bar
+## Final tally: 8 candidates walk-forward tested - one clear best, still not a proven edge
 
 This is the honest conclusion after the full search across daily and
 5-minute bars, plain `rule_based`, `rule_based` with a stop-loss +
 re-entry cooldown, and `ml_filtered` (the same rule gated by a trained
-model): **no candidate came out as a robust, walk-forward-consistent
-edge.** Every one landed in roughly the same 17-32% ticker-window loss
-rate, regardless of strategy variant, bar size, or whether an ML filter
-was layered on top:
+model). Most candidates landed in roughly the same 17-32% ticker-window
+loss rate regardless of variant, bar size, or ML filter - but one is a
+clear step above the rest, **bolded** below:
 
 | Candidate | Interval | Avg return/ticker | Losing ticker-windows |
 |---|---|---|---|
@@ -463,10 +462,28 @@ was layered on top:
 | dip=-6% exit=1% | daily | 3.3% | 19/63 (30%) |
 | dip=-8% exit=1% | daily | 2.7% | 16/63 (25%) |
 | dip=-3% exit=1% stop=15% cooldown=5 | daily | 5.1% | 18/63 (29%) |
-| dip=-1.5% exit=2.0% | 5-minute | 3.1% | 11/63 (18%) |
+| **dip=-1.5% exit=2.0%** | **5-minute** | **3.1%** | **11/63 (17.5%)** |
 | dip=-1.5% exit=0.8% | 5-minute | 0.7% | 18/63 (29%) |
 | dip=-1.5% exit=0.8% stop=3% cooldown=78 | 5-minute | 0.2% | 20/63 (32%) |
 | ml_filtered dip=-7% exit=2% | daily | 1.1% | 16/54 (30%) |
+
+**Why `dip=-1.5% exit=2.0%` (5-minute) is the best of the 8, not just
+the highest number on some axis**: every other candidate that scored
+well on one dimension gave it back on another. The two daily candidates
+with the highest returns (5.1%) also have the two highest loss rates
+(29-32%). The safest-looking daily candidates (`-8%/1%`) only get there
+by trading so rarely that "safe" mostly means "untested." This one is
+different - its loss rate (17.5%) is meaningfully lower than *every
+other candidate's*, by a wide enough margin that it isn't just noise,
+while its return (3.1%) still sits in the middle of the pack rather than
+being traded away for that consistency. That combination - clearly
+better on the axis that matters most (does it hold up over time) without
+giving up return to get it - is what makes it the standout, not an
+arbitrary pick. It is **still not a proven edge**: a year of 5-minute
+Alpaca data is a much shorter validation window than crypto's, and 8.6
+average trades per ticker, while more real signal than the daily
+under-trading problem, is still a thin sample to stake much confidence
+on.
 
 Full table: [`results/walk_forward_stocks_summary.csv`](../results/walk_forward_stocks_summary.csv).
 Every candidate's raw per-window data is also committed:
@@ -481,11 +498,11 @@ Every grid search behind these candidates is committed too:
 [`results/param_sweep_stocks_5m_stop.csv`](../results/param_sweep_stocks_5m_stop.csv),
 [`results/param_sweep_stocks_5m_ml_filtered.csv`](../results/param_sweep_stocks_5m_ml_filtered.csv).
 
-<img src="../results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant. Returns vary from about 0 to 5 percent; loss rates cluster tightly between roughly 17 and 32 percent across every candidate regardless of variant." width="720">
+<img src="../results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant. The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black with a star and an annotation calling out its clearly lower loss rate (about 17.5%) versus every other candidate (25-32%), while its return still sits mid-pack." width="720">
 
-<img src="../results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered - average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points sit in a visibly lower return band than the plain-rule points." width="720">
+<img src="../results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered - average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points sit in a visibly lower return band than the plain-rule points. A note box clarifies the overall best-of-8 candidate actually came from the 5-minute search in the next chart, not from this daily one." width="720">
 
-<img src="../results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered. All three variants are intermixed in a loose cloud with no variant clearly separated from the others." width="720">
+<img src="../results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered. All three variants are intermixed in a loose cloud with no variant clearly separated from the others, except one circled and labeled point - dip=-1.5% exit=2.0%, plain rule-based - marked as the best walk-forward result of all 8 candidates tested." width="720">
 
 **Important caveat on the two grid-search overview charts above**: the
 three daily grids were NOT all tested over the same held-out period, and
