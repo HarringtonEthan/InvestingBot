@@ -784,6 +784,55 @@ against a given account at a time. To disable in Task Scheduler: find the
 task, right-click -> Disable (or Delete, once you're confident GitHub
 Actions is working reliably).
 
+### Setting up cron-job.org (recommended - GitHub's own schedule trigger isn't reliable enough on its own)
+
+GitHub Actions' `schedule:` trigger is real and does fire sometimes, but
+it wasn't reliable enough on its own in my testing - runs would silently
+not happen. Every workflow in this repo also accepts
+`workflow_dispatch: {}`, which means it can be started by an API call on
+demand - [cron-job.org](https://cron-job.org) (free) is what actually
+calls that API on a schedule, working around GitHub's flaky one.
+
+1. **Create a GitHub token that's allowed to trigger workflows.** Go to
+   GitHub -> your avatar -> **Settings -> Developer settings -> Personal
+   access tokens -> Fine-grained tokens -> Generate new token**. Scope it
+   to **only this repository**, and under **Repository permissions** set
+   **Actions: Read and write**. Nothing broader than that is needed -
+   see "Security" below for why scoping it this narrowly matters. Copy
+   the token immediately; like an Alpaca key, it's only shown once.
+2. **Sign up for a free account at [cron-job.org](https://cron-job.org).**
+3. **Create a new cronjob** (repeat this whole step once per workflow you
+   want automated - crypto, stocks, retrain, dashboard):
+   - **Title:** anything recognizable, e.g. "InvestingBot - crypto"
+   - **URL:**
+     ```
+     https://api.github.com/repos/<your-username>/InvestingBot/actions/workflows/paper-trade-crypto.yml/dispatches
+     ```
+     (swap the filename for `paper-trade-stocks.yml`, `retrain-stock-model.yml`,
+     or `update-dashboard.yml` for the other three jobs)
+   - **Request method:** `POST`
+   - **Request headers:** add three:
+     ```
+     Accept: application/vnd.github+json
+     Authorization: Bearer <your fine-grained token from step 1>
+     X-GitHub-Api-Version: 2022-11-28
+     ```
+   - **Request body** (JSON), naming whichever branch this is running on:
+     ```json
+     {"ref": "claude/trading-bot-feasibility-31mkkv"}
+     ```
+   - **Schedule:** every 5 minutes for crypto; once daily near market
+     close for stocks; weekly for the retrain job; hourly for the
+     dashboard - matching the cadences described earlier in this README.
+4. **Save, then test it immediately** - cron-job.org lets you trigger a
+   job manually rather than waiting for its schedule. Do that, then check
+   the **Actions** tab on GitHub for a new run of that workflow. A `401`
+   or `404` response usually means the token's scope or the URL/filename
+   is wrong; double-check both.
+5. **Repeat for the other three workflows.** Once all four are confirmed
+   firing, this repo runs itself with zero computers of mine needing to
+   stay on.
+
 ### Crypto support
 
 `--ticker` also accepts crypto: just pass the base symbol (`BTC`, `ETH`,
