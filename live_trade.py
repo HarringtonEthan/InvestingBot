@@ -4,7 +4,7 @@ Alpaca account (paper by default) and, if a position needs to change,
 place the order.
 
 Meant to be run on a schedule via cron / Task Scheduler / GitHub Actions -
-see README.md "Automated paper trading" section for setup. Each run is
+see docs/AUTOMATION.md for setup. Each run is
 stateless: it re-derives that period's buy/sell/hold decision from price
 history and your *actual* broker position for each ticker, so it's safe
 to run it manually as many times as you want to check what it would do.

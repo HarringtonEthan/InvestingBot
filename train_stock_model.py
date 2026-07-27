@@ -15,9 +15,9 @@ an ongoing sense rather than resetting every run.
 Run this on a schedule (see .github/workflows/retrain-stock-model.yml) -
 weekly is a reasonable starting cadence for daily-bar stock data. GitHub's
 own `schedule:` trigger has been unreliable in this project (see
-README.md "Current live status"); point an external scheduler (e.g.
-cron-job.org) at that workflow's `workflow_dispatch` endpoint the same way
-it's already wired up for the live crypto workflow.
+docs/AUTOMATION.md); point an external scheduler (e.g. cron-job.org) at
+that workflow's `workflow_dispatch` endpoint the same way it's already
+wired up for the live crypto workflow.
 """
 
 # Lets type hints work without issue in this Python version.

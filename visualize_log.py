@@ -22,7 +22,7 @@ Three panels:
      full history and the "how is the strategy itself doing" view are
      visible at once. NOT the same number as panel 1's total account
      P&L, and won't sum to it - trade_log.csv only goes back to whenever
-     it was last rebuilt (see the archived-log note in the README), so
+     it was last rebuilt (see the archived-log note in docs/AUTOMATION.md), so
      this panel can't see anything that happened before that. Panel 1,
      built from account equity directly, is the authoritative "how much
      has this account actually made" answer; this panel is only ever a

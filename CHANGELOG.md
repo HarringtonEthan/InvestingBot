@@ -14,6 +14,30 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   picked on.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.6.1 - 2026-07-27
+
+Documentation restructure - no code or live-trading behavior changed.
+
+- The README had grown to nearly 1,400 lines trying to serve three
+  different audiences at once (portfolio reviewers, contributors,
+  complete beginners), which made the important information hard to
+  find. Split it into a short overview README plus four focused docs:
+  `docs/BEGINNER_GUIDE.md` (plain-English walkthrough + glossary),
+  `docs/AUTOMATION.md` (GitHub Actions/cron-job.org setup, logs and
+  dashboard), `docs/RISK.md` (risk controls, real-money requirements),
+  `docs/RESEARCH.md` (backtesting, strategies/ML detail, `optimize.py`,
+  `walk_forward.py`).
+- "Current live status" now leads with a compact scorecard table
+  instead of only prose.
+- Removed the bug-fix narrative bullets and the embedded "Version
+  history" section from the README - that content already existed,
+  word-for-word in spirit, in `CHANGELOG.md`. Versions now live only in
+  the changelog; the README keeps just the current version number at
+  the top.
+- Fixed stale `README.md`-section cross-references in `live_trade.py`,
+  `train_stock_model.py`, `visualize_log.py`, and two workflow files to
+  point at the new doc locations.
+
 ## Version Richards 0.6.0 - 2026-07-27
 
 - Added: `walk_forward.py` - splits a date range into several

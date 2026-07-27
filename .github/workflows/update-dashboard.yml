@@ -2,7 +2,7 @@ name: Update trade dashboard
 
 on:
   # Best-effort only - GitHub's own schedule trigger has been unreliable
-  # in this project (see README.md "Current live status"). Point an
+  # in this project (see docs/AUTOMATION.md). Point an
   # external scheduler (e.g. cron-job.org) at this workflow's
   # workflow_dispatch endpoint instead, the same way it's already wired
   # up for the trading/retrain workflows.
