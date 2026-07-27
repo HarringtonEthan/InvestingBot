@@ -258,14 +258,33 @@ python optimize.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy ml_fi
   --exit-values 0.0,0.01,0.02
 ```
 
-**Important caveat**: `train_stock_model.py` trains on the trailing
-`--lookback-days` (730 by default) counting back from whenever it last
-ran - check `models/stock_model.pkl.meta.json`'s `trained_at` and
-`lookback_days` before picking `--end` above. Evaluating over a range
-that overlaps the model's own training window isn't genuinely
-out-of-sample - the model may have partially fit patterns specific to
-that exact regime, giving an optimistic read. Keep `--end` safely
-before `trained_at` minus `lookback_days` for a fair test.
+**Important caveat**: check `models/stock_model.pkl.meta.json`'s
+`data_end` field before picking `--end` above - it's the actual last
+date the model was trained on (not necessarily `trained_at`; a model
+trained specifically for validation may use `train_stock_model.py --end`
+to hold back recent data on purpose). Evaluating over a range that
+overlaps the model's training window isn't genuinely out-of-sample - the
+model may have partially fit patterns specific to that exact regime,
+giving an optimistic read. Keep `--end` above safely before `data_end`
+for a fair test.
+
+For a genuinely out-of-sample 5-minute test, train a separate model that
+holds back the most recent few months on purpose (`--end` here is the
+model's training cutoff, distinct from `walk_forward.py`'s own `--end`):
+
+```bash
+python train_stock_model.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS \
+  --interval 5m --lookback-days 240 --end 2026-03-01 \
+  --horizon 78 --bounce-pct 0.01
+```
+
+(`--horizon 78` ≈ one trading day of 5-minute bars, `--bounce-pct 0.01`
+≈ a 1% move - both rescaled way down from the daily defaults, the same
+recalibration `--dip-threshold`/`--exit-threshold` needed. Saves to
+`models/stock_model_5m.pkl` by default, never touching the live daily
+model.) Then point `optimize.py`/`walk_forward.py --strategy ml_filtered
+--interval 5m --model-path models/stock_model_5m.pkl` at the months
+*after* 2026-03-01 - data this model never saw.
 
 ## Validating across time (walk_forward.py)
 

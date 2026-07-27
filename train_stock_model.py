@@ -103,6 +103,12 @@ def main():
                          help="defaults to models/stock_model.pkl for --interval 1d, or "
                               "models/stock_model_<interval>.pkl otherwise - so a non-daily training "
                               "run never overwrites the daily model live_trade.py actually uses")
+    parser.add_argument("--end", default=None,
+                         help="YYYY-MM-DD to train up through, instead of today - lets a validation-only "
+                              "training run hold back a recent chunk of data (for optimize.py/"
+                              "walk_forward.py to test against genuinely unseen data) instead of "
+                              "training on everything available. The live retrain workflow never "
+                              "passes this, so its behavior (always train through today) is unchanged.")
     args = parser.parse_args()
 
     if args.out is None:
@@ -112,8 +118,8 @@ def main():
     # needed for a non-daily --interval (see get_price_data_smart()).
     load_dotenv()
 
-    # Training window: lookback_days of history ending today.
-    end = dt.date.today()
+    # Training window: lookback_days of history ending --end (or today).
+    end = dt.date.fromisoformat(args.end) if args.end else dt.date.today()
     start = end - dt.timedelta(days=args.lookback_days)
 
     print(f"Training on {len(args.ticker)} tickers, {start} -> {end}, interval={args.interval}...")
@@ -145,6 +151,12 @@ def main():
         "trained_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "tickers": list(train_dfs.keys()),
         "interval": args.interval,
+        # The actual last date of training data - not necessarily the same
+        # as trained_at if --end was used to hold back recent data for
+        # testing. This is the number that actually matters for checking
+        # whether a later optimize.py/walk_forward.py run overlaps what
+        # this model already saw.
+        "data_end": end.isoformat(),
         "lookback_days": args.lookback_days,
         "horizon": args.horizon,
         "bounce_pct": args.bounce_pct,

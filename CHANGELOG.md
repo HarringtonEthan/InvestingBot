@@ -17,6 +17,20 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.9 - 2026-07-27
+
+- Added: `--end` to `train_stock_model.py` - trains up through a given
+  date instead of always through today, so a validation-only run can
+  hold back a recent chunk of data on purpose (for `optimize.py`/
+  `walk_forward.py` to test against data the model genuinely never saw).
+  The live retrain workflow never passes this, so its always-train-
+  through-today behavior is unchanged.
+- Added: `data_end` to the saved model's metadata - the actual last
+  training date, which isn't always `trained_at` once `--end` can differ
+  from "today." `docs/RESEARCH.md`'s leakage-avoidance guidance now
+  points at this field directly instead of computing it from
+  `trained_at`/`lookback_days`.
+
 ## Version Richards 0.8.8 - 2026-07-27
 
 - Added: `--interval` to `train_stock_model.py` (default `1d`, unchanged
