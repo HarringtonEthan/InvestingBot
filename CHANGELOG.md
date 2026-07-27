@@ -5,14 +5,45 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
 
 **What's required before `1.0.0` gets declared** (not yet met):
 - Dozens to hundreds of real closed paper trades on the strategy
-  actually running live - not the 3 currently on record - with positive
-  net expectancy after real observed costs/slippage, not backtested
-  ones.
+  actually running live - not the 3 currently on record, and none yet
+  under the 0.7.0 thresholds - with positive net expectancy after real
+  observed costs/slippage, not backtested ones.
 - Walk-forward validation across multiple distinct, non-overlapping time
-  periods (including at least one trending and one choppy/range-bound
-  stretch), not just the single window the current thresholds were
-  picked on.
+  periods, repeated more than once. `walk_forward.py` (added 0.6.2) did
+  this for the first time in 0.7.0, across 6 real-data windows spanning
+  Aug 2025-Jul 2026 - a real start, not the finish line. Still needed:
+  re-validating as more live history accumulates, and explicit coverage
+  of both a trending and a choppy/range-bound stretch, not just whatever
+  regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
+
+## Version Richards 0.7.2 - 2026-07-27
+
+Full sweep: comments, docs, and stale-reference check across everything
+touched since 0.6.0.
+
+- Fixed: `evaluate_combo()` in `optimize.py` was missing a docstring -
+  every other function in the file has one.
+- Fixed: `get_price_data_smart()` (`src/data.py`) silently fell through
+  to Yahoo with no explanation when Alpaca returned too few bars for a
+  range - the exception path already printed a reason, this one didn't.
+  Now both do.
+- Fixed: README's file tree still described `src/data.py` as
+  "Yahoo Finance, with synthetic fallback" only, and `results/` didn't
+  mention `walk_forward.csv` or either chart PNG - both now match what's
+  actually there.
+- Fixed: the `1.0.0` requirements list at the top of this file still said
+  walk-forward validation across multiple periods hadn't happened at
+  all - it has now, once, as of 0.7.0. Reworded to say what's actually
+  been done (one real round) versus what's still missing (repeating it,
+  and explicit trending/choppy regime coverage).
+- Fixed: `docs/RISK.md`'s pre-real-money checklist described
+  walk-forward validation as a pending, ML-flavored idea (retrain on a
+  rolling window) - `walk_forward.py` does something both simpler and
+  already real (fixed-rule testing across sequential windows) and has
+  now actually been used once; the checklist item now says so.
+- No other bugs found; everything else (all doc cross-references,
+  markdown links, image paths) re-verified clean.
 
 ## Version Richards 0.7.1 - 2026-07-27
 

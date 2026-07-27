@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.7.1
+# InvestingBot — Version Richards 0.7.2
 
 Version history lives in `CHANGELOG.md`.
 
@@ -209,7 +209,7 @@ InvestingBot/
 ├── live_trade.py                 # Automated live (paper) trading entry point
 ├── visualize_log.py              # Builds the trade dashboard PNG from the logs below
 ├── src/
-│   ├── data.py                   # Price data loading (Yahoo Finance, with synthetic fallback)
+│   ├── data.py                   # Price data loading (Yahoo Finance + synthetic fallback; Alpaca-first for crypto validation)
 │   ├── alpaca_data.py            # Live crypto price data (Alpaca, used instead of Yahoo)
 │   ├── features.py               # Technical indicators (SMA, RSI, volatility, drawdown)
 │   ├── strategies.py             # The five trading strategies
@@ -227,7 +227,7 @@ InvestingBot/
 ├── docs/                         # Beginner guide, automation setup, risk controls, research tools
 ├── logs/                         # Generated: trade_log.csv, equity_log.csv, retrain_log.csv
 ├── models/                       # Generated: the saved stock_model.pkl and its metadata
-├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv
+├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv, walk_forward.csv, and their chart renders
 ├── CHANGELOG.md                  # Full version history
 └── README.md                     # This file
 ```

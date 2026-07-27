@@ -58,6 +58,14 @@ from src.strategies import dip_buy_profit_target
 
 
 def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_bps: float, min_trades: float, periods_per_year: float):
+    """
+    Backtests one (dip, profit, stop) combination against every ticker in
+    test_dfs and averages the results - a single ticker's number never
+    gets reported on its own, only ever as part of this cross-ticker
+    average (see the module docstring on why). Returns None if the
+    combo trades too rarely across the whole set to be filtered out by
+    --min-trades before it ever reaches the results table.
+    """
     returns, sharpes, trades = [], [], []
     for test_df in test_dfs.values():
         # Run this one parameter combination against every ticker's data.

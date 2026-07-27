@@ -46,10 +46,15 @@ drawdown behavior from the backtest results in `docs/RESEARCH.md`.
    several tickers (different sectors, not just SPY) and several
    non-overlapping time windows, including at least one real bear market
    and one real bull run.
-2. **Walk-forward validation**, not a single train/test split - retrain
-   periodically on a rolling window and test only on the period
-   immediately after, repeated across the full history. See
-   `walk_forward.py` in `docs/RESEARCH.md`.
+2. **Walk-forward validation**, not a single train/test split - test the
+   same fixed rule across several separate, sequential real-data windows
+   rather than trusting one lucky (or unlucky) period. `walk_forward.py`
+   (see `docs/RESEARCH.md`) now does exactly this, and its first real
+   use (2026-07-27, see `CHANGELOG.md` 0.7.0) is what the current live
+   crypto thresholds are actually based on - a start, not the finish
+   line: one round of validation over one real year isn't yet "multiple
+   distinct periods including a real bear market and a real bull run,"
+   the bar this checklist item is actually about.
 3. **Paper trade it** against a live real-time feed (e.g. Alpaca's paper
    trading API) for at least a few months before any real capital is at
    risk. A backtest that looks good can still fail live due to slippage,

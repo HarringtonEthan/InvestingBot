@@ -110,6 +110,8 @@ def get_price_data_smart(
             # real result either.
             if len(df) > 50:
                 return df, False, "alpaca"
+            print(f"[{ticker}] Alpaca returned only {len(df)} bars for this range (not enough) - "
+                  f"falling back to Yahoo Finance.")
         except Exception as e:
             print(f"[{ticker}] Alpaca historical fetch failed ({type(e).__name__}: {e}) - falling back to Yahoo Finance.")
 
