@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.7.3
+# InvestingBot — Version Richards 0.7.4
 
 Version history lives in `CHANGELOG.md`.
 
@@ -10,12 +10,13 @@ paper (fake-money) brokerage account.
 any real money gets involved: do these dip-buying rules actually beat just
 buying and holding? For a long time the honest answer was no. As of
 2026-07-27, walk-forward validation against a real year of data found a
-configuration that may have found something real - not proven, but
-promising enough that it's now running live on the paper account
-specifically to gather real forward evidence instead of trusting the
-backtest alone. See "Current live status" below for the full picture,
-caveats included. I'm only going to consider real money once something
-actually demonstrates an edge with real trades, not just backtested ones.
+configuration that's **meaningfully de-risked, not yet a proven steady
+edge** - real evidence of improvement, not yet proof it works, which is
+exactly why it's running live on the paper account now instead of just
+sitting in a backtest. See "Current live status" below for the full
+picture, caveats included. I'm only going to consider real money once
+something actually demonstrates an edge with real trades, not just
+backtested ones.
 
 ## Documentation
 

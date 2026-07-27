@@ -17,6 +17,15 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.7.4 - 2026-07-27
+
+- Reworded README's opening to use "meaningfully de-risked, not yet a
+  proven steady edge" - the same phrase already used in "Current live
+  status," CHANGELOG 0.7.0, and both `docs/RISK.md`/`docs/RESEARCH.md` -
+  instead of the more hand-wavy "may have found something real" from
+  0.7.3. Consistent terminology throughout now. Documentation-only; no
+  code or live-trading behavior changed.
+
 ## Version Richards 0.7.3 - 2026-07-27
 
 - Updated README's opening framing: it stated flatly that the honest
