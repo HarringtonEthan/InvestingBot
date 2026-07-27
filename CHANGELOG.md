@@ -17,6 +17,26 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.8 - 2026-07-27
+
+- Added: `--interval` to `train_stock_model.py` (default `1d`, unchanged
+  from before - the live retrain workflow doesn't pass this flag, so its
+  behavior is identical). A non-daily interval now pulls from Alpaca
+  first via `get_price_data_smart()` (needed to test `--strategy
+  ml_filtered` at 5-minute resolution, the same way `optimize.py`/
+  `walk_forward.py` already can for `rule_based`). `--out` now defaults
+  to `models/stock_model_<interval>.pkl` for any non-daily interval,
+  instead of the daily default `models/stock_model.pkl` - so an
+  experimental 5-minute training run can never overwrite the model
+  `live_trade.py` actually trades with.
+- Documented clearly (module docstring + `--horizon`/`--bounce-pct` help
+  text): both are expressed in bars, not calendar time. The daily
+  defaults (`horizon=10`, `bounce_pct=3%`) mean "3%+ within 10 trading
+  days" - a wildly different, much larger ask over 10 five-minute bars
+  (50 minutes). Recalibrate both before training a non-daily model, the
+  same lesson `--dip-threshold`/`--exit-threshold` already needed at 5m
+  resolution earlier this session.
+
 ## Version Richards 0.8.7 - 2026-07-27
 
 - Added: `--strategy ml_filtered` support to `optimize.py` and

@@ -18,6 +18,18 @@ own `schedule:` trigger has been unreliable in this project (see
 docs/AUTOMATION.md); point an external scheduler (e.g. cron-job.org) at
 that workflow's `workflow_dispatch` endpoint the same way it's already
 wired up for the live crypto workflow.
+
+--interval defaults to "1d" (the live model's actual resolution), but can
+train a separate intraday model too (e.g. --interval 5m) for validating
+--strategy ml_filtered at that resolution in optimize.py/walk_forward.py.
+--horizon/--bounce-pct are expressed in BARS, not calendar time - the
+daily defaults (horizon=10, bounce_pct=3%) mean "3%+ within 10 trading
+days," which is a wildly different, far larger ask over 10 five-minute
+bars (50 minutes) - recalibrate both before training a non-daily model,
+the same lesson --dip-threshold/--exit-threshold already needed at 5m
+resolution. --out defaults to a separate file for any non-daily interval
+so a 5-minute experiment never overwrites the daily model live_trade.py
+actually uses.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -30,8 +42,14 @@ import csv
 import datetime as dt
 from pathlib import Path
 
-# Price data loading.
-from src.data import get_price_data
+# Loads ALPACA_API_KEY / ALPACA_SECRET_KEY from a local .env file - needed
+# now that an intraday --interval pulls historical bars from Alpaca first
+# (see get_price_data_smart()), not just Yahoo Finance.
+from dotenv import load_dotenv
+
+# Price data loading (Alpaca-first for an intraday interval, Yahoo for
+# daily - see src/data.py's get_price_data_smart()).
+from src.data import get_price_data_smart
 # Technical indicator computation.
 from src.features import add_features
 # The multi-ticker training function - pools rows from several tickers
@@ -67,30 +85,48 @@ def main():
                               "purpose (broad market, tech, financials, energy, healthcare, staples, "
                               "industrials, media) - a setting that only works on one sector isn't a "
                               "real edge, same principle as optimize.py")
+    parser.add_argument("--interval", default="1d",
+                         help="bar size to train on - defaults to '1d', the live model's actual "
+                              "resolution. A non-daily interval (e.g. 5m) pulls from Alpaca first "
+                              "(needs ALPACA_API_KEY/ALPACA_SECRET_KEY in .env) - see the module "
+                              "docstring for why --horizon/--bounce-pct need rescaling too.")
     parser.add_argument("--lookback-days", type=int, default=730,
-                         help="how much daily history to train on (default ~2 years)")
+                         help="how much history to train on (default ~2 years) - Alpaca's free "
+                              "intraday feed doesn't go back nearly that far, so lower this for a "
+                              "non-daily --interval")
     parser.add_argument("--horizon", type=int, default=10,
-                         help="label horizon in trading days (see src/model.py build_labels)")
+                         help="label horizon in BARS, not calendar time (see src/model.py build_labels "
+                              "and the module docstring above)")
     parser.add_argument("--bounce-pct", type=float, default=0.03,
-                         help="label threshold: price must rise at least this much within --horizon days")
-    parser.add_argument("--out", default="models/stock_model.pkl")
+                         help="label threshold: price must rise at least this much within --horizon bars")
+    parser.add_argument("--out", default=None,
+                         help="defaults to models/stock_model.pkl for --interval 1d, or "
+                              "models/stock_model_<interval>.pkl otherwise - so a non-daily training "
+                              "run never overwrites the daily model live_trade.py actually uses")
     args = parser.parse_args()
 
-    # Training window: lookback_days of daily history ending today.
+    if args.out is None:
+        args.out = "models/stock_model.pkl" if args.interval == "1d" else f"models/stock_model_{args.interval}.pkl"
+
+    # Populate ALPACA_API_KEY / ALPACA_SECRET_KEY from .env, if present -
+    # needed for a non-daily --interval (see get_price_data_smart()).
+    load_dotenv()
+
+    # Training window: lookback_days of history ending today.
     end = dt.date.today()
     start = end - dt.timedelta(days=args.lookback_days)
 
-    print(f"Training on {len(args.ticker)} tickers, {start} -> {end}...")
+    print(f"Training on {len(args.ticker)} tickers, {start} -> {end}, interval={args.interval}...")
     train_dfs = {}
     for ticker in args.ticker:
-        raw, is_synthetic = get_price_data(ticker, start.isoformat(), end.isoformat(), interval="1d")
+        raw, is_synthetic, source = get_price_data_smart(ticker, start.isoformat(), end.isoformat(), interval=args.interval)
         if is_synthetic:
             # Never let a live-traded model be trained on made-up data -
-            # skip any ticker Yahoo Finance couldn't actually serve.
+            # skip any ticker neither Alpaca nor Yahoo could actually serve.
             print(f"  {ticker}: SKIPPED (only synthetic fallback data available - no real network access)")
             continue
         train_dfs[ticker] = add_features(raw)
-        print(f"  {ticker}: {len(train_dfs[ticker])} rows")
+        print(f"  {ticker}: {len(train_dfs[ticker])} rows ({source})")
 
     if not train_dfs:
         # Every ticker failed - nothing to train on, so stop rather than
@@ -108,6 +144,7 @@ def main():
     meta = {
         "trained_at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "tickers": list(train_dfs.keys()),
+        "interval": args.interval,
         "lookback_days": args.lookback_days,
         "horizon": args.horizon,
         "bounce_pct": args.bounce_pct,
