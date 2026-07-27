@@ -17,6 +17,37 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.1 - 2026-07-27
+
+- Fixed: `live_trade.py` and `main.py` had no way to actually configure
+  `exit_threshold` (or `rule_based`'s stop-loss/cooldown) for live or
+  demo trading - `--dip-threshold` was the only tunable flag, so every
+  `rule_based`/`ml_filtered` run silently used `exit_threshold=0.0` no
+  matter what. This meant none of this session's extensive stock
+  validation work (which explored exit thresholds like 1%/2%, plus
+  stop-loss/cooldown) could ever actually be deployed - a real gap, not
+  just a missing convenience. Added `--exit-threshold` to both scripts,
+  and `--rule-stop-loss`/`--rule-stop-cooldown` to `live_trade.py`,
+  matching `optimize.py`'s/`walk_forward.py`'s own flag names exactly so
+  a validated combo can be deployed with the same numbers, no
+  translation. All default to the original no-exit-threshold/no-stop
+  behavior, so nothing changes for existing callers that don't pass them.
+- Fixed: `tests/test_data.py`'s module docstring and one test's name
+  claimed "non-crypto tickers should never touch Alpaca at all" - false
+  since 0.8.4 added `get_stock_bars_range()` for intraday stock
+  requests. Corrected the docstring/test name (`test_daily_stock_never_
+  calls_alpaca`) and added 3 new tests covering the actual current
+  behavior (intraday stock requests do try Alpaca first, with the same
+  fallback logic crypto already had).
+- Added: `tests/test_alpaca_data.py` - `src/alpaca_data.py` had zero
+  test coverage at all despite being the sole data source
+  `get_price_data_smart()` trusts first for every intraday request. 9
+  new tests cover `_fetch_bars`'s MultiIndex handling, empty-response
+  errors, the crypto staleness check, and that stock requests explicitly
+  ask for the free IEX feed. 71 tests passing (up from 59).
+- Full codebase read-through (every `.py` file, ~4300 lines) looking for
+  further correctness bugs; nothing else found.
+
 ## Version Richards 0.9.0 - 2026-07-27
 
 - **Stock validation concluded (for now): 8 candidates walk-forward

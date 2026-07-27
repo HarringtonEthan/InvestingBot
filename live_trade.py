@@ -92,7 +92,16 @@ DEFAULT_LOOKBACK_DAYS = {"1d": 365 * 5, "4h": 90, "1h": 59, "30m": 59, "15m": 59
 def get_target_position(df, args) -> float:
     strategy = args.strategy
     if strategy == "rule_based":
-        series = rule_based_dip_buy(df, dip_threshold=args.dip_threshold)
+        # --exit-threshold/--rule-stop-loss/--rule-stop-cooldown mirror
+        # walk_forward.py's/optimize.py's own flag names exactly, so a
+        # combo validated there can be deployed here with the same
+        # numbers, no translation - stop_loss/stop_cooldown_bars default
+        # to None/0 (rule_based_dip_buy's own defaults) if never passed,
+        # so omitting them keeps the original mean-reversion-only behavior.
+        series = rule_based_dip_buy(
+            df, dip_threshold=args.dip_threshold, exit_threshold=args.exit_threshold,
+            stop_loss=args.rule_stop_loss, stop_cooldown_bars=args.rule_stop_cooldown or 0,
+        )
     elif strategy == "ml_filtered":
         # Prefer a model that was trained ahead of time and saved to disk
         # (via train_stock_model.py on a schedule) over training one from
@@ -109,7 +118,11 @@ def get_target_position(df, args) -> float:
                   f"from just this run's data instead (won't persist between runs). Run "
                   f"train_stock_model.py on a schedule to avoid this - see README.md.")
             model, threshold, _ = train_model(df)
-        series = ml_filtered_dip_buy(df, model, threshold, dip_threshold=args.dip_threshold)
+        # ml_filtered_dip_buy has no stop-loss/cooldown of its own (see
+        # src/strategies.py) - only dip/exit apply here.
+        series = ml_filtered_dip_buy(
+            df, model, threshold, dip_threshold=args.dip_threshold, exit_threshold=args.exit_threshold,
+        )
     elif strategy == "bollinger_breakout":
         series = bollinger_breakout(
             df, bb_window=args.bb_window, bb_std=args.bb_std, trend_window=args.trend_window,
@@ -367,7 +380,24 @@ def main():
     parser.add_argument("--lookback-days", type=int, default=None,
                          help="history to pull; default depends on --interval (see DEFAULT_LOOKBACK_DAYS)")
     parser.add_argument("--dip-threshold", type=float, default=-0.02,
-                         help="day_trading: buy when price is this fraction below its rolling average, e.g. -0.02 = 2%% dip")
+                         help="all strategies except bollinger_breakout: buy when price is this "
+                              "fraction below its rolling average, e.g. -0.02 = 2%% dip")
+    parser.add_argument("--exit-threshold", type=float, default=0.0,
+                         help="rule_based/ml_filtered only - how far above/below the rolling average "
+                              "counts as 'recovered enough to sell' (0.0 = back at the average). "
+                              "Matches optimize.py's/walk_forward.py's own --exit-threshold flag name, "
+                              "so a validated combo can be deployed here with the same number.")
+    parser.add_argument("--rule-stop-loss", type=float, default=None,
+                         help="rule_based only, optional - a hard stop-loss (fraction below entry "
+                              "price), the same downside cap day_trading always has via --stop-loss. "
+                              "A separate flag since ml_filtered_dip_buy doesn't support one at all. "
+                              "Omit to trade without one (the original mean-reversion-only behavior).")
+    parser.add_argument("--rule-stop-cooldown", type=int, default=None,
+                         help="rule_based only, optional (needs --rule-stop-loss too) - how many bars "
+                              "to wait before re-buying after a stop-loss exit. Without this, a "
+                              "stop-loss can immediately re-trigger during a sustained decline instead "
+                              "of actually protecting capital - see optimize.py's --stop-loss-values "
+                              "help text for the real example that motivated this.")
     parser.add_argument("--profit-target", type=float, default=0.02,
                          help="day_trading: sell once price is this fraction above your actual entry price")
     parser.add_argument("--stop-loss", type=float, default=0.04,

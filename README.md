@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.9.0
+# InvestingBot — Version Richards 0.9.1
 
 Version history lives in `CHANGELOG.md`.
 
@@ -49,7 +49,7 @@ actually running from workflow files six months from now.
 |---|---|
 | Crypto automation | Running (paper), every 5 min |
 | Stock ML automation | **Paused** (2026-07-27 - see below) |
-| Unit tests | 55 passing (`pytest tests/`) |
+| Unit tests | 71 passing (`pytest tests/`) |
 | Real-money mode | Disabled (2 independent locks - see `docs/RISK.md`) |
 | Demonstrated edge | No |
 | Closed live trades (current config) | 0 - archived 3 prior trades, see below |

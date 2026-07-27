@@ -101,8 +101,12 @@ def run_for_ticker(ticker: str, args):
     # a position series (fraction invested per day).
     strategies = {
         "Buy & Hold": buy_and_hold(test_df),
-        "Rule-based dip buy": rule_based_dip_buy(test_df, dip_threshold=args.dip_threshold),
-        "ML-filtered dip buy": ml_filtered_dip_buy(test_df, model, threshold, dip_threshold=args.dip_threshold),
+        "Rule-based dip buy": rule_based_dip_buy(
+            test_df, dip_threshold=args.dip_threshold, exit_threshold=args.exit_threshold,
+        ),
+        "ML-filtered dip buy": ml_filtered_dip_buy(
+            test_df, model, threshold, dip_threshold=args.dip_threshold, exit_threshold=args.exit_threshold,
+        ),
         "Day trading (profit target)": dip_buy_profit_target(
             test_df, dip_threshold=args.dip_threshold,
             profit_target=args.profit_target, stop_loss=args.stop_loss,
@@ -182,7 +186,12 @@ def main():
                               "run higher than stocks (try 15-25) so don't leave this at the "
                               "stock default when backtesting day_trading on crypto")
     parser.add_argument("--dip-threshold", type=float, default=-0.02,
-                         help="day-trading strategy: dip entry threshold, e.g. -0.02 = 2%% below rolling average")
+                         help="all strategies except Bollinger breakout: dip entry threshold, "
+                              "e.g. -0.02 = 2%% below rolling average")
+    parser.add_argument("--exit-threshold", type=float, default=0.0,
+                         help="rule-based/ML-filtered dip buy: how far above/below the rolling "
+                              "average counts as 'recovered enough to sell' (0.0 = back at the "
+                              "average) - day-trading's own profit-target/stop-loss below is separate")
     parser.add_argument("--profit-target", type=float, default=0.02,
                          help="day-trading strategy: sell once this far above your entry price")
     parser.add_argument("--stop-loss", type=float, default=0.04,
