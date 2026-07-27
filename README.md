@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.6.3
+# InvestingBot — Version Richards 0.7.0
 
 Version history lives in `CHANGELOG.md`.
 
@@ -54,21 +54,32 @@ actually running from workflow files six months from now.
 This is a snapshot and will be stale by the time you read it - check
 `results/trade_dashboard.png` for the live number.
 
-- **Crypto: rule-based, no ML.** An external free scheduler
+- **Crypto: rule-based, no ML. Thresholds changed 2026-07-27, backed by
+  real validation evidence.** An external free scheduler
   ([cron-job.org](https://cron-job.org)) calls GitHub's API every 5
   minutes to run `.github/workflows/paper-trade-crypto.yml`, which runs
   `live_trade.py --strategy day_trading` against **BTC, ETH, SOL, DOGE,
-  LTC, AVAX, LINK, XRP, DOT** on 5-minute bars: buy a 1.0% dip, sell at
-  +1.0% profit or -3.0% stop-loss. **A `walk_forward.py` run against a
-  full year of real Alpaca data found this combo losing money in the
-  large majority of windows across nearly every coin** - not a single
-  lucky/unlucky window anymore, a real and fairly consistent result.
-  Very high trade counts in the losing windows (100-300+ in ~2 months)
-  point at transaction-cost drag as a likely major contributor, not just
-  a bad directional read. The live thresholds are unchanged for now;
-  `docs/RESEARCH.md` documents the concrete next step (re-running
-  `optimize.py` over this same real data, searching toward
-  less-frequent-trading combos) before any live change is made.
+  LTC, AVAX, LINK, XRP, DOT** on 5-minute bars: buy a **4.0%** dip, sell
+  at **+1.0%** profit or **-5.0%** stop-loss (previously 1.0% / 1.0% /
+  3.0%). The old combo bought on any 1%+ dip, which fires constantly on
+  5-minute bars; a `walk_forward.py` run against a real year of Alpaca
+  data found it losing money in 53 of 54 ticker/window tests, with
+  100-1,000+ trades per ticker in a single ~2-month window - transaction
+  costs alone likely explain a large share of that. The new -4%
+  threshold only buys real, comparatively rare dips (4-52 trades per
+  ticker over the same full year) and improved to 49 of 54 non-negative
+  results. **Real evidence, committed and checkable:**
+  [`results/param_sweep.csv`](results/param_sweep.csv) (the 90-combo
+  grid search that found this combo) and
+  [`results/walk_forward.csv`](results/walk_forward.csv) (its per-window
+  validation). Read this as **meaningfully de-risked, not yet a proven
+  steady edge** - a large share of the gain sits in two specific
+  calendar windows where several coins moved together (more likely a
+  broad market swing than nine independent edges), and a couple of the
+  winning windows had large intra-window drawdowns (LTC -37.7%, LINK
+  -31.8%) that their final positive return doesn't show. Now
+  accumulating fresh real trade history under the new settings - see
+  `CHANGELOG.md` 0.7.0 for the full writeup.
 - **Stocks: ML-filtered, with periodic retraining.** The stock workflow
   runs `--strategy ml_filtered` on SPY/AAPL/QQQ, loading a model that's
   retrained weekly and saved to `models/stock_model.pkl` (see

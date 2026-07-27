@@ -110,9 +110,13 @@ def main():
     # Defaults intentionally match the parameters .github/workflows/paper-trade-crypto.yml
     # actually runs live with, so `python walk_forward.py --ticker ... --start ... --end ...`
     # with no threshold flags validates the exact strategy currently trading paper money.
-    parser.add_argument("--dip-threshold", type=float, default=-0.01)
+    parser.add_argument("--dip-threshold", type=float, default=-0.04)
     parser.add_argument("--profit-target", type=float, default=0.01)
-    parser.add_argument("--stop-loss", type=float, default=0.03)
+    parser.add_argument("--stop-loss", type=float, default=0.05)
+    parser.add_argument("--out", default="results/walk_forward.csv",
+                         help="every window's result gets written here (one row per ticker per window, "
+                              "including skipped ones) - a durable, committable record of a validation "
+                              "run, the same way optimize.py saves results/param_sweep.csv")
     args = parser.parse_args()
 
     # Populate ALPACA_API_KEY / ALPACA_SECRET_KEY from .env, if present -
@@ -128,6 +132,11 @@ def main():
         f"dip={args.dip_threshold:.1%} profit={args.profit_target:.1%} stop={args.stop_loss:.1%}\n"
     )
 
+    # Every ticker/window's outcome, skipped ones included - written to
+    # --out at the end as a durable, committable record of this run, not
+    # just console output that scrolls away.
+    all_rows = []
+
     for ticker in args.ticker:
         print(f"=== {ticker} ===")
         print(f"{'Window':<24}{'Return':>10}{'Sharpe':>10}{'MaxDD':>10}{'Trades':>9}  Source")
@@ -140,6 +149,12 @@ def main():
             outcome = evaluate_window(ticker, w_start, w_end, args, periods_per_year)
             if outcome is None:
                 print(f"{label:<24}{'SKIPPED (no real data / window too short)':>39}")
+                all_rows.append({
+                    "ticker": ticker, "window_start": w_start, "window_end": w_end,
+                    "dip_threshold": args.dip_threshold, "profit_target": args.profit_target,
+                    "stop_loss": args.stop_loss, "source": "skipped", "total_return": "",
+                    "sharpe": "", "max_drawdown": "", "trades": "",
+                })
                 continue
             result, source = outcome
             window_returns.append((result.total_return, result.num_trades))
@@ -147,6 +162,13 @@ def main():
                 f"{label:<24}{result.total_return:>9.1%} {result.sharpe:>10.2f} "
                 f"{result.max_drawdown:>9.1%} {result.num_trades:>9}  {source}"
             )
+            all_rows.append({
+                "ticker": ticker, "window_start": w_start, "window_end": w_end,
+                "dip_threshold": args.dip_threshold, "profit_target": args.profit_target,
+                "stop_loss": args.stop_loss, "source": source,
+                "total_return": result.total_return, "sharpe": result.sharpe,
+                "max_drawdown": result.max_drawdown, "trades": result.num_trades,
+            })
 
         if len(window_returns) < 2:
             print("Not enough usable windows to assess consistency - widen --start/--end, "
@@ -167,6 +189,9 @@ def main():
             print(f"WARNING: {losing}/{len(returns)} windows were net losers - this combination "
                   f"does not hold up consistently across time, not just on a single favorable period.")
         print()
+
+    pd.DataFrame(all_rows).to_csv(args.out, index=False)
+    print(f"Full per-window results saved to {args.out}")
 
 
 if __name__ == "__main__":

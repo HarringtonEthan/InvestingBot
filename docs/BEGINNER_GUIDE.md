@@ -103,15 +103,15 @@ the program can use. So the full command GitHub actually runs:
 ```bash
 python live_trade.py --ticker BTC ETH SOL DOGE LTC AVAX LINK XRP DOT \
   --strategy day_trading --interval 5m \
-  --dip-threshold -0.01 --profit-target 0.01 --stop-loss 0.03 \
+  --dip-threshold -0.04 --profit-target 0.01 --stop-loss 0.05 \
   --execute
 ```
 translates to, in plain English: *"Run the live_trade.py program. Check
 these 9 coins. Use the day_trading decision logic (as opposed to
 ml_filtered, rule_based, or bollinger_breakout - see `docs/RESEARCH.md`
-for what each one means). Look at 5-minute price bars. Treat a 1%
+for what each one means). Look at 5-minute price bars. Treat a 4%
 drop as a dip worth buying. Take profit once up 1%. Cut losses if down
-3%. And `--execute` means actually place these as real (paper) orders,
+5%. And `--execute` means actually place these as real (paper) orders,
 not just print what it would have done."* Change any of those words and
 I get a different, but equally valid, way to run the exact same program
 - that's the whole point of arguments instead of writing a separate

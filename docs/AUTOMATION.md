@@ -188,8 +188,12 @@ instead: the same venue trades actually execute against, and every
 fetch gets checked against a staleness threshold - if the latest bar is
 older than expected for the requested interval, that ticker gets skipped
 for the run rather than traded on outdated data. Backtesting (`main.py`)
-still uses Yahoo Finance, since staleness doesn't matter for historical
-data and Yahoo's history window is much longer than Alpaca's crypto feed.
+still uses Yahoo Finance for crypto, since staleness doesn't matter for
+historical data - though for *walk-forward validation*
+(`walk_forward.py`, `optimize.py`) crypto tickers now prefer Alpaca's
+own historical bars instead, since Yahoo's ~60-day intraday cap turned
+out to be the shorter of the two, not the longer one (see
+`docs/RESEARCH.md`).
 
 **Crypto trades 24/7**, unlike stocks, and the GitHub Actions crypto
 workflow (`.github/workflows/paper-trade-crypto.yml`) is configured for
@@ -198,28 +202,37 @@ day trading rather than the once-a-day daily-close strategy:
 ```bash
 python live_trade.py --ticker BTC ETH SOL DOGE LTC AVAX LINK XRP DOT \
   --strategy day_trading --interval 5m \
-  --dip-threshold -0.01 --profit-target 0.01 --stop-loss 0.03 \
+  --dip-threshold -0.04 --profit-target 0.01 --stop-loss 0.05 \
   --execute
 ```
 
-This runs on 5-minute bars, buys a 1.0%+ dip, and sells once my *actual*
-position is up 1.0% - or cuts it at -3.0% if the dip keeps falling
-instead of bouncing. These are `optimize.py`'s best average-across-all-
-9-coins combo as of this writing (see "Searching for better thresholds"
-in `docs/RESEARCH.md`) - I re-run that search periodically as more real
-trade history accumulates, since "best on the window tested" isn't a
-permanent property.
+This runs on 5-minute bars, buys a **4.0%+** dip, and sells once my
+*actual* position is up 1.0% - or cuts it at **-5.0%** if the dip keeps
+falling instead of bouncing. These thresholds changed on 2026-07-27 -
+the prior 1.0%/1.0%/3.0% combo fired on any 1%+ dip, which happens
+constantly on 5-minute bars, and a `walk_forward.py` run against a real
+year of Alpaca data found it losing money in 53 of 54 ticker/window
+tests. The 4% threshold only buys real, comparatively rare dips instead,
+and the same real-data validation improved to 49 of 54 non-negative
+results - see `CHANGELOG.md` 0.7.0 and `docs/RESEARCH.md` for the full
+evidence (both the `optimize.py` grid search and the `walk_forward.py`
+validation that found this combo are committed as
+`results/param_sweep.csv` and `results/walk_forward.csv`, not just
+described). I re-run that search periodically as more real trade history
+accumulates, since "best on the data tested" isn't a permanent property.
 
 **Thresholds should match real observed volatility, not be picked
-arbitrarily.** The original 2%/2%/4% thresholds never fired a single
+arbitrarily.** The very first 2%/2%/4% thresholds never fired a single
 trade in practice - actual short-term crypto moves during a live check
 were closer to 0.05-0.2% over 5-minute windows, so a 2% dip essentially
-never happens on that timeframe. Before changing these numbers, I check
-what the market is actually doing - pull real price data (e.g. via
-`main.py` or `optimize.py`, both of which fetch it fresh) rather than
-guessing. `trade_log.csv` itself only records actual BUY/SELL decisions
-now (see "Logs and the trade dashboard" below), so it's no longer a dense
-price history the way it briefly was.
+never happens on that timeframe; the 1%/1%/3% combo that replaced it
+turned out to fire *too* often instead, as the 2026-07-27 validation
+above found. Before changing these numbers, check what the market is
+actually doing - pull real price data (e.g. via `main.py`, `optimize.py`,
+or `walk_forward.py`, all of which fetch it fresh) rather than guessing.
+`trade_log.csv` itself only records actual BUY/SELL decisions now (see
+"Logs and the trade dashboard" below), so it's no longer a dense price
+history the way it briefly was.
 
 **Worth knowing before you tighten these further:** more frequent
 trading means more round trips, and every round trip pays Alpaca's
@@ -227,19 +240,22 @@ crypto spread/fee (roughly 0.15-0.25% each way, so ~0.3-0.5% per full
 buy-sell cycle). If `--profit-target` is smaller than that fee drag, the
 strategy loses money **on average even when directionally correct** -
 there's a real floor below which "more trades" just means "more fee
-payments," not more profit. I've kept the 1.0% target above deliberately
-above that floor; going much lower trades against the fee structure, not
-with it. Real fills so far land toward the higher end of that fee range
-- one closed trade paid about 0.25%, another about 0.44% - worth
-treating the floor as a range to stay clear of, not a precise number to
-shave against.
+payments," not more profit. The 1.0% target has stayed the same across
+both threshold changes, deliberately above that floor; going much lower
+trades against the fee structure, not with it. Real fills so far land
+toward the higher end of that fee range - one closed trade paid about
+0.25%, another about 0.44% - worth treating the floor as a range to stay
+clear of, not a precise number to shave against. The 2026-07-27 change
+(loosening the *dip threshold*, not the profit target) tackled the same
+fee-drag problem from the other direction: trading far less often instead
+of trying to out-earn the fee on every single trade.
 
 **Backtest it before trusting a threshold change** - same principle as
 the stock strategy, just with intraday data and crypto-realistic fees:
 ```bash
 python main.py --ticker BTC-USD --interval 1h \
   --start 2026-05-01 --split 2026-07-01 --end 2026-07-25 \
-  --cost-bps 20 --dip-threshold -0.01 --profit-target 0.01 --stop-loss 0.03
+  --cost-bps 20 --dip-threshold -0.04 --profit-target 0.01 --stop-loss 0.05
 ```
 (Yahoo Finance only keeps a limited window of intraday history, so keep
 `--start` recent rather than reaching back years like the daily stock

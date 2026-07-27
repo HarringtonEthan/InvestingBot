@@ -14,6 +14,53 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   picked on.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.7.0 - 2026-07-27
+
+**Live crypto trading rules changed** - the first threshold change since
+0.5.0 backed by real validation evidence, not a guess.
+
+- Changed: `.github/workflows/paper-trade-crypto.yml` now runs
+  `day_trading` with **`--dip-threshold -0.04 --profit-target 0.01
+  --stop-loss 0.05`**, replacing the prior `-0.01 / 0.01 / 0.03`. The
+  old combo bought on any 1%+ dip, which fires constantly on 5-minute
+  bars - a `walk_forward.py` run across a real year of Alpaca data (see
+  below) found it losing money in 53 of 54 ticker/window combinations,
+  often placing 100-1,000+ trades per ticker in a single ~2-month
+  window at a real ~0.2-0.4% round-trip fee floor. The new -4% threshold
+  only buys real, comparatively rare dips - the same backtest period
+  saw just 4-52 trades per ticker over the full year - trading the fee
+  drag away rather than fighting it. `--profit-target`/`--stop-loss`
+  also widened (1%/5% vs 1%/3%) to give a genuine 4%+ dip room to bounce
+  without an early stop-out. `--max-notional` ($2,000) and
+  `--daily-loss-limit` (5%) are unchanged.
+- Added: `results/param_sweep.csv` - the full 90-combination grid search
+  (`optimize.py`, real Alpaca 5-minute data, 2025-08-01 to 2026-07-27)
+  that surfaced this combo as the best average-return result, with its
+  closest neighbors (same dip/profit, different stop) landing within a
+  couple points of each other - the "not an isolated overfit spike"
+  check `docs/RESEARCH.md` describes.
+  `worst_ticker_return` on the top two rows is **positive** - every one
+  of the 9 coins was profitable, not just the average.
+- Added: `results/walk_forward.csv` - the walk-forward validation of
+  this specific combo (`walk_forward.py`, same real data, split into 6
+  sequential ~2-month windows). 49 of 54 ticker/window results were
+  non-negative (vs. 1 of 54 for the old combo) - a real, large
+  improvement, though not an unqualified one: a large share of the
+  total gain is concentrated in two specific windows
+  (2025-09-30→2025-11-29 and 2026-01-28→2026-03-29) where several
+  unrelated coins moved together, suggesting broad market-wide swings
+  rather than an independent per-coin edge, and a couple of the winning
+  windows (LTC, LINK) show large intra-window drawdowns (-37.7%, -31.8%)
+  that the final window return doesn't show. Read as "meaningfully
+  de-risked versus what was live before," not yet "a proven, steady
+  edge" - see README's "Current live status" for the same caveat in
+  context.
+- Added: `walk_forward.py` now writes its own results to
+  `results/walk_forward.csv` (`--out` to change the path), matching
+  `optimize.py`'s existing `results/param_sweep.csv` output - every
+  future validation run is now a durable, committable record instead of
+  console output that scrolls away.
+
 ## Version Richards 0.6.3 - 2026-07-27
 
 - Added: `optimize.py` now also pulls crypto history from Alpaca first

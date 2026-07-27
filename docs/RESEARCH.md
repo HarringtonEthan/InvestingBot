@@ -213,9 +213,10 @@ python walk_forward.py --ticker BTC-USD ETH-USD SOL-USD --start 2026-06-01 --end
 ```
 
 Run with no `--dip-threshold`/`--profit-target`/`--stop-loss` flags, it
-defaults to the exact parameters the live crypto workflow actually trades
-with (-1% dip / +1% profit / -3% stop), so this validates the strategy
-currently running, not a hypothetical one. It reports each window's
+defaults to whatever the live crypto workflow currently trades with (see
+"Current live status" in the main README for the exact numbers - they've
+changed once already, see `CHANGELOG.md` 0.7.0), so this validates the
+strategy actually running, not a hypothetical one. It reports each window's
 return/Sharpe/drawdown/trade count individually (plus which data source
 that window actually came from - see below), then flags how many windows
 were net losers and how many never traded at all (an untested window, not
@@ -239,3 +240,20 @@ that far back for that pair/range and it fell back. Non-crypto tickers
 still go through Yahoo only and remain capped at its intraday window; use
 a coarser interval (`1h`, `1d`) for those if you need a longer stretch of
 calendar time.
+
+Every run also writes its full per-window results to `--out` (default
+`results/walk_forward.csv`), one row per ticker per window including
+skipped ones - a durable, committable record instead of console output
+that scrolls away, the same way `optimize.py`'s grid gets saved to
+`results/param_sweep.csv`.
+
+**A worked example is committed in this repo**: the live crypto
+thresholds changed on 2026-07-27 from -1%/+1%/-3% to -4%/+1%/-5%, and the
+evidence behind that change is exactly these two files -
+[`results/param_sweep.csv`](../results/param_sweep.csv) (the grid search
+that found the new combo) and
+[`results/walk_forward.csv`](../results/walk_forward.csv) (its per-window
+validation across a real year of Alpaca data). See `CHANGELOG.md` 0.7.0
+for the full reasoning, including the caveats (the gain is concentrated
+in two specific windows, not spread evenly) that keep this "meaningfully
+de-risked" rather than "a proven edge."
