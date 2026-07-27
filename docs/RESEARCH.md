@@ -488,7 +488,8 @@ on.
 Full table: [`results/walk_forward_stocks_summary.csv`](../results/walk_forward_stocks_summary.csv).
 Every candidate's raw per-window data is also committed:
 [`results/walk_forward_stocks.csv`](../results/walk_forward_stocks.csv)
-(the first 7 rule_based/rule_based+stop candidates, daily and 5-minute)
+(the 3 daily rule_based candidates), [`results/walk_forward_stocks_5m_best.csv`](../results/walk_forward_stocks_5m_best.csv)
+(the winning 5-minute dip=-1.5%/exit=2.0% candidate, charted per-ticker below),
 and [`results/walk_forward_stocks_ml_filtered.csv`](../results/walk_forward_stocks_ml_filtered.csv).
 Every grid search behind these candidates is committed too:
 [`results/param_sweep_stocks.csv`](../results/param_sweep_stocks.csv),
@@ -499,6 +500,8 @@ Every grid search behind these candidates is committed too:
 [`results/param_sweep_stocks_5m_ml_filtered.csv`](../results/param_sweep_stocks_5m_ml_filtered.csv).
 
 <img src="../results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant. The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black with a star and an annotation calling out its clearly lower loss rate (about 17.5%) versus every other candidate (25-32%), while its return still sits mid-pack." width="720">
+
+<img src="../results/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
 
 <img src="../results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered - average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points sit in a visibly lower return band than the plain-rule points. A note box clarifies the overall best-of-8 candidate actually came from the 5-minute search in the next chart, not from this daily one." width="720">
 

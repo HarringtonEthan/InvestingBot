@@ -17,6 +17,27 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.4 - 2026-07-27
+
+- Added a per-ticker small-multiples bar chart for the best-of-8 stock
+  candidate (`rule_based`, 5-minute bars, `dip=-1.5% exit=2.0%`):
+  `results/walk_forward_stocks_5m_best_candidate.png`, one panel per
+  ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS) showing its return
+  in each of the 7 walk-forward windows, matching the style already used
+  for the daily candidate chart. Previously the winning candidate only
+  had aggregate numbers shown (summary bar chart, scatter); this makes
+  its actual per-ticker behavior visible, including which tickers never
+  traded (SPY, KO - mostly gray) and which one is the clear weak point
+  (DIS - 4 of 7 windows negative). Its raw per-window data is newly
+  committed as `results/walk_forward_stocks_5m_best.csv`, cross-checked
+  against the already-committed summary row (avg return and losing-window
+  count both matched before anything was written).
+- Embedded this new chart directly in the README (immediately after the
+  summary comparison chart, in the stock-validation bullet) and in
+  `docs/RESEARCH.md`'s final-tally section, so the clearest per-ticker
+  evidence for the best stock candidate is visible on the README itself,
+  not only in the supporting research doc.
+
 ## Version Richards 0.9.3 - 2026-07-27
 
 - Clarified: of the 8 stock candidates walk-forward tested this session,
