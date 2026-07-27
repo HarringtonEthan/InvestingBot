@@ -152,6 +152,29 @@ def test_rule_based_dip_buy_exits_at_stop_loss_before_recovery():
     assert with_stop.tolist() == [0.0, 1.0, 1.0, 1.0, 0.0, 1.0]
 
 
+def test_rule_based_dip_buy_stop_cooldown_blocks_immediate_reentry():
+    # Same sustained-decline shape as the stop-loss test above, extended a
+    # few more bars past the stop-out so a cooldown has room to matter.
+    close = [100, 94, 92, 90, 88, 86, 84, 82]
+    pct_below = [0.0, -0.06, -0.08, -0.10, -0.12, -0.14, -0.16, -0.18]
+    df = pd.DataFrame({"Close": close, "pct_below_sma20": pct_below})
+
+    # No cooldown (the default): stop-loss trips at index 4 (88 is 5%+
+    # below the 94 entry price), then re-buys immediately at index 5
+    # since the dip is still well below dip_threshold - the whipsaw
+    # behavior that motivated adding a cooldown in the first place.
+    no_cooldown = rule_based_dip_buy(df, dip_threshold=-0.05, exit_threshold=0.0, stop_loss=0.05)
+    assert no_cooldown.tolist() == [0.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 1.0]
+
+    # A 2-bar cooldown: stopped out at index 4, blocked from re-buying at
+    # indices 5 and 6 (cooldown counts down there) even though the dip
+    # persists, then finally allowed back in at index 7.
+    with_cooldown = rule_based_dip_buy(
+        df, dip_threshold=-0.05, exit_threshold=0.0, stop_loss=0.05, stop_cooldown_bars=2,
+    )
+    assert with_cooldown.tolist() == [0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+
+
 def test_rule_based_dip_buy_stop_loss_none_preserves_old_behavior():
     # Omitting stop_loss must give byte-for-byte the same result as before
     # this parameter existed - the whole point of defaulting it to None.

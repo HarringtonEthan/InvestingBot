@@ -35,6 +35,7 @@ def rule_based_dip_buy(
     dip_threshold: float = -0.03,
     exit_threshold: float = 0.0,
     stop_loss: float | None = None,
+    stop_cooldown_bars: int = 0,
 ) -> pd.Series:
     """
     Simple mean-reversion rule:
@@ -50,6 +51,20 @@ def rule_based_dip_buy(
         `dip_buy_profit_target`'s stop-loss exists for, added here after
         walk-forward runs on daily stock bars found ticker/window
         drawdowns as deep as -40% while "waiting it out."
+      - After a stop-loss exit specifically (not a normal recovery exit),
+        refuse to re-buy for `stop_cooldown_bars` bars even if the dip
+        condition is still met. Without this, a sustained decline can
+        trigger the same stop-loss over and over - buy, stop out, buy
+        again immediately since the dip never went away, stop out again -
+        turning one long unrealized drawdown into several smaller
+        *realized* losses plus extra transaction costs, which is worse
+        than what the stop-loss was meant to prevent. Found running a
+        real walk-forward validation with a stop-loss but no cooldown:
+        SPY's 2019-12-to-2021-08 window went from -3.2% with no stop-loss
+        to -27.4% with one, because the stop kept re-triggering through
+        the 2020 crash instead of protecting against it.
+        `stop_cooldown_bars=0` (the default) preserves the original
+        immediate-re-entry behavior.
     """
     # How far below (or above) its own rolling average the price is at
     # each bar - this is the "is it a dip" signal the whole rule runs on.
@@ -69,6 +84,11 @@ def rule_based_dip_buy(
     # The price we bought at, once holding - only used by the stop-loss
     # check below; stays None the whole time if stop_loss isn't set.
     entry_price = None
+    # How many more bars must pass before a stop-loss-triggered exit is
+    # allowed to re-buy - only ever set to something nonzero right after
+    # a stop-out, and only if stop_cooldown_bars > 0; a normal recovery
+    # exit never touches this.
+    cooldown_remaining = 0
 
     for i in range(len(df)):
         val = pct_below[i]
@@ -78,12 +98,19 @@ def rule_based_dip_buy(
             # - stay flat rather than guess.
             position[i] = 0.0
             continue
-        if not holding and val <= dip_threshold:
-            # Not currently holding, and price has dropped at least
-            # dip_threshold below its average - buy.
-            holding = True
-            entry_price = close[i]
-        elif holding:
+        if not holding:
+            if cooldown_remaining > 0:
+                # Still serving out the post-stop-loss cooldown - refuse
+                # to re-buy this bar no matter how deep the dip is, and
+                # count this bar against the cooldown.
+                cooldown_remaining -= 1
+            elif val <= dip_threshold:
+                # Not currently holding, no cooldown in effect, and price
+                # has dropped at least dip_threshold below its average -
+                # buy.
+                holding = True
+                entry_price = close[i]
+        else:
             recovered = val >= exit_threshold
             # Only ever True if stop_loss was actually given - otherwise
             # this rule exits purely on mean reversion, exactly as before.
@@ -94,6 +121,11 @@ def rule_based_dip_buy(
                 # either way, whichever happened first.
                 holding = False
                 entry_price = None
+                if stopped_out and not recovered:
+                    # A genuine stop-loss exit (not just a recovery that
+                    # happened to also cross the stop line) - start the
+                    # re-entry cooldown, if one was requested.
+                    cooldown_remaining = stop_cooldown_bars
         # Whatever "holding" ended up as after the checks above, record
         # it as this bar's position: fully in (1.0) or fully out (0.0).
         position[i] = 1.0 if holding else 0.0
@@ -213,13 +245,14 @@ def position_for_params(strategy: str, df: pd.DataFrame, params: dict) -> pd.Ser
     if strategy == "rule_based":
         # Exits on mean reversion (price recovering back above the SMA),
         # not a fixed target - the same shape ml_filtered's model sits on
-        # top of. "stop_loss" is optional in this params dict (unlike
-        # day_trading, where it's always required) - .get() rather than
-        # ["stop_loss"] so callers that never pass one (the original
-        # shape) still dispatch to the exact same no-stop-loss behavior
-        # rule_based_dip_buy()'s own default already gives them.
+        # top of. "stop_loss" and "stop_cooldown_bars" are both optional
+        # in this params dict (unlike day_trading, where stop_loss is
+        # always required) - .get() rather than ["..."] so callers that
+        # never pass them (the original shape) still dispatch to the
+        # exact same behavior rule_based_dip_buy()'s own defaults give.
         return rule_based_dip_buy(
             df, dip_threshold=params["dip_threshold"], exit_threshold=params["exit_threshold"],
+            stop_cooldown_bars=params.get("stop_cooldown_bars", 0),
             stop_loss=params.get("stop_loss"),
         )
     raise ValueError(f"unknown strategy: {strategy}")

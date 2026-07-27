@@ -139,6 +139,13 @@ def main():
                               "required one, with its own default) so validating a rule_based combo "
                               "never silently picks up a stop-loss you didn't ask for. Omit to "
                               "validate without one (the original mean-reversion-only behavior).")
+    parser.add_argument("--rule-stop-cooldown", type=int, default=None,
+                         help="--strategy rule_based only, optional (needs --rule-stop-loss too) - "
+                              "how many bars to wait before re-buying after a stop-loss exit. Without "
+                              "this, a stop-loss can immediately re-trigger during a sustained "
+                              "decline instead of actually protecting capital - see --stop-loss-values "
+                              "in optimize.py for the real example that motivated this. Omit for no "
+                              "cooldown (0 bars).")
     parser.add_argument("--out", default="results/walk_forward.csv",
                          help="every window's result gets written here (one row per ticker per window, "
                               "including skipped ones) - a durable, committable record of a validation "
@@ -160,6 +167,9 @@ def main():
         if args.rule_stop_loss is not None:
             params["stop_loss"] = args.rule_stop_loss
             params_desc += f" stop={args.rule_stop_loss:.1%}"
+            if args.rule_stop_cooldown is not None:
+                params["stop_cooldown_bars"] = args.rule_stop_cooldown
+                params_desc += f" cooldown={args.rule_stop_cooldown} bars"
 
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
     windows = make_windows(args.start, args.end, args.windows)

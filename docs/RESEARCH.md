@@ -312,6 +312,13 @@ quicker read than the raw CSVs:
 
 <img src="../results/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
 
+(Each bar in the second chart is labeled by the date its window *ends*,
+not starts - the first version labeled by start date, so the final
+window, 2026-05-28 through 2026-07-27, only ever showed "May '26" and
+June/July 2026 never appeared as labels at all, even though the
+underlying data and this chart's own title both correctly cover the
+full range. Relabeled, no data changed.)
+
 Both were generated straight from the committed CSVs above, not
 hand-edited - re-run `optimize.py`/`walk_forward.py` and regenerate them
 anytime to check a new result the same way.

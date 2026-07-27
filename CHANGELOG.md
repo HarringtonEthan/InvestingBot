@@ -17,6 +17,30 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.6 - 2026-07-27
+
+- Fixed: `results/walk_forward_winner.png` (the crypto walk-forward chart)
+  labeled each bar by its window's **start** date, so the final window
+  (2026-05-28 -> 2026-07-27) only ever showed "May '26" - June and July
+  2026 never appeared as labels even though the chart's own title
+  correctly states the data runs through July 2026, and the underlying
+  `results/walk_forward.csv` data was always correct. Regenerated with
+  window **end** dates as labels instead; no data changed, cosmetic only.
+- Added: `stop_cooldown_bars` to `rule_based_dip_buy()`
+  (`src/strategies.py`) - real walk-forward evidence found the new
+  0.8.5 stop-loss could backfire during a sustained decline: SPY's
+  2019-2021 window went from -3.2% (no stop-loss) to -27.4% (10% stop,
+  no cooldown), because the strategy re-buys immediately after a
+  stop-out if the dip condition still holds, turning one long unrealized
+  drawdown into several smaller realized losses plus extra transaction
+  costs. `stop_cooldown_bars` blocks re-entry for N bars after a
+  stop-loss exit specifically (not after a normal recovery exit).
+  Defaults to `0` (unchanged behavior). Added `--stop-cooldown-values`
+  (`optimize.py`) and `--rule-stop-cooldown` (`walk_forward.py`), both
+  optional and only meaningful alongside a stop-loss.
+- Added: 1 test for the cooldown blocking re-entry, then correctly
+  releasing it after N bars. 59 tests passing.
+
 ## Version Richards 0.8.5 - 2026-07-27
 
 - Added: optional `stop_loss` parameter to `rule_based_dip_buy()`

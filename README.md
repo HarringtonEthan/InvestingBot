@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.8.5
+# InvestingBot — Version Richards 0.8.6
 
 Version history lives in `CHANGELOG.md`.
 
