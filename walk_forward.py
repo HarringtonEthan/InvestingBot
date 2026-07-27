@@ -1,9 +1,13 @@
 """
-Walk-forward validation for either of the two rule-based strategies this
+Walk-forward validation for any of the three rule-based/ML strategies this
 project runs live:
   --strategy day_trading  (crypto - dip / profit-target / stop-loss)
-  --strategy rule_based   (stocks - dip / recovery-exit, the rule
-                           ml_filtered's model sits on top of)
+  --strategy rule_based   (stocks - dip / recovery-exit)
+  --strategy ml_filtered  (stocks - same dip/recovery rule, gated by an
+                           already-trained model's confidence; loads
+                           --model-path, default models/stock_model.pkl,
+                           rather than training a fresh model just for
+                           this validation run)
 
 Every other backtest tool in this repo (`main.py`, `optimize.py`) scores
 a strategy on ONE held-out test period. A combination that looks great on
@@ -61,6 +65,10 @@ from src.features import add_features
 # by optimize.py - keeps the two scripts from each maintaining their own
 # copy of this mapping.
 from src.strategies import position_for_params
+# Loading an already-trained, already-saved model for --strategy
+# ml_filtered - the exact model live_trade.py would use, not a fresh one
+# trained just for this validation run.
+from src.model_store import load_model
 
 
 def make_windows(start: str, end: str, n_windows: int) -> list[tuple[str, str]]:
@@ -79,12 +87,13 @@ def make_windows(start: str, end: str, n_windows: int) -> list[tuple[str, str]]:
     return [(edges[i].date().isoformat(), edges[i + 1].date().isoformat()) for i in range(n_windows)]
 
 
-def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: str, params: dict, args, periods_per_year: float):
+def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: str, params: dict, args, periods_per_year: float, model=None, threshold: float | None = None):
     """
     Runs one ticker's backtest over one window. Returns (BacktestResult,
     source) - source is "alpaca", "yahoo", or "synthetic" (see
     get_price_data_smart()'s docstring) - or None if this window should
     be skipped entirely (no real data, or too few bars to mean anything).
+    `model`/`threshold` are only used for --strategy ml_filtered.
     """
     raw, is_synthetic, source = get_price_data_smart(ticker, window_start, window_end, interval=args.interval)
     if is_synthetic:
@@ -98,7 +107,7 @@ def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: s
         # bars to warm up) plus a meaningful number of trading bars after
         # that - too short a window to mean anything.
         return None
-    position = position_for_params(strategy, df, params)
+    position = position_for_params(strategy, df, params, model=model, threshold=threshold)
     result = run_backtest(df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
     return result, source
 
@@ -106,10 +115,13 @@ def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: s
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", required=True, help="e.g. --ticker BTC-USD ETH-USD SOL-USD")
-    parser.add_argument("--strategy", choices=["day_trading", "rule_based"], default="day_trading",
+    parser.add_argument("--strategy", choices=["day_trading", "rule_based", "ml_filtered"], default="day_trading",
                          help="day_trading = crypto's dip/profit-target/stop-loss shape (default, matches "
-                              "the live crypto workflow); rule_based = stocks' dip/recovery-exit shape, "
-                              "the rule ml_filtered sits on top of")
+                              "the live crypto workflow); rule_based = stocks' dip/recovery-exit shape; "
+                              "ml_filtered = the same rule gated by an already-trained model (--model-path)")
+    parser.add_argument("--model-path", default="models/stock_model.pkl",
+                         help="--strategy ml_filtered only - loads an already-trained model+threshold "
+                              "rather than training a fresh one just for this validation run")
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--windows", type=int, default=4,
@@ -158,10 +170,11 @@ def main():
     load_dotenv()
 
     # The parameter dict shape depends on --strategy - see position_for_params().
+    model, threshold = None, None
     if args.strategy == "day_trading":
         params = {"dip_threshold": args.dip_threshold, "profit_target": args.profit_target, "stop_loss": args.stop_loss}
         params_desc = f"dip={args.dip_threshold:.1%} profit={args.profit_target:.1%} stop={args.stop_loss:.1%}"
-    else:  # rule_based
+    elif args.strategy == "rule_based":
         params = {"dip_threshold": args.dip_threshold, "exit_threshold": args.exit_threshold}
         params_desc = f"dip={args.dip_threshold:.1%} exit={args.exit_threshold:.1%}"
         if args.rule_stop_loss is not None:
@@ -170,6 +183,19 @@ def main():
             if args.rule_stop_cooldown is not None:
                 params["stop_cooldown_bars"] = args.rule_stop_cooldown
                 params_desc += f" cooldown={args.rule_stop_cooldown} bars"
+    else:  # ml_filtered
+        # No stop-loss/cooldown here - ml_filtered_dip_buy doesn't support
+        # them (matches live_trade.py's actual ml_filtered strategy shape).
+        params = {"dip_threshold": args.dip_threshold, "exit_threshold": args.exit_threshold}
+        params_desc = f"dip={args.dip_threshold:.1%} exit={args.exit_threshold:.1%}"
+        loaded = load_model(args.model_path)
+        if loaded is None:
+            raise SystemExit(
+                f"No saved model at {args.model_path!r} - run train_stock_model.py first "
+                f"(or point --model-path at an existing one)."
+            )
+        model, threshold, meta = loaded
+        params_desc += f" (model trained {meta.get('trained_at', '?')}, threshold={threshold:.3f})"
 
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
     windows = make_windows(args.start, args.end, args.windows)
@@ -191,7 +217,7 @@ def main():
         window_returns = []
         for w_start, w_end in windows:
             label = f"{w_start} -> {w_end}"
-            outcome = evaluate_window(ticker, w_start, w_end, args.strategy, params, args, periods_per_year)
+            outcome = evaluate_window(ticker, w_start, w_end, args.strategy, params, args, periods_per_year, model=model, threshold=threshold)
             if outcome is None:
                 print(f"{label:<24}{'SKIPPED (no real data / window too short)':>39}")
                 all_rows.append({

@@ -225,12 +225,16 @@ def dip_buy_profit_target(
     return pd.Series(position, index=df.index)
 
 
-def position_for_params(strategy: str, df: pd.DataFrame, params: dict) -> pd.Series:
+def position_for_params(strategy: str, df: pd.DataFrame, params: dict, model=None, threshold: float | None = None) -> pd.Series:
     """
-    Builds a position series for one of the two rule-based strategies
+    Builds a position series for one of the three rule-based/ML strategies
     this project runs live, given its own parameter shape:
       - "day_trading": {"dip_threshold", "profit_target", "stop_loss"}
       - "rule_based": {"dip_threshold", "exit_threshold"}
+      - "ml_filtered": {"dip_threshold", "exit_threshold"} + a trained
+        `model`/calibrated `threshold` passed in separately (not part of
+        `params`, since a model object isn't something optimize.py can
+        write to a CSV column the way every other parameter is)
     Exists so optimize.py's grid search and walk_forward.py's validation
     both call through this one dispatch point instead of each keeping
     its own copy of "which strategy takes which parameters" - two copies
@@ -254,6 +258,16 @@ def position_for_params(strategy: str, df: pd.DataFrame, params: dict) -> pd.Ser
             df, dip_threshold=params["dip_threshold"], exit_threshold=params["exit_threshold"],
             stop_cooldown_bars=params.get("stop_cooldown_bars", 0),
             stop_loss=params.get("stop_loss"),
+        )
+    if strategy == "ml_filtered":
+        if model is None or threshold is None:
+            # A missing model/threshold here means a caller forgot to load
+            # one before reaching this dispatch - fail loudly rather than
+            # silently falling back to some other strategy's behavior.
+            raise ValueError("ml_filtered requires both model and threshold to be provided")
+        return ml_filtered_dip_buy(
+            df, model, threshold,
+            dip_threshold=params["dip_threshold"], exit_threshold=params["exit_threshold"],
         )
     raise ValueError(f"unknown strategy: {strategy}")
 

@@ -1,11 +1,17 @@
 """
-Systematic parameter search across multiple tickers at once, for either
-of the two rule-based strategies this project runs live:
+Systematic parameter search across multiple tickers at once, for any of
+the three rule-based/ML strategies this project runs live:
   --strategy day_trading  (crypto's strategy - dip / profit-target / stop-loss)
-  --strategy rule_based   (stocks' underlying strategy - dip / recovery-exit,
-                           the same rule ml_filtered's model sits on top of;
+  --strategy rule_based   (stocks' underlying strategy - dip / recovery-exit;
                            --stop-loss-values optionally adds a hard downside
                            cap here too, the same shape day_trading always has)
+  --strategy ml_filtered  (stocks' ML-gated variant - same dip/recovery rule,
+                           but a dip is only acted on if an already-trained
+                           model's predicted bounce-probability clears its
+                           calibrated threshold; loads --model-path (default
+                           models/stock_model.pkl) rather than training a
+                           fresh model just for this search, so this tests
+                           the exact model live_trade.py would actually use)
 
 This exists because hand-picking one threshold combination and hoping it's
 good is exactly the overfitting trap this whole project has been trying to
@@ -65,9 +71,13 @@ from src.features import add_features
 # by walk_forward.py - keeps the two scripts from each maintaining their
 # own copy of this mapping.
 from src.strategies import position_for_params
+# Loading an already-trained, already-saved model for --strategy
+# ml_filtered - the exact model live_trade.py would use, not a fresh one
+# trained just for this search.
+from src.model_store import load_model
 
 
-def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float, min_trades: float, periods_per_year: float):
+def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float, min_trades: float, periods_per_year: float, model=None, threshold: float | None = None):
     """
     Backtests one parameter combination (its shape depends on `strategy`
     - see _position_for()) against every ticker in test_dfs and averages
@@ -75,12 +85,13 @@ def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float,
     own, only ever as part of this cross-ticker average (see the module
     docstring on why). Returns None if the combo trades too rarely
     across the whole set to be filtered out by --min-trades before it
-    ever reaches the results table.
+    ever reaches the results table. `model`/`threshold` are only used
+    for --strategy ml_filtered - see position_for_params().
     """
     returns, sharpes, trades = [], [], []
     for test_df in test_dfs.values():
         # Run this one parameter combination against every ticker's data.
-        position = position_for_params(strategy, test_df, params)
+        position = position_for_params(strategy, test_df, params, model=model, threshold=threshold)
         result = run_backtest(test_df["Close"], position, cost_bps=cost_bps, periods_per_year=periods_per_year)
         returns.append(result.total_return)
         if result.sharpe == result.sharpe:  # skip NaN (zero-trade combos)
@@ -112,9 +123,15 @@ def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", required=True, help="e.g. --ticker BTC-USD ETH-USD SOL-USD ...")
-    parser.add_argument("--strategy", choices=["day_trading", "rule_based"], default="day_trading",
+    parser.add_argument("--strategy", choices=["day_trading", "rule_based", "ml_filtered"], default="day_trading",
                          help="day_trading = crypto's dip/profit-target/stop-loss shape (default); "
-                              "rule_based = stocks' dip/recovery-exit shape, the rule ml_filtered sits on top of")
+                              "rule_based = stocks' dip/recovery-exit shape; ml_filtered = the same "
+                              "rule, gated by an already-trained model's confidence (see --model-path)")
+    parser.add_argument("--model-path", default="models/stock_model.pkl",
+                         help="--strategy ml_filtered only - loads an already-trained model+threshold "
+                              "(see train_stock_model.py) rather than training a fresh one just for "
+                              "this search, so the search tests the exact model live_trade.py would "
+                              "actually use")
     parser.add_argument("--start", required=True)
     parser.add_argument("--split", required=True, help="only data from here onward is used (held-out test period)")
     parser.add_argument("--end", required=True)
@@ -199,7 +216,8 @@ def main():
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
 
     # Build the actual parameter grid - shape depends on --strategy, since
-    # day_trading and rule_based don't take the same parameters at all.
+    # these three strategies don't all take the same parameters.
+    model, threshold = None, None
     if args.strategy == "day_trading":
         profit_values = [float(x) for x in args.profit_values.split(",")]
         stop_values = [float(x) for x in args.stop_values.split(",")]
@@ -207,7 +225,7 @@ def main():
             {"dip_threshold": dip, "profit_target": profit, "stop_loss": stop}
             for dip, profit, stop in itertools.product(dip_values, profit_values, stop_values)
         ]
-    else:  # rule_based
+    elif args.strategy == "rule_based":
         exit_values = [float(x) for x in args.exit_values.split(",")]
         if args.stop_loss_values:
             stop_loss_values = [float(x) for x in args.stop_loss_values.split(",")]
@@ -227,6 +245,24 @@ def main():
                 {"dip_threshold": dip, "exit_threshold": exit_}
                 for dip, exit_ in itertools.product(dip_values, exit_values)
             ]
+    else:  # ml_filtered
+        # No stop-loss/cooldown here - ml_filtered_dip_buy doesn't support
+        # them (matches live_trade.py's actual ml_filtered strategy shape).
+        exit_values = [float(x) for x in args.exit_values.split(",")]
+        combos = [
+            {"dip_threshold": dip, "exit_threshold": exit_}
+            for dip, exit_ in itertools.product(dip_values, exit_values)
+        ]
+        loaded = load_model(args.model_path)
+        if loaded is None:
+            raise SystemExit(
+                f"No saved model at {args.model_path!r} - run train_stock_model.py first "
+                f"(or point --model-path at an existing one)."
+            )
+        model, threshold, meta = loaded
+        print(f"Loaded model from {args.model_path} (trained {meta.get('trained_at', '?')}, "
+              f"threshold={threshold:.3f})\n")
+
     print(f"\nSweeping {len(combos)} parameter combinations across {len(test_dfs)} tickers "
           f"({len(combos) * len(test_dfs)} backtests)...\n")
 
@@ -236,7 +272,7 @@ def main():
     # both be tested for "is not None" and used in the list comprehension
     # without calling evaluate_combo twice.
     rows = [r for params in combos
-            if (r := evaluate_combo(args.strategy, test_dfs, params, args.cost_bps, args.min_trades, periods_per_year)) is not None]
+            if (r := evaluate_combo(args.strategy, test_dfs, params, args.cost_bps, args.min_trades, periods_per_year, model=model, threshold=threshold)) is not None]
 
     if not rows:
         raise SystemExit("No combination met --min-trades; lower it or widen the parameter ranges.")
@@ -255,7 +291,7 @@ def main():
                 f"{row['avg_total_return']:>9.1%} {row['avg_sharpe']:>11.2f} {row['avg_trades']:>11.1f} "
                 f"{row['worst_ticker_return']:>12.1%}"
             )
-    else:  # rule_based
+    else:  # rule_based or ml_filtered
         has_stop = "stop_loss" in results_df.columns
         has_cooldown = "stop_cooldown_bars" in results_df.columns
         stop_header = f"{'Stop':>8}" if has_stop else ""

@@ -17,6 +17,29 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.7 - 2026-07-27
+
+- Added: `--strategy ml_filtered` support to `optimize.py` and
+  `walk_forward.py`, after 7 straight `rule_based` candidates (3 daily,
+  2 five-minute, 2 with stop-loss/cooldown added) failed to show a
+  robust walk-forward edge. `ml_filtered` loads an already-trained,
+  already-saved model (`--model-path`, default `models/stock_model.pkl`
+  - the exact model `live_trade.py` would use, not a fresh one trained
+  just for this search) and sweeps `--dip-values`/`--exit-values`
+  against `ml_filtered_dip_buy()`'s model-gated entries, the same way
+  `rule_based`'s plain rule was swept. `position_for_params()` now
+  accepts optional `model`/`threshold` arguments (kept separate from
+  the swept `params` dict, since a model object isn't something
+  `optimize.py` can write to a CSV column).
+- **Caveat worth knowing before running this**: `train_stock_model.py`
+  trains on the trailing `--lookback-days` (730 by default) up to
+  whenever it last ran. Evaluating `ml_filtered` over a range that
+  overlaps that training window isn't a clean out-of-sample test - the
+  model may have partially fit patterns specific to that exact regime.
+  For a fair test, `--end` should stay before the saved model's own
+  training start (`models/stock_model.pkl.meta.json`'s `trained_at`
+  minus `lookback_days`).
+
 ## Version Richards 0.8.6 - 2026-07-27
 
 - Fixed: `results/walk_forward_winner.png` (the crypto walk-forward chart)

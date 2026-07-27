@@ -239,6 +239,34 @@ then validate it with `walk_forward.py --strategy rule_based
 --dip-threshold ... --exit-threshold ...` before ever changing the live
 stock workflow's `--dip-threshold` value.
 
+### Testing the ML-gated version (`--strategy ml_filtered`)
+
+After 7 straight `rule_based` candidates (3 daily, 2 five-minute, 2 more
+with a stop-loss/cooldown added) failed to show a walk-forward-robust
+edge, both tools also support `--strategy ml_filtered` - the same
+dip/recovery rule, but a dip is only acted on if the ML model's
+predicted bounce-probability clears its calibrated threshold (see
+`src/model.py`, `ml_filtered_dip_buy()` in `src/strategies.py`). Rather
+than train a fresh model just for a search, both tools load an already
+saved one via `--model-path` (default `models/stock_model.pkl` - the
+exact model `live_trade.py` would use):
+
+```bash
+python optimize.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy ml_filtered --interval 1d \
+  --start 2015-01-01 --split 2022-01-01 --end 2024-06-01 --cost-bps 5 \
+  --dip-values=-0.03,-0.05,-0.06,-0.07,-0.08 \
+  --exit-values 0.0,0.01,0.02
+```
+
+**Important caveat**: `train_stock_model.py` trains on the trailing
+`--lookback-days` (730 by default) counting back from whenever it last
+ran - check `models/stock_model.pkl.meta.json`'s `trained_at` and
+`lookback_days` before picking `--end` above. Evaluating over a range
+that overlaps the model's own training window isn't genuinely
+out-of-sample - the model may have partially fit patterns specific to
+that exact regime, giving an optimistic read. Keep `--end` safely
+before `trained_at` minus `lookback_days` for a fair test.
+
 ## Validating across time (walk_forward.py)
 
 `optimize.py` above still only scores each combination against one
