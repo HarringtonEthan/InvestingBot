@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.8.0
+# InvestingBot — Version Richards 0.8.1
 
 Version history lives in `CHANGELOG.md`.
 
@@ -48,11 +48,11 @@ actually running from workflow files six months from now.
 | Component | Status |
 |---|---|
 | Crypto automation | Running (paper), every 5 min |
-| Stock ML automation | Running (paper), daily |
+| Stock ML automation | **Paused** (2026-07-27 - see below) |
 | Unit tests | 55 passing (`pytest tests/`) |
 | Real-money mode | Disabled (2 independent locks - see `docs/RISK.md`) |
 | Demonstrated edge | No |
-| Closed live trades | 3 |
+| Closed live trades (current config) | 0 - archived 3 prior trades, see below |
 | Max crypto purchase (`--max-notional`) | $2,000 |
 | Daily loss circuit breaker (`--daily-loss-limit`) | 5% |
 
@@ -90,25 +90,39 @@ This is a snapshot and will be stale by the time you read it - check
 
   <img src="results/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
 
-- **Stocks: ML-filtered, with periodic retraining.** The stock workflow
-  runs `--strategy ml_filtered` on SPY/AAPL/QQQ, loading a model that's
-  retrained weekly and saved to `models/stock_model.pkl` (see
-  `docs/AUTOMATION.md`). This setup has no real-data track record yet -
-  "automated" here isn't the same claim as "proven to work."
-- **Dashboard: regenerated hourly.** `results/trade_dashboard.png` is
-  committed automatically, viewable directly on github.com.
-- **Current results snapshot:** the account is up **+$292.84** against
-  its $100,000 funding baseline, currently sitting entirely in cash. Only
-  three trades have actually closed, and they tell different stories
-  depending on whether a bug-inflated one is counted: all three together,
-  realized P&L is **-$533.58**; excluding the one flagged trade (a
-  position that grew abnormally large due to a since-fixed bug, then
-  closed at a real loss on a market order that size), realized P&L from
-  the other two is **+$365.37**. Three trades isn't close to enough to
-  call this a proven edge either way - the positive account balance means
-  "the debugging period didn't blow up the account," not "the strategy
-  works." Full history of every bug that shaped these numbers is in
-  `CHANGELOG.md`.
+- **Stocks: paused as of 2026-07-27.** The account was carrying an
+  unmanaged ~$33k QQQ position (about a third of its value) from an
+  order that silently filled sometime after being submitted outside
+  market hours - never logged, since `live_trade.py` only records a
+  trade at the moment a run makes a fresh decision, not when an old
+  pending order quietly clears later on its own. That discovery also
+  surfaced a real gap: unlike crypto, the stock workflow never had
+  `--max-notional` or `--daily-loss-limit` wired in at all - nothing was
+  capping how large a single stock position could grow. The cron-job.org
+  jobs driving `paper-trade-stocks.yml`/`retrain-stock-model.yml` are
+  paused and the QQQ position was closed manually; see `CHANGELOG.md`
+  0.8.0. `optimize.py`/`walk_forward.py` now both support `--strategy
+  rule_based` (see `docs/RESEARCH.md`) so the stock strategy can
+  actually be validated, the same way crypto's was, before stocks ever
+  resume.
+- **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
+  is committed automatically, viewable directly on github.com: one
+  whole-account net gain/loss panel, plus cumulative realized P&L and
+  win/loss-per-ticker each split into separate crypto/stock panels
+  rather than blended together - two very different strategies sharing
+  one chart said less than two side by side do. A snapshot from before
+  this split and before the pause above is archived at
+  `results/trade_dashboard_archive_pre_2026-07-27.png`.
+- **Current results snapshot:** the account is at **-$212.90** against
+  its $100,000 funding baseline - includes the just-closed QQQ position's
+  realized loss, on top of the +$292.84 the account was at from crypto
+  trading before that close. `logs/trade_log.csv` was archived to
+  `logs/trade_log_archive_pre_2026-07-27.csv` alongside the threshold
+  change (its 3 old-model crypto trades: realized P&L **-$533.58** all
+  together, or **+$365.37** excluding the one flagged bug-inflated
+  trade) and started fresh, so it currently has zero rows - the new
+  crypto config hasn't closed a trade yet. Full history of every bug and
+  change that shaped these numbers is in `CHANGELOG.md`.
 
 ## Setup
 

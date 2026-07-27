@@ -307,31 +307,47 @@ actually happened (a BUY or SELL signal fired), which cuts the volume by
 roughly 100x based on this project's own history so far - and
 `equity_log.csv` only writes a row when the value actually changed since
 the last one, which cuts it further still, since a flat, untraded
-account produces zero new rows run after run. The pre-redesign log, kept
-for reference (and because its header didn't actually match its data - a
-real bug that motivated this rewrite), is archived at
-`logs/trade_log_archive_pre_2026-07-25.csv`.
+account produces zero new rows run after run. Two prior rebuilds are
+kept for reference, never deleted: `logs/trade_log_archive_pre_2026-07-25.csv`
+(the very first log format, whose header didn't actually match its
+data - the bug that motivated that rewrite) and
+`logs/trade_log_archive_pre_2026-07-27.csv` (every trade from before
+stock automation was paused and the live crypto thresholds changed to
+the 0.7.0 values - see `CHANGELOG.md` 0.8.0. Both archived files still
+work as `--trade-log` input to `visualize_log.py` if I ever want to look
+back at what a prior model actually did).
 
-**`python visualize_log.py`** turns both files into a three-panel PNG
-(`results/trade_dashboard.png` by default): net account gain/loss,
-cumulative realized P&L from executed trades, and win/loss counts per
-ticker. I run it locally anytime for an on-demand snapshot - harmless, no
-network/broker access needed, just reads the two log files.
+**`python visualize_log.py`** turns both files into a five-panel PNG
+(`results/trade_dashboard.png` by default): net account gain/loss (one
+panel, the whole account, crypto and stocks combined - the single
+authoritative "how much has this account actually made" figure, since
+it's built from real account equity, not the trade log), then
+cumulative realized P&L and win/loss-per-ticker, each split into two
+side-by-side panels - one for crypto, one for stocks - rather than
+blended into one. Crypto runs day_trading, stocks run ml_filtered/
+rule_based - two strategies with nothing in common, so a shared P&L line
+or a shared per-ticker bar chart would say less than two separate ones
+do. A snapshot from before this split (and before stock automation was
+paused), for comparison, is archived at
+`results/trade_dashboard_archive_pre_2026-07-27.png`. I run
+`visualize_log.py` locally anytime for an on-demand snapshot - harmless,
+no network/broker access needed, just reads the two log files.
 
-**The first and second panels answer different questions and won't sum
-to the same number - that's expected, not a bug.** The first panel (net
-account gain/loss) is built from real account equity, so it's the
-authoritative "how much has this account actually made" figure. The
-second (cumulative realized P&L) only covers trades present in the
-*current* `trade_log.csv` - since that file gets rebuilt from scratch
-whenever the logging format changes (see the archived-log note above),
-it can't see anything that happened before its own most recent rebuild,
-even though that activity is still baked into the account equity the
-first panel reads. Trust the first panel for the account total; use the
-second only for "were the trades I can actually see here profitable."
+**The account-total panel and the two P&L panels answer different
+questions and won't sum to the same number - that's expected, not a
+bug.** The account-total panel is the authoritative "how much has this
+account actually made" figure. The per-asset-class P&L panels only cover
+trades present in the *current* `trade_log.csv` - since that file gets
+rebuilt from scratch whenever the logging format or the live strategy
+changes (see the archived-log notes above), they can't see anything
+that happened before their own most recent rebuild, even though that
+activity is still baked into the account equity the top panel reads.
+Trust the top panel for the account total; use the P&L panels only for
+"were the trades I can actually see here, in this asset class,
+profitable."
 
-**The first panel's baseline matters and is easy to misread.** By
-default it's equity minus the *first* row of `logs/equity_log.csv` -
+**The account-total panel's baseline matters and is easy to misread.**
+By default it's equity minus the *first* row of `logs/equity_log.csv` -
 i.e. "gain/loss since equity logging happened to start," which isn't the
 same as "since I funded the account," especially if trades were already
 open before logging began. Pass `--baseline 100000` (or whatever your

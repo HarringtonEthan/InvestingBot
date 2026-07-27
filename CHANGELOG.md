@@ -17,6 +17,34 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.1 - 2026-07-27
+
+Dashboard now splits crypto and stocks; old-model logs archived.
+
+- Changed: `visualize_log.py` now produces a 5-panel dashboard instead
+  of 3 - the whole-account net gain/loss panel is unchanged, but
+  cumulative realized P&L and win/loss-per-ticker are each now two
+  side-by-side panels (crypto, stocks) instead of one panel blending
+  both together. Crypto runs `day_trading`, stocks run `ml_filtered`/
+  `rule_based` - two strategies with nothing in common, so a shared line
+  or bar chart said less than two separate ones do. Extracted the panel
+  logic into `plot_cumulative_pnl()`/`plot_win_loss()`, called once per
+  asset class, instead of duplicating it.
+- Archived: `logs/trade_log.csv` (3 rows, all from the pre-0.7.0 crypto
+  config) moved to `logs/trade_log_archive_pre_2026-07-27.csv` and
+  started fresh - same reasoning as the 2026-07-25 rewrite, a new era
+  of trades under a materially different live configuration deserves a
+  clean log, with the old one kept, not deleted. `logs/equity_log.csv`
+  was deliberately NOT archived - account equity is a continuous truth
+  regardless of which strategy was live when, unlike a trade log that's
+  meaningfully tied to "what rule made this decision."
+- Archived: `results/trade_dashboard.png` (the old 3-panel design, still
+  showing the pre-pause stock position and pre-0.7.0 crypto trades)
+  moved to `results/trade_dashboard_archive_pre_2026-07-27.png`; a fresh
+  dashboard was regenerated from the archived and new logs.
+- Verified both the fresh (empty) log and the archived log render
+  correctly through the new split panels before committing either.
+
 ## Version Richards 0.8.0 - 2026-07-27
 
 Stock automation paused; `optimize.py`/`walk_forward.py` can now
