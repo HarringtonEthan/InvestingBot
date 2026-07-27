@@ -84,18 +84,21 @@ def get_price_data_smart(
     Returns (dataframe, is_synthetic, source), where source is one of
     "alpaca", "yahoo", or "synthetic" - so a caller can report exactly
     where a given window's data actually came from, not just whether it
-    was real. Non-crypto tickers go straight to get_price_data() - Yahoo
-    has always been a perfectly deep source for stocks. Crypto tickers
-    fall back to get_price_data() too (Yahoo, then synthetic) if Alpaca
-    has too little data for this range or isn't reachable (missing
-    credentials, rate limited, a range older than Alpaca has on file for
-    this pair).
+    was real. Crypto tickers always try Alpaca first. Stock tickers try
+    Alpaca first too, but only for an intraday interval (interval != "1d") -
+    Yahoo's daily stock history is already decades deep, so there's no
+    60-day cap to route around for a daily-bar request, and Alpaca's free
+    IEX feed is a single exchange's view rather than the consolidated tape
+    Yahoo's daily data reflects. Either way, falls back to get_price_data()
+    (Yahoo, then synthetic) if Alpaca has too little data for this range or
+    isn't reachable (missing credentials, rate limited, a range older than
+    Alpaca has on file for this symbol).
     """
     # Imported here, not at module level, so this module can still be
     # imported in an environment where alpaca-py or its credentials
-    # aren't available - only pays that cost if a crypto ticker actually
-    # reaches this branch, same reasoning as the deferred yfinance import
-    # in _fetch_real() above.
+    # aren't available - only pays that cost if a ticker actually reaches
+    # one of the branches below, same reasoning as the deferred yfinance
+    # import in _fetch_real() above.
     from .symbols import resolve_symbol
 
     symbol = resolve_symbol(ticker)
@@ -108,6 +111,17 @@ def get_price_data_smart(
             # Same "enough to be useful" bar as get_price_data() uses
             # below - a handful of stray bars isn't worth treating as a
             # real result either.
+            if len(df) > 50:
+                return df, False, "alpaca"
+            print(f"[{ticker}] Alpaca returned only {len(df)} bars for this range (not enough) - "
+                  f"falling back to Yahoo Finance.")
+        except Exception as e:
+            print(f"[{ticker}] Alpaca historical fetch failed ({type(e).__name__}: {e}) - falling back to Yahoo Finance.")
+    elif interval != "1d":
+        try:
+            from .alpaca_data import get_stock_bars_range
+
+            df = get_stock_bars_range(symbol.alpaca, interval, start, end)
             if len(df) > 50:
                 return df, False, "alpaca"
             print(f"[{ticker}] Alpaca returned only {len(df)} bars for this range (not enough) - "

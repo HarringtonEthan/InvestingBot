@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.8.3
+# InvestingBot — Version Richards 0.8.4
 
 Version history lives in `CHANGELOG.md`.
 
@@ -109,6 +109,26 @@ This is a snapshot and will be stale by the time you read it - check
   (healthcare), KO (staples), CAT (industrials), DIS (media) - spanning
   several sectors on purpose, the same "one ticker isn't a real edge"
   principle crypto's validation already leans on.
+- **Stock validation: three candidates tested, none chosen yet.** A
+  grid search and three walk-forward runs (dip=-3%/exit=1%,
+  dip=-6%/exit=1%, dip=-8%/exit=1%, all `--strategy rule_based`, 9
+  tickers, 7 sequential windows spanning 2015-2026) are committed as
+  real evidence - [`results/param_sweep_stocks.csv`](results/param_sweep_stocks.csv)
+  and [`results/walk_forward_stocks.csv`](results/walk_forward_stocks.csv).
+  Unlike crypto, the daily-bar version of this search doesn't have a
+  clean winner: the best-average combo trades often but isn't
+  consistent (32% of ticker-windows lost money), and the combo that
+  looks safest trades so rarely (KO: 1 trade in 11 years) that its
+  safety is mostly untested rather than proven. `get_stock_bars_range()`
+  (`src/alpaca_data.py`) was added so stocks can now pull intraday bars
+  from Alpaca too, the same way crypto already does, removing Yahoo's
+  ~60-day intraday cap as a reason to stay on daily bars - a 5-minute
+  walk-forward run (more trades per ticker to actually validate on) is
+  the planned next step. Full writeup in `docs/RESEARCH.md`.
+
+  <img src="results/param_sweep_overview_stocks.png" alt="Scatter plot of the stock grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. The highest-return combo trades far more often than most of the cluster below it, unlike crypto's chart where fewer trades meant a better result." width="720">
+
+  <img src="results/walk_forward_stocks_candidate.png" alt="Nine small-multiple bar charts, one per stock ticker, showing the dip=-6%/exit=1% candidate's return in each of 7 sequential windows from 2015 to 2026. Mixed green and red bars throughout, with SPY/JNJ/KO showing a shared red window around 2019-2021 - evidence of correlated market-wide moves, similar to what crypto's validation found." width="720">
 - **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
   is committed automatically, viewable directly on github.com: one
   whole-account net gain/loss panel, plus cumulative realized P&L and

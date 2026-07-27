@@ -270,21 +270,25 @@ most windows, not just win on average because one window carried the rest.
 
 **Data source:** Yahoo Finance only keeps a limited window of intraday
 history (roughly 60 days for 5-minute bars), which used to cap any real
-5-minute walk-forward test at a couple of months. For crypto tickers,
-this tool now tries **Alpaca's historical crypto bars first**
-(`src/data.py`'s `get_price_data_smart()`) - Alpaca isn't subject to
-Yahoo's free-tier intraday retention limit, so a much longer `--start`
-(a year or more back) can work for crypto specifically. It needs
+5-minute walk-forward test at a couple of months. This tool now tries
+**Alpaca's historical bars first** for an intraday interval
+(`src/data.py`'s `get_price_data_smart()`) - crypto bars via
+`get_crypto_bars_range()`, stock bars via `get_stock_bars_range()` (free
+IEX feed, since the full-market SIP feed needs a paid subscription this
+project doesn't have) - since Alpaca isn't subject to Yahoo's free-tier
+intraday retention limit, so a much longer `--start` (a year or more
+back) can work for an intraday interval on either asset class. It needs
 `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` in your `.env` (see
 `docs/AUTOMATION.md`) even though this never places an order - only
 reads market data. Each window's output line ends with which source
 actually served it (`alpaca`, `yahoo`, or a `SKIPPED` line if neither
 had enough real data): if a window shows `yahoo` or gets skipped instead
 of `alpaca`, that's worth noticing - it means Alpaca didn't have data
-that far back for that pair/range and it fell back. Non-crypto tickers
-still go through Yahoo only and remain capped at its intraday window; use
-a coarser interval (`1h`, `1d`) for those if you need a longer stretch of
-calendar time.
+that far back for that ticker/range and it fell back. A daily-bar
+request (`--interval 1d`) always goes straight to Yahoo for stocks -
+Yahoo's daily history is already decades deep, so there's no cap to route
+around there, and Alpaca's IEX feed is one exchange's view rather than
+the consolidated tape Yahoo's daily data reflects.
 
 Every run also writes its full per-window results to `--out` (default
 `results/walk_forward.csv`), one row per ticker per window including
@@ -311,3 +315,51 @@ quicker read than the raw CSVs:
 Both were generated straight from the committed CSVs above, not
 hand-edited - re-run `optimize.py`/`walk_forward.py` and regenerate them
 anytime to check a new result the same way.
+
+**The same exercise for stocks, run 2026-07-27 - no combo chosen yet.**
+A grid search (`optimize.py --strategy rule_based`, 9 tickers, 2022-01-01
+to 2026-07-27 held out, `--cost-bps 5`) ranked 18 dip/exit combinations;
+the top 15 are committed at
+[`results/param_sweep_stocks.csv`](../results/param_sweep_stocks.csv)
+(the other 3, all `dip=-4%`, scored lowest and weren't printed to the
+console this run captured). Three candidates from that grid were then
+walk-forward validated across the same 9 tickers and 7 sequential windows
+spanning 2015-01-01 to 2026-07-27, committed at
+[`results/walk_forward_stocks.csv`](../results/walk_forward_stocks.csv):
+
+| Candidate | Avg return/ticker (walk-forward) | Losing ticker-windows | What it actually shows |
+|---|---|---|---|
+| dip=-3% exit=1% | highest single-period return (27.1%) | 20 of 63 (32%) | Trades often enough to test every window, but genuinely inconsistent - DIS averaged -5.9% (5 of 7 windows losing), AAPL barely positive (0.8%, 4 losses). |
+| dip=-6% exit=1% | middle of the three | 19 of 63 (30%) | About as inconsistent as -3%/1%, just with different winners and losers per ticker (JNJ and DIS both averaged a net negative return across their 7 windows). |
+| dip=-8% exit=1% | safest-looking on paper | 16 of 63 (25%) | Trades so rarely that "safe" mostly means "untested," not proven - KO traded in only 1 of 7 windows in 11 years, JNJ in 3 of 7. |
+
+Unlike crypto, where one combo clearly beat the old one and got deployed,
+none of these three is a clean winner - the highest-return combo isn't
+consistent, and the most-consistent-looking one barely traded enough to
+judge. Stocks stay paused (see "Current live status" in the main README)
+until a combo actually clears that bar, or until finer-grained data gives
+the strategy enough real trades to judge fairly - see the next paragraph.
+
+**Why 5-minute stock bars are the planned next step.** The daily-bar
+search above under-trades several tickers so badly that "0 losing
+windows" and "1 losing window" are barely distinguishable from noise
+(KO's -8%/1% row above is one single trade). `get_stock_bars_range()`
+(`src/alpaca_data.py`, added alongside this table) lets
+`get_price_data_smart()` pull intraday stock bars from Alpaca's free IEX
+feed the same way it already does for crypto, so a
+`walk_forward.py --strategy rule_based --interval 5m` run - not yet done,
+since it needs real `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` credentials this
+environment doesn't have - could give KO and JNJ enough real trades across
+the same calendar range to judge the strategy fairly, instead of drawing
+"proven safe" conclusions from a single trade.
+
+Rendered charts, generated straight from the two CSVs above:
+
+<img src="../results/param_sweep_overview_stocks.png" alt="Scatter plot of the stock grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. The highest-return combo trades far more often than most of the cluster below it, unlike crypto's chart where fewer trades meant a better result." width="720">
+
+<img src="../results/walk_forward_stocks_candidate.png" alt="Nine small-multiple bar charts, one per stock ticker, showing the dip=-6%/exit=1% candidate's return in each of 7 sequential windows from 2015 to 2026. Mixed green and red bars throughout, with SPY, JNJ, and KO all showing a shared red or flat window around 2019-2021." width="720">
+
+The bar chart shows the `-6%/1%` candidate specifically - not because it
+won, but because it was the most recently tested. Swap in `dip_threshold`/
+`exit_threshold` from the CSV and regenerate to see either of the other
+two the same way.

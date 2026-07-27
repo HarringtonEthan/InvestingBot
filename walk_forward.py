@@ -23,14 +23,16 @@ with, so running this with no threshold flags and --strategy day_trading
 money. Pass --strategy rule_based (plus --dip-threshold/--exit-threshold)
 to validate a candidate stock configuration instead.
 
-Data source: crypto tickers pull historical bars from Alpaca first (see
-src/data.py's get_price_data_smart()), since Yahoo Finance's ~60-day
-intraday history window would otherwise cap any real validation at a
-couple months. Falls back to Yahoo (then synthetic, which gets skipped)
-if Alpaca has nothing for a given range - needs ALPACA_API_KEY /
-ALPACA_SECRET_KEY in your .env, same as live trading, even though this
-never places an order. Non-crypto tickers still go through Yahoo
-directly and remain capped at its intraday window.
+Data source: any ticker requested at an intraday interval pulls historical
+bars from Alpaca first (see src/data.py's get_price_data_smart()) - crypto
+via get_crypto_bars_range(), stocks via get_stock_bars_range() (free IEX
+feed) - since Yahoo Finance's ~60-day intraday history window would
+otherwise cap any real validation at a couple months. Falls back to Yahoo
+(then synthetic, which gets skipped) if Alpaca has nothing for a given
+range - needs ALPACA_API_KEY / ALPACA_SECRET_KEY in your .env, same as
+live trading, even though this never places an order. A daily interval
+(--interval 1d) always goes straight to Yahoo for stocks, whose daily
+history is already decades deep.
 """
 
 # Lets type hints work without issue in this Python version.

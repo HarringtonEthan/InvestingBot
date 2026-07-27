@@ -25,13 +25,14 @@ this script tells you what looked best on the period you gave it, not
 what will keep working going forward. See walk_forward.py for that next
 step.
 
-Data source: crypto tickers pull historical bars from Alpaca first (see
-src/data.py's get_price_data_smart()), since Yahoo Finance's ~60-day
-intraday history window would otherwise cap any real grid search at a
-couple months. Needs ALPACA_API_KEY/ALPACA_SECRET_KEY in your .env, same
-as live trading, even though this never places an order. Stock tickers on
-daily bars don't need this - Yahoo's daily history is already decades
-deep, no cap to work around.
+Data source: any ticker at an intraday interval pulls historical bars from
+Alpaca first (see src/data.py's get_price_data_smart()) - crypto and
+stocks alike - since Yahoo Finance's ~60-day intraday history window
+would otherwise cap any real grid search at a couple months. Needs
+ALPACA_API_KEY/ALPACA_SECRET_KEY in your .env, same as live trading, even
+though this never places an order. Stock tickers on daily bars (--interval
+1d) don't need this - Yahoo's daily history is already decades deep, no
+cap to work around.
 """
 
 # Lets type hints work without issue in this Python version.

@@ -17,6 +17,47 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.4 - 2026-07-27
+
+- Added: `get_stock_bars_range()` in `src/alpaca_data.py` - Alpaca's
+  historical stock bars (free `DataFeed.IEX` feed), the same role
+  `get_crypto_bars_range()` already plays for crypto. `src/data.py`'s
+  `get_price_data_smart()` now tries Alpaca first for a stock ticker too,
+  but only when the request is intraday (`interval != "1d"`) - Yahoo's
+  daily stock history is already decades deep, so there's no 60-day cap
+  to route around for a daily request. Requested because the daily-bar
+  `rule_based` stock search below trades so rarely for some tickers (KO,
+  JNJ) that most walk-forward windows never traded at all - a finer bar
+  size gives the strategy more signal to actually be tested on, the same
+  problem Alpaca's crypto bars already solved for the 5-minute crypto
+  strategy. Not yet run for real (needs `ALPACA_API_KEY`/`ALPACA_SECRET_KEY`
+  in a local `.env`, which this environment doesn't have) - the next step
+  is a real `walk_forward.py --strategy rule_based --interval 5m` run.
+- Added: real committed stock validation evidence, gathered the same way
+  the 0.7.0 crypto combo was -
+  [`results/param_sweep_stocks.csv`](results/param_sweep_stocks.csv) (top
+  15 of an 18-combo `optimize.py --strategy rule_based` grid search,
+  2022-01-01 to 2026-07-27 held out) and
+  [`results/walk_forward_stocks.csv`](results/walk_forward_stocks.csv)
+  (three candidate combos - dip=-3%/exit=1%, dip=-6%/exit=1%,
+  dip=-8%/exit=1% - each walk-forward validated across the same 9
+  tickers and 7 sequential windows spanning 2015-01-01 to 2026-07-27).
+  Unlike crypto, **no combo here has been picked yet**: the highest-return
+  combo (-3%/1%) is inconsistent (20 of 63 ticker-windows were losers,
+  32%), the safest-looking one (-8%/1%) trades so rarely that most of its
+  apparent safety is really "never got tested" (KO's one trade in 11
+  years), and the middle ground (-6%/1%) split the difference on both
+  return and consistency rather than clearly beating either extreme. See
+  `docs/RESEARCH.md` for the full comparison. Charts mirroring
+  `results/param_sweep_overview.png` and `results/walk_forward_winner.png`
+  are committed too:
+  [`results/param_sweep_overview_stocks.png`](results/param_sweep_overview_stocks.png)
+  and
+  [`results/walk_forward_stocks_candidate.png`](results/walk_forward_stocks_candidate.png)
+  (the -6%/1% candidate, chosen for the chart only because it was the
+  most recently tested, not because it won).
+- Stocks remain paused; none of this resumes stock automation on its own.
+
 ## Version Richards 0.8.3 - 2026-07-27
 
 - Fixed: `docs/RESEARCH.md`'s `optimize.py --strategy rule_based`

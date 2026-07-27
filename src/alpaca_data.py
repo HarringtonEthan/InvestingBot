@@ -1,5 +1,5 @@
 """
-Crypto price data via Alpaca's own market data API.
+Price data via Alpaca's own market data API - crypto and stocks.
 
 Used two ways:
   - Live trading (`get_crypto_bars`): Yahoo Finance's intraday crypto bars
@@ -8,12 +8,20 @@ Used two ways:
     outright failure since nothing looks wrong. This pulls from Alpaca
     instead: the same venue trades actually execute against, continuously
     updating, and explicitly checked for staleness before being trusted.
-  - Historical/backtesting (`get_crypto_bars_range`): Yahoo Finance's
-    intraday history is capped at roughly 60 days regardless of ticker,
-    which makes real walk-forward validation of a 5-minute strategy
-    impossible past that window. Alpaca isn't subject to that same
-    free-tier retention cap, so `src/data.py`'s `get_price_data_smart()`
-    tries this first for crypto tickers before falling back to Yahoo.
+  - Historical/backtesting (`get_crypto_bars_range`, `get_stock_bars_range`):
+    Yahoo Finance's intraday history is capped at roughly 60 days
+    regardless of ticker, which makes real walk-forward validation of an
+    intraday strategy impossible past that window. Alpaca isn't subject
+    to that same free-tier retention cap, so `src/data.py`'s
+    `get_price_data_smart()` tries Alpaca first for an intraday request
+    before falling back to Yahoo.
+
+Stock bars use Alpaca's free IEX feed (`DataFeed.IEX`) rather than the
+full-market SIP feed, since SIP requires a separate market data
+subscription this project doesn't have. IEX is a single exchange's view,
+not the consolidated tape, so its bars can differ slightly from Yahoo's -
+fine for backtesting (the strategy only needs a realistic, consistent
+series), not something to treat as an execution-quality guarantee.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -27,12 +35,17 @@ import os
 
 # pandas for the DataFrame type this module returns.
 import pandas as pd
-# Alpaca's market-data client for crypto bars specifically (separate from
-# the trading client in broker.py, which places orders rather than
-# fetching prices).
+# Alpaca's market-data clients (separate from the trading client in
+# broker.py, which places orders rather than fetching prices) - one for
+# crypto bars, one for stock bars.
 from alpaca.data.historical.crypto import CryptoHistoricalDataClient
-# The request payload builder for asking for a range of historical bars.
-from alpaca.data.requests import CryptoBarsRequest
+from alpaca.data.historical.stock import StockHistoricalDataClient
+# DataFeed.IEX selects the free single-exchange feed for stock bars (the
+# full-market SIP feed needs a separate paid subscription this project
+# doesn't have) - not used for crypto, which has no feed distinction.
+from alpaca.data.enums import DataFeed
+# The request payload builders for asking for a range of historical bars.
+from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
 # Bar size is expressed as an (amount, unit) pair, e.g. 5 Minute bars.
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
@@ -149,3 +162,41 @@ def get_crypto_bars_range(symbol: str, interval: str, start: str, end: str) -> p
     start_ts = pd.Timestamp(start, tz="UTC")
     end_ts = pd.Timestamp(end, tz="UTC")
     return _fetch_bars(symbol, interval, start_ts, end_ts)
+
+
+def get_stock_bars_range(symbol: str, interval: str, start: str, end: str) -> pd.DataFrame:
+    """
+    Historical/backtesting path for stocks - same contract as
+    get_crypto_bars_range() (symbol is the plain ticker, e.g. "AAPL";
+    start/end are date strings), but against Alpaca's stock market data
+    endpoint instead of crypto. Only worth calling for intraday intervals -
+    Yahoo Finance's daily stock history is already decades deep, so
+    src/data.py only reaches for this when Yahoo's ~60-day intraday cap is
+    actually the problem. Raises if Alpaca has no bars at all for this
+    symbol/range (e.g. before the ticker existed, or before Alpaca's IEX
+    history begins).
+    """
+    amount, unit = _INTERVAL_MAP.get(interval, (5, TimeFrameUnit.Minute))
+
+    client = StockHistoricalDataClient(
+        api_key=os.environ.get("ALPACA_API_KEY"),
+        secret_key=os.environ.get("ALPACA_SECRET_KEY"),
+    )
+    request = StockBarsRequest(
+        symbol_or_symbols=symbol,
+        timeframe=TimeFrame(amount, unit),
+        start=pd.Timestamp(start, tz="UTC"),
+        end=pd.Timestamp(end, tz="UTC"),
+        feed=DataFeed.IEX,
+    )
+    bars = client.get_stock_bars(request)
+    df = bars.df
+    if df is None or df.empty:
+        raise RuntimeError(f"Alpaca returned no stock bars for {symbol}")
+
+    if isinstance(df.index, pd.MultiIndex):
+        # Same as the crypto path - a single-symbol request can still come
+        # back indexed by (symbol, timestamp).
+        df = df.xs(symbol, level=0)
+
+    return df.rename(columns={"close": "Close"})[["Close"]]
