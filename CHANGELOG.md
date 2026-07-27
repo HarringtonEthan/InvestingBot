@@ -1,15 +1,9 @@
 # Changelog
 
 Uses [semantic versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`).
+The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
 
-**Naming**: the `0.x.x` line is "Version Richards," after Mike Richards.
-Whenever this project reaches `1.0.0`, the name switches to "Version
-Giroux," after Claude Giroux - Richards was the young, developing
-player; Giroux was the one who'd actually proven himself. That's the
-intended arc: `0.x.x` is "code runs correctly, nothing proven yet,"
-`1.0.0`+ is "this has actually earned it."
-
-**What "earning it" means before `1.0.0` gets declared** (not yet met):
+**What's required before `1.0.0` gets declared** (not yet met):
 - Dozens to hundreds of real closed paper trades on the strategy
   actually running live - not the 3 currently on record - with positive
   net expectancy after real observed costs/slippage, not backtested

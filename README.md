@@ -1199,10 +1199,8 @@ money, including my own, until it earns that.
 ## Version history
 
 Semantic versioning (`MAJOR.MINOR.PATCH`). The `0.x.x` line is "Version
-Richards" (young, unproven); `1.0.0`+ becomes "Version Giroux" once the
-strategy has actually demonstrated a real edge on real data over enough
-trades and time periods to mean something - not just that the code runs
-correctly. See `CHANGELOG.md` for the exact bar and full history.
+Richards"; `1.0.0`+ becomes "Version Giroux." See `CHANGELOG.md` for
+the exact bar and full history.
 
 ### Version Richards 0.5.1 - 2026-07-27
 
