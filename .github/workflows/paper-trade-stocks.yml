@@ -37,7 +37,7 @@ jobs:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python live_trade.py --ticker SPY AAPL QQQ --strategy ml_filtered --dip-threshold -0.03 --execute
+        run: python live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy ml_filtered --dip-threshold -0.03 --execute
 
       - name: Commit trade log
         run: |

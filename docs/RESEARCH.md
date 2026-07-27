@@ -212,14 +212,22 @@ so they can't quietly drift apart on it). The live stock workflow's
 just picked:
 
 ```bash
-python optimize.py --ticker SPY AAPL QQQ --strategy rule_based \
+python optimize.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy rule_based \
   --start 2015-01-01 --split 2022-01-01 --end 2024-12-31 --cost-bps 5 \
   --dip-values=-0.01,-0.02,-0.03,-0.04,-0.05 \
   --exit-values 0.0,0.01,0.02
 ```
 
+Nine tickers, spanning several sectors on purpose (broad market, tech,
+financials, energy, healthcare, staples, industrials, media) - the same
+"a setting that only works on one coin isn't a real edge" principle from
+crypto, applied here specifically to avoid the correlation problem that
+same walk-forward evidence ran into (several coins moving together in
+the same market swing, inflating how independent the result actually
+was).
+
 No Alpaca work needed here - stocks run on daily bars, and Yahoo's daily
-history already goes back decades for SPY/AAPL/QQQ, unlike crypto's
+history already goes back decades for all of these, unlike crypto's
 5-minute intraday cap. `--cost-bps 5` (not crypto's 20) matches stock
 commission-free trading's much lower real cost. Take whatever combo
 comes out on top through the same neighbor-robustness check as above,

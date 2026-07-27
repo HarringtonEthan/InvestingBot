@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.8.1
+# InvestingBot — Version Richards 0.8.2
 
 Version history lives in `CHANGELOG.md`.
 
@@ -104,7 +104,11 @@ This is a snapshot and will be stale by the time you read it - check
   0.8.0. `optimize.py`/`walk_forward.py` now both support `--strategy
   rule_based` (see `docs/RESEARCH.md`) so the stock strategy can
   actually be validated, the same way crypto's was, before stocks ever
-  resume.
+  resume. The ticker list also grew from 3 to 9 while paused - SPY/QQQ
+  (broad market), AAPL (tech), JPM (financials), XOM (energy), JNJ
+  (healthcare), KO (staples), CAT (industrials), DIS (media) - spanning
+  several sectors on purpose, the same "one ticker isn't a real edge"
+  principle crypto's validation already leans on.
 - **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
   is committed automatically, viewable directly on github.com: one
   whole-account net gain/loss panel, plus cumulative realized P&L and

@@ -62,8 +62,11 @@ def log_retrain(row: dict):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--ticker", nargs="+", default=["SPY", "AAPL", "QQQ"],
-                         help="tickers to pool into one training set, e.g. --ticker SPY AAPL QQQ")
+    parser.add_argument("--ticker", nargs="+", default=["SPY", "AAPL", "QQQ", "JPM", "XOM", "JNJ", "KO", "CAT", "DIS"],
+                         help="tickers to pool into one training set, spanning several sectors on "
+                              "purpose (broad market, tech, financials, energy, healthcare, staples, "
+                              "industrials, media) - a setting that only works on one sector isn't a "
+                              "real edge, same principle as optimize.py")
     parser.add_argument("--lookback-days", type=int, default=730,
                          help="how much daily history to train on (default ~2 years)")
     parser.add_argument("--horizon", type=int, default=10,

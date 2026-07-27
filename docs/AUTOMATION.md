@@ -372,6 +372,11 @@ would not be.
 
 ## Stock automation: ML with periodic retraining
 
+**Currently paused** (2026-07-27, see `CHANGELOG.md` 0.8.0/0.8.1 and
+"Current live status" in the main README) - the rest of this section
+describes the configuration as written, which resumes exactly as-is
+whenever the cron-job.org jobs are unpaused.
+
 Stocks run a different strategy than crypto on purpose - `ml_filtered`
 instead of the rule-based `day_trading`, so I have one live example of
 each approach to actually compare over time, and so the ML path gets
@@ -383,14 +388,21 @@ stock workflow runs at 3%) would rarely fire on 5-minute crypto.
 `--model-path` (default `models/stock_model.pkl`) rather than training
 one on the spot. That file is produced by a **separate** workflow,
 `.github/workflows/retrain-stock-model.yml`, which runs
-`train_stock_model.py` - it pools recent SPY/AAPL/QQQ data into one
-model (a setting that only works on one stock isn't a real edge, same
-principle as `optimize.py`) and commits the result back to the repo.
-This is what makes the live stock model "learn" in the sense of updating
-over time, instead of being fixed at the moment I wrote this code:
+`train_stock_model.py` - it pools recent data from **9 tickers spanning
+several sectors on purpose** (SPY/QQQ broad market, AAPL tech, JPM
+financials, XOM energy, JNJ healthcare, KO consumer staples, CAT
+industrials, DIS media/consumer discretionary) into one model. A
+setting (or a model) that only works on one sector isn't a real edge,
+same principle as `optimize.py`'s cross-ticker averaging - and it
+directly addresses the correlation problem the crypto side ran into,
+where several coins moving together in the same market swing inflated
+how independent the "evidence" actually was. Commits the result back to
+the repo, which is what makes the live stock model "learn" in the sense
+of updating over time, instead of being fixed at the moment I wrote this
+code:
 
 ```bash
-python train_stock_model.py --ticker SPY AAPL QQQ --lookback-days 730
+python train_stock_model.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --lookback-days 730
 ```
 
 **Setup, in order:**

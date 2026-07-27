@@ -17,6 +17,26 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.2 - 2026-07-27
+
+- Changed: stock ticker list grew from 3 (SPY, AAPL, QQQ) to 9, adding
+  JPM (financials), XOM (energy), JNJ (healthcare), KO (consumer
+  staples), CAT (industrials), and DIS (media/consumer discretionary) -
+  deliberately spanning sectors that don't already overlap with the
+  existing broad-market/tech names, the same "a setting that only works
+  on one ticker isn't a real edge" principle `optimize.py` already
+  applies to crypto, and a direct response to the correlation problem
+  that same crypto validation surfaced (several coins moving together
+  in the same market swing, inflating how independent the evidence
+  actually was - sector-diverse stocks are less likely to share that
+  failure mode). Updated in `paper-trade-stocks.yml`,
+  `retrain-stock-model.yml`, and `train_stock_model.py`'s own
+  `--ticker` default, plus the `optimize.py`/docs examples referencing
+  the old 3-ticker list.
+- Config-only change while stock automation is already paused (see
+  0.8.0/0.8.1) - takes effect whenever it resumes, no live behavior
+  changed today.
+
 ## Version Richards 0.8.1 - 2026-07-27
 
 Dashboard now splits crypto and stocks; old-model logs archived.

@@ -33,7 +33,7 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Retrain stock model
-        run: python train_stock_model.py --ticker SPY AAPL QQQ --lookback-days 730
+        run: python train_stock_model.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --lookback-days 730
 
       - name: Commit updated model
         run: |
