@@ -1,8 +1,6 @@
 # InvestingBot — Version Richards 0.4.0
 
-Named after Mike Richards, the Flyers player I grew up watching - this
-project is still in its young, first-era phase, same as he was. Version
-history lives in `CHANGELOG.md`.
+Version history lives in `CHANGELOG.md`.
 
 A "buy the dip" stock and crypto strategy: I backtest it, search for better
 settings systematically, then optionally run it automatically against a

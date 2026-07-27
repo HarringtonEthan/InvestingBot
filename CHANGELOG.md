@@ -1,12 +1,9 @@
 # Changelog
 
-Version names: **Version Richards** - named after Mike Richards, the
-Flyers player I grew up watching. This project is versioned the same way
-a young player's career is: early numbers reflect a young, first-era
-phase, not a finished product. Uses [semantic versioning](https://semver.org/)
-(`MAJOR.MINOR.PATCH`) - staying under `1.0.0` on purpose until the
-strategy has actually demonstrated a real edge on real data, not just
-that the code runs correctly.
+Uses [semantic versioning](https://semver.org/) (`MAJOR.MINOR.PATCH`) -
+staying under `1.0.0` on purpose until the strategy has actually
+demonstrated a real edge on real data, not just that the code runs
+correctly.
 
 ## Version Richards 0.4.0 - 2026-07-27
 
