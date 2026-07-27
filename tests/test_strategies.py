@@ -69,8 +69,13 @@ def test_holds_between_target_and_stop():
 
 
 def _reference_dip_buy_profit_target(df, dip_threshold, profit_target, stop_loss):
-    """A from-scratch reimplementation, independent of day_trading_decision,
-    used only to cross-check dip_buy_profit_target's output."""
+    """
+    A from-scratch reimplementation, independent of day_trading_decision -
+    this is deliberately the exact same logic dip_buy_profit_target used
+    to have before the day_trading_decision refactor, kept here only as
+    an independent cross-check. If this and the real function ever
+    disagree, the refactor broke something.
+    """
     pct_below = df["pct_below_sma20"].to_numpy()
     close = df["Close"].to_numpy()
     position = np.zeros(len(df))
@@ -80,13 +85,17 @@ def _reference_dip_buy_profit_target(df, dip_threshold, profit_target, stop_loss
         pb = pct_below[i]
         price = close[i]
         if np.isnan(pb):
+            # Not enough history yet - stay flat, same as the real function.
             position[i] = 0.0
             continue
         if not holding:
+            # Not holding - buy if today's dip clears the threshold.
             if pb <= dip_threshold:
                 holding = True
                 entry_price = price
         else:
+            # Holding - sell at either the profit target or the stop loss,
+            # whichever is crossed first.
             gain = price / entry_price - 1.0
             if gain >= profit_target or gain <= -stop_loss:
                 holding = False

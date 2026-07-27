@@ -15,12 +15,18 @@ from tests.fake_broker import FakeBroker
 
 @pytest.fixture
 def temp_equity_log(tmp_path, monkeypatch):
+    # pytest's tmp_path gives each test its own throwaway directory,
+    # auto-cleaned afterward - point live_trade's EQUITY_LOG_PATH at a
+    # file in there instead of the real logs/equity_log.csv, so these
+    # tests can never touch real account history.
     log_path = tmp_path / "equity_log.csv"
     monkeypatch.setattr(live_trade, "EQUITY_LOG_PATH", log_path)
     return log_path
 
 
 def _write_equity_rows(path, rows):
+    # Writes a fake equity_log.csv with exactly the rows a test wants,
+    # in the same format live_trade.py's own log_equity() produces.
     import csv
     with path.open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=live_trade.EQUITY_LOG_FIELDS)

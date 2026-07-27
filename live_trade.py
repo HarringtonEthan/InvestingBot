@@ -400,22 +400,35 @@ def main():
             # one that failed. Catch, report, and move on instead.
             print(f"[{ticker}] ERROR during decide(): {type(e).__name__}: {e} - skipping this ticker this run.")
 
-    # Split whatever cash is available evenly across tickers being watched
-    # this run, so several simultaneous BUY signals don't let the first
-    # one spend the whole account.
-    starting_cash = broker.get_cash()
-    per_ticker_budget = starting_cash / len(tickers) if tickers else 0.0
+    # Everything below needs the broker's account-level endpoints
+    # (get_cash/get_equity) to actually respond - unlike the per-ticker
+    # calls above and below, which are each individually isolated, a
+    # single account-level call failing here used to have no
+    # containment of its own and would crash the entire run outright.
+    # Wrapped the same way: report clearly and stop this run cleanly
+    # rather than an unhandled traceback - the next scheduled run 5
+    # minutes later will simply try again.
+    try:
+        # Split whatever cash is available evenly across tickers being
+        # watched this run, so several simultaneous BUY signals don't
+        # let the first one spend the whole account.
+        starting_cash = broker.get_cash()
+        per_ticker_budget = starting_cash / len(tickers) if tickers else 0.0
 
-    # Checked once per run, not per ticker - the account is either
-    # having a bad enough day or it isn't, regardless of which ticker is
-    # being evaluated. Only ever blocks new BUYs below; SELLs (including
-    # a strategy's own profit-target/stop-loss exit) are never blocked
-    # by this, since letting an existing position ride out a bad day
-    # unmanaged would be the opposite of what a circuit breaker is for.
-    breaker_tripped = args.execute and daily_loss_exceeded(broker, args.daily_loss_limit)
-    if breaker_tripped:
-        print(f"[circuit breaker] Account is down {args.daily_loss_limit:.0%}+ from today's starting equity - "
-              f"blocking new BUYs for the rest of the run. SELLs are unaffected.")
+        # Checked once per run, not per ticker - the account is either
+        # having a bad enough day or it isn't, regardless of which ticker
+        # is being evaluated. Only ever blocks new BUYs below; SELLs
+        # (including a strategy's own profit-target/stop-loss exit) are
+        # never blocked by this, since letting an existing position ride
+        # out a bad day unmanaged would be the opposite of what a
+        # circuit breaker is for.
+        breaker_tripped = args.execute and daily_loss_exceeded(broker, args.daily_loss_limit)
+        if breaker_tripped:
+            print(f"[circuit breaker] Account is down {args.daily_loss_limit:.0%}+ from today's starting equity - "
+                  f"blocking new BUYs for the rest of the run. SELLs are unaffected.")
+    except Exception as e:
+        print(f"ERROR fetching account info: {type(e).__name__}: {e} - aborting this run, will retry next cycle.")
+        return
 
     for decision in decisions:
         ticker = decision["ticker"]
@@ -526,12 +539,18 @@ def main():
     # Always log account-level equity/cash at the end of every run
     # (subject to the "only if it changed" dedup inside log_equity above),
     # regardless of whether any individual ticker traded this time.
-    log_equity({
-        "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "mode": mode,
-        "portfolio_value_usd": f"{broker.get_equity():.2f}",
-        "cash_usd": f"{broker.get_cash():.2f}",
-    })
+    # Same reasoning as the try/except above - don't let a transient
+    # account-endpoint failure here surface as an unhandled crash after
+    # everything else in this run already succeeded.
+    try:
+        log_equity({
+            "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+            "mode": mode,
+            "portfolio_value_usd": f"{broker.get_equity():.2f}",
+            "cash_usd": f"{broker.get_cash():.2f}",
+        })
+    except Exception as e:
+        print(f"ERROR logging final account equity: {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":
