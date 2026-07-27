@@ -34,18 +34,30 @@ def rule_based_dip_buy(
     df: pd.DataFrame,
     dip_threshold: float = -0.03,
     exit_threshold: float = 0.0,
+    stop_loss: float | None = None,
 ) -> pd.Series:
     """
     Simple mean-reversion rule:
       - Buy (go 100% long) when price is more than `dip_threshold` below its
         20-day SMA (a "dip").
       - Sell (go to cash) once price recovers back above the SMA
-        (`exit_threshold`, default = the SMA itself).
-      - Otherwise hold whatever position we're currently in.
+        (`exit_threshold`, default = the SMA itself) - OR, if `stop_loss` is
+        given, once price falls that far below the actual entry price,
+        whichever happens first. `stop_loss=None` (the default) preserves
+        the original mean-reversion-only behavior: without it, this rule
+        can ride a sustained downtrend indefinitely waiting for a recovery
+        that may not come for a long time, if ever - the same reasoning
+        `dip_buy_profit_target`'s stop-loss exists for, added here after
+        walk-forward runs on daily stock bars found ticker/window
+        drawdowns as deep as -40% while "waiting it out."
     """
     # How far below (or above) its own rolling average the price is at
     # each bar - this is the "is it a dip" signal the whole rule runs on.
-    pct_below = df["pct_below_sma20"]
+    pct_below = df["pct_below_sma20"].to_numpy()
+    # Actual prices - only needed to measure real gain/loss from the entry
+    # price once a stop-loss is in play (the SMA-based exit above doesn't
+    # need this at all, same as the original version of this function).
+    close = df["Close"].to_numpy()
     # Will hold the final 0.0/1.0 decision for every bar; starts as all
     # zeros (out of the market) and gets filled in as the loop runs.
     position = np.zeros(len(df))
@@ -54,14 +66,12 @@ def rule_based_dip_buy(
     # stateful (today's decision depends on yesterday's, not just today's
     # price alone).
     holding = False
+    # The price we bought at, once holding - only used by the stop-loss
+    # check below; stays None the whole time if stop_loss isn't set.
+    entry_price = None
 
-    # Converting to a plain numpy array first, then looping over it, is
-    # noticeably faster in Python than looping over a pandas Series
-    # directly - matters here since this runs once per bar, for however
-    # many bars are in the backtest.
-    pct_below_vals = pct_below.to_numpy()
     for i in range(len(df)):
-        val = pct_below_vals[i]
+        val = pct_below[i]
         if np.isnan(val):
             # Not enough history yet to compute the SMA (e.g. the very
             # first 19 bars, before a 20-period average is even possible)
@@ -72,10 +82,18 @@ def rule_based_dip_buy(
             # Not currently holding, and price has dropped at least
             # dip_threshold below its average - buy.
             holding = True
-        elif holding and val >= exit_threshold:
-            # Currently holding, and price has recovered back up to (or
-            # above) the exit line - sell.
-            holding = False
+            entry_price = close[i]
+        elif holding:
+            recovered = val >= exit_threshold
+            # Only ever True if stop_loss was actually given - otherwise
+            # this rule exits purely on mean reversion, exactly as before.
+            stopped_out = stop_loss is not None and (close[i] / entry_price - 1.0) <= -stop_loss
+            if recovered or stopped_out:
+                # Either the price recovered back to the exit line, or
+                # (if a stop-loss is set) it fell too far first - sell
+                # either way, whichever happened first.
+                holding = False
+                entry_price = None
         # Whatever "holding" ended up as after the checks above, record
         # it as this bar's position: fully in (1.0) or fully out (0.0).
         position[i] = 1.0 if holding else 0.0
@@ -193,11 +211,16 @@ def position_for_params(strategy: str, df: pd.DataFrame, params: dict) -> pd.Ser
             profit_target=params["profit_target"], stop_loss=params["stop_loss"],
         )
     if strategy == "rule_based":
-        # No profit-target/stop-loss here - this rule exits on mean
-        # reversion (price recovering back above the SMA), not a fixed
-        # target - the same shape ml_filtered's model sits on top of.
+        # Exits on mean reversion (price recovering back above the SMA),
+        # not a fixed target - the same shape ml_filtered's model sits on
+        # top of. "stop_loss" is optional in this params dict (unlike
+        # day_trading, where it's always required) - .get() rather than
+        # ["stop_loss"] so callers that never pass one (the original
+        # shape) still dispatch to the exact same no-stop-loss behavior
+        # rule_based_dip_buy()'s own default already gives them.
         return rule_based_dip_buy(
             df, dip_threshold=params["dip_threshold"], exit_threshold=params["exit_threshold"],
+            stop_loss=params.get("stop_loss"),
         )
     raise ValueError(f"unknown strategy: {strategy}")
 

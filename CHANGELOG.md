@@ -17,6 +17,34 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.5 - 2026-07-27
+
+- Added: optional `stop_loss` parameter to `rule_based_dip_buy()`
+  (`src/strategies.py`) - a hard downside cap based on actual entry
+  price, the same protection `dip_buy_profit_target` (crypto's strategy)
+  has always had. `rule_based` never had one: it only ever exits on mean
+  reversion (price recovering back above the SMA), so a real walk-forward
+  run against daily stock bars this session found ticker/window
+  drawdowns as deep as -40% (XOM) while the strategy just waited for a
+  recovery that eventually came, but easily might not have. Defaults to
+  `None` (the original behavior, byte-for-byte) - nothing changes unless
+  a caller actually opts in.
+- Added: `--stop-loss-values` (`optimize.py`) and `--rule-stop-loss`
+  (`walk_forward.py`), both `--strategy rule_based`-only and optional, so
+  a stop-loss can be swept/validated alongside dip/exit the same way
+  crypto's three parameters already are. A separate flag from
+  day_trading's own required `--stop-loss` in both scripts, specifically
+  so validating a `rule_based` combo never silently picks up a
+  crypto-sized stop-loss you didn't ask for.
+- Added: 3 tests covering the new parameter - stop-loss firing before a
+  recovery would have, `stop_loss=None` giving byte-for-byte the same
+  result as before this parameter existed, and the `position_for_params`
+  dispatch actually passing it through. 58 tests passing.
+- Fixed (caught before committing): a stray `%` in `optimize.py`'s new
+  `--stop-loss-values` help text ("-40% while...") crashed `--help`
+  entirely - argparse treats help strings as `%`-format templates, so a
+  literal `%` needs escaping as `%%`.
+
 ## Version Richards 0.8.4 - 2026-07-27
 
 - Added: `get_stock_bars_range()` in `src/alpaca_data.py` - Alpaca's

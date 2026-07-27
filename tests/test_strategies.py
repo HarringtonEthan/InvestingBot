@@ -128,6 +128,39 @@ def test_dip_buy_profit_target_never_trades_during_warmup():
     assert (result.iloc[:19] == 0.0).all()
 
 
+def test_rule_based_dip_buy_exits_at_stop_loss_before_recovery():
+    # Buys the dip, then keeps falling instead of recovering - with no
+    # stop-loss this rule would hold all the way to the end waiting for a
+    # recovery that never comes; with one, it should bail out early.
+    close = [100, 94, 92, 90, 88, 86]
+    # A hand-built pct_below_sma20 series: -6% at the buy bar, then
+    # drifting further negative (never recovering back to exit_threshold).
+    pct_below = [0.0, -0.06, -0.08, -0.10, -0.12, -0.14]
+    df = pd.DataFrame({"Close": close, "pct_below_sma20": pct_below})
+
+    no_stop = rule_based_dip_buy(df, dip_threshold=-0.05, exit_threshold=0.0)
+    # No stop-loss: once bought, stays in for the rest of the series -
+    # nothing here ever recovers back to exit_threshold.
+    assert (no_stop.iloc[1:] == 1.0).all()
+
+    # Entry price is 94 (the bar the dip first crosses -5%). A 5%
+    # stop-loss trips once price falls to 94 * 0.95 = 89.3, i.e. bar 88 -
+    # sold there (index 4), then immediately re-bought at index 5 since
+    # the dip is still (even more) below dip_threshold, same re-entry
+    # behavior dip_buy_profit_target already has.
+    with_stop = rule_based_dip_buy(df, dip_threshold=-0.05, exit_threshold=0.0, stop_loss=0.05)
+    assert with_stop.tolist() == [0.0, 1.0, 1.0, 1.0, 0.0, 1.0]
+
+
+def test_rule_based_dip_buy_stop_loss_none_preserves_old_behavior():
+    # Omitting stop_loss must give byte-for-byte the same result as before
+    # this parameter existed - the whole point of defaulting it to None.
+    df = _feature_df()
+    with_default = rule_based_dip_buy(df, dip_threshold=-0.02, exit_threshold=0.0)
+    explicit_none = rule_based_dip_buy(df, dip_threshold=-0.02, exit_threshold=0.0, stop_loss=None)
+    pd.testing.assert_series_equal(with_default, explicit_none)
+
+
 def _feature_df(seed=5, n=200):
     rng = np.random.default_rng(seed)
     close = 100 + np.cumsum(rng.normal(0, 1.5, n))
@@ -153,6 +186,16 @@ def test_position_for_params_rule_based_matches_direct_call():
     params = {"dip_threshold": -0.02, "exit_threshold": 0.0}
     dispatched = position_for_params("rule_based", df, params)
     direct = rule_based_dip_buy(df, dip_threshold=-0.02, exit_threshold=0.0)
+    pd.testing.assert_series_equal(dispatched, direct)
+
+
+def test_position_for_params_rule_based_with_stop_loss_matches_direct_call():
+    # stop_loss is optional in the rule_based params dict - confirm the
+    # dispatch actually passes it through, not just silently dropping it.
+    df = _feature_df()
+    params = {"dip_threshold": -0.02, "exit_threshold": 0.0, "stop_loss": 0.03}
+    dispatched = position_for_params("rule_based", df, params)
+    direct = rule_based_dip_buy(df, dip_threshold=-0.02, exit_threshold=0.0, stop_loss=0.03)
     pd.testing.assert_series_equal(dispatched, direct)
 
 

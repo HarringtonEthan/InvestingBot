@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.8.4
+# InvestingBot — Version Richards 0.8.5
 
 Version history lives in `CHANGELOG.md`.
 
@@ -122,9 +122,16 @@ This is a snapshot and will be stale by the time you read it - check
   safety is mostly untested rather than proven. `get_stock_bars_range()`
   (`src/alpaca_data.py`) was added so stocks can now pull intraday bars
   from Alpaca too, the same way crypto already does, removing Yahoo's
-  ~60-day intraday cap as a reason to stay on daily bars - a 5-minute
-  walk-forward run (more trades per ticker to actually validate on) is
-  the planned next step. Full writeup in `docs/RESEARCH.md`.
+  ~60-day intraday cap as a reason to stay on daily bars. A first
+  5-minute grid search (real Alpaca data, trailing year) found a
+  candidate (dip=-1.5%/exit=2.0%) with a lower ticker-window loss rate
+  than any of the three daily candidates above, but on thinner trade
+  counts per ticker - still being evaluated, not yet committed as
+  evidence. `rule_based_dip_buy()` also gained an optional `stop_loss`
+  (`src/strategies.py`) - a hard downside cap like crypto's strategy
+  always had, since the daily walk-forward runs found drawdowns as deep
+  as -40% (XOM) while this rule just waited for a mean-reversion that
+  happened to eventually come. Full writeup in `docs/RESEARCH.md`.
 
   <img src="results/param_sweep_overview_stocks.png" alt="Scatter plot of the stock grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. The highest-return combo trades far more often than most of the cluster below it, unlike crypto's chart where fewer trades meant a better result." width="720">
 

@@ -132,6 +132,13 @@ def main():
     parser.add_argument("--exit-threshold", type=float, default=0.0,
                          help="--strategy rule_based only - how far above/below the SMA counts as "
                               "'recovered enough to sell' (0.0 = back at the average)")
+    parser.add_argument("--rule-stop-loss", type=float, default=None,
+                         help="--strategy rule_based only, optional - a hard stop-loss (fraction "
+                              "below entry price), the same downside cap day_trading always has via "
+                              "--stop-loss. A separate flag from --stop-loss (which is day_trading's "
+                              "required one, with its own default) so validating a rule_based combo "
+                              "never silently picks up a stop-loss you didn't ask for. Omit to "
+                              "validate without one (the original mean-reversion-only behavior).")
     parser.add_argument("--out", default="results/walk_forward.csv",
                          help="every window's result gets written here (one row per ticker per window, "
                               "including skipped ones) - a durable, committable record of a validation "
@@ -150,6 +157,9 @@ def main():
     else:  # rule_based
         params = {"dip_threshold": args.dip_threshold, "exit_threshold": args.exit_threshold}
         params_desc = f"dip={args.dip_threshold:.1%} exit={args.exit_threshold:.1%}"
+        if args.rule_stop_loss is not None:
+            params["stop_loss"] = args.rule_stop_loss
+            params_desc += f" stop={args.rule_stop_loss:.1%}"
 
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
     windows = make_windows(args.start, args.end, args.windows)

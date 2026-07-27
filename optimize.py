@@ -3,7 +3,9 @@ Systematic parameter search across multiple tickers at once, for either
 of the two rule-based strategies this project runs live:
   --strategy day_trading  (crypto's strategy - dip / profit-target / stop-loss)
   --strategy rule_based   (stocks' underlying strategy - dip / recovery-exit,
-                           the same rule ml_filtered's model sits on top of)
+                           the same rule ml_filtered's model sits on top of;
+                           --stop-loss-values optionally adds a hard downside
+                           cap here too, the same shape day_trading always has)
 
 This exists because hand-picking one threshold combination and hoping it's
 good is exactly the overfitting trap this whole project has been trying to
@@ -132,6 +134,13 @@ def main():
     parser.add_argument("--exit-values", default="-0.01,0.0,0.01",
                          help="--strategy rule_based only - how far above/below the SMA counts as "
                               "'recovered enough to sell' (0.0 = back at the average)")
+    parser.add_argument("--stop-loss-values", default=None,
+                         help="--strategy rule_based only, optional - a hard stop-loss (fraction "
+                              "below entry price) to sweep alongside dip/exit, e.g. 0.03,0.05 - the "
+                              "same downside cap day_trading always has. Omit entirely to search "
+                              "without one (the original mean-reversion-only behavior); rule_based "
+                              "never had this until walk-forward runs on daily stock bars found "
+                              "ticker/window drawdowns as deep as -40%% while waiting for a recovery.")
     parser.add_argument("--min-trades", type=float, default=5,
                          help="skip combos averaging fewer than this many trades per ticker - too rare to mean anything")
     parser.add_argument("--top", type=int, default=15)
@@ -189,10 +198,17 @@ def main():
         ]
     else:  # rule_based
         exit_values = [float(x) for x in args.exit_values.split(",")]
-        combos = [
-            {"dip_threshold": dip, "exit_threshold": exit_}
-            for dip, exit_ in itertools.product(dip_values, exit_values)
-        ]
+        if args.stop_loss_values:
+            stop_loss_values = [float(x) for x in args.stop_loss_values.split(",")]
+            combos = [
+                {"dip_threshold": dip, "exit_threshold": exit_, "stop_loss": stop}
+                for dip, exit_, stop in itertools.product(dip_values, exit_values, stop_loss_values)
+            ]
+        else:
+            combos = [
+                {"dip_threshold": dip, "exit_threshold": exit_}
+                for dip, exit_ in itertools.product(dip_values, exit_values)
+            ]
     print(f"\nSweeping {len(combos)} parameter combinations across {len(test_dfs)} tickers "
           f"({len(combos) * len(test_dfs)} backtests)...\n")
 
@@ -222,10 +238,13 @@ def main():
                 f"{row['worst_ticker_return']:>12.1%}"
             )
     else:  # rule_based
-        print(f"{'Dip':>8}{'Exit':>8}{'AvgRet':>10}{'AvgSharpe':>11}{'AvgTrades':>11}{'WorstTicker':>13}")
+        has_stop = "stop_loss" in results_df.columns
+        stop_header = f"{'Stop':>8}" if has_stop else ""
+        print(f"{'Dip':>8}{'Exit':>8}{stop_header}{'AvgRet':>10}{'AvgSharpe':>11}{'AvgTrades':>11}{'WorstTicker':>13}")
         for _, row in results_df.head(args.top).iterrows():
+            stop_col = f"{row['stop_loss']:>7.1%} " if has_stop else ""
             print(
-                f"{row['dip_threshold']:>7.1%} {row['exit_threshold']:>7.1%} "
+                f"{row['dip_threshold']:>7.1%} {row['exit_threshold']:>7.1%} {stop_col}"
                 f"{row['avg_total_return']:>9.1%} {row['avg_sharpe']:>11.2f} {row['avg_trades']:>11.1f} "
                 f"{row['worst_ticker_return']:>12.1%}"
             )
@@ -237,6 +256,8 @@ def main():
         best_desc = f"dip={best['dip_threshold']:.1%} profit={best['profit_target']:.1%} stop={best['stop_loss']:.1%}"
     else:
         best_desc = f"dip={best['dip_threshold']:.1%} exit={best['exit_threshold']:.1%}"
+        if "stop_loss" in results_df.columns:
+            best_desc += f" stop={best['stop_loss']:.1%}"
     print(
         f"\nBest average combo: {best_desc}  (avg return {best['avg_total_return']:.1%} across "
         f"{len(test_dfs)} tickers, worst single ticker {best['worst_ticker_return']:.1%})"

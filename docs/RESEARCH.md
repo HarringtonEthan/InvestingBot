@@ -363,3 +363,32 @@ The bar chart shows the `-6%/1%` candidate specifically - not because it
 won, but because it was the most recently tested. Swap in `dip_threshold`/
 `exit_threshold` from the CSV and regenerate to see either of the other
 two the same way.
+
+**Update: a real 5-minute run, and a new optional stop-loss.** Once
+`get_stock_bars_range()` landed, a real `--interval 5m` grid search and
+walk-forward run against a trailing year of Alpaca data confirmed the
+daily-bar candidates' deep single-window drawdowns above (XOM's -40.3%
+at dip=-3%/exit=1%, -34.1% at dip=-6%/exit=1%) came entirely from
+`rule_based_dip_buy()` having no stop-loss at all - it only ever exits on
+mean reversion, so a position can sit through nearly any drawdown waiting
+for a recovery that happened to come eventually, but easily might not
+have. `rule_based_dip_buy()`
+(`src/strategies.py`) gained an optional `stop_loss` parameter for exactly
+this - the same downside cap `dip_buy_profit_target` (crypto's strategy)
+has always had - along with `--stop-loss-values` (`optimize.py`) and
+`--rule-stop-loss` (`walk_forward.py`) to sweep/validate it. Defaults to
+`None` (unchanged behavior) so it's opt-in, not a silent change to any
+existing result above. Re-running both the daily and 5-minute searches
+with a stop-loss in the grid is the next real step before any stock combo
+gets chosen.
+
+On the 5-minute search itself: `sma20` means something very different at
+5-minute resolution (a ~100-minute average) than at daily resolution (a
+~1-month average), so daily-tuned thresholds don't transfer - a 5-minute
+grid search needs its own much smaller `--dip-values`/`--exit-values`
+(fractions of a percent, not several percent). A first pass found
+dip=-1.5%/exit=2.0% with a lower ticker-window loss rate than any of the
+three daily candidates above, but on noticeably thinner trade counts per
+ticker (Alpaca's free feed only covers about a trailing year, versus
+daily's 11), so it isn't committed as evidence yet - unlike the daily
+results above, this one needs the stop-loss re-test first.
