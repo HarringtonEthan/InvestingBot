@@ -8,8 +8,9 @@ could quietly drift apart from each other.
 
 import numpy as np
 import pandas as pd
+import pytest
 
-from src.strategies import day_trading_decision, dip_buy_profit_target
+from src.strategies import day_trading_decision, dip_buy_profit_target, position_for_params, rule_based_dip_buy
 
 
 def test_buys_on_a_deep_enough_dip():
@@ -125,3 +126,36 @@ def test_dip_buy_profit_target_never_trades_during_warmup():
     result = dip_buy_profit_target(df)
     # First 19 rows have no SMA yet (NaN pct_below) - must be flat.
     assert (result.iloc[:19] == 0.0).all()
+
+
+def _feature_df(seed=5, n=200):
+    rng = np.random.default_rng(seed)
+    close = 100 + np.cumsum(rng.normal(0, 1.5, n))
+    sma20 = pd.Series(close).rolling(20).mean()
+    pct_below = (close - sma20) / sma20
+    return pd.DataFrame({"Close": close, "pct_below_sma20": pct_below})
+
+
+def test_position_for_params_day_trading_matches_direct_call():
+    # optimize.py/walk_forward.py call through position_for_params() instead
+    # of dip_buy_profit_target()/rule_based_dip_buy() directly - this is the
+    # one place both scripts share, so it needs to actually dispatch to the
+    # same result a direct call would give, not a subtly different one.
+    df = _feature_df()
+    params = {"dip_threshold": -0.02, "profit_target": 0.01, "stop_loss": 0.03}
+    dispatched = position_for_params("day_trading", df, params)
+    direct = dip_buy_profit_target(df, dip_threshold=-0.02, profit_target=0.01, stop_loss=0.03)
+    pd.testing.assert_series_equal(dispatched, direct)
+
+
+def test_position_for_params_rule_based_matches_direct_call():
+    df = _feature_df()
+    params = {"dip_threshold": -0.02, "exit_threshold": 0.0}
+    dispatched = position_for_params("rule_based", df, params)
+    direct = rule_based_dip_buy(df, dip_threshold=-0.02, exit_threshold=0.0)
+    pd.testing.assert_series_equal(dispatched, direct)
+
+
+def test_position_for_params_rejects_unknown_strategy():
+    with pytest.raises(ValueError):
+        position_for_params("bollinger_breakout", _feature_df(), {})

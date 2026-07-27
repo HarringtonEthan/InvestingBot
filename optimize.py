@@ -1,6 +1,9 @@
 """
-Systematic parameter search for the day-trading (dip buy / profit target /
-stop loss) strategy, across multiple tickers at once.
+Systematic parameter search across multiple tickers at once, for either
+of the two rule-based strategies this project runs live:
+  --strategy day_trading  (crypto's strategy - dip / profit-target / stop-loss)
+  --strategy rule_based   (stocks' underlying strategy - dip / recovery-exit,
+                           the same rule ml_filtered's model sits on top of)
 
 This exists because hand-picking one threshold combination and hoping it's
 good is exactly the overfitting trap this whole project has been trying to
@@ -26,7 +29,9 @@ Data source: crypto tickers pull historical bars from Alpaca first (see
 src/data.py's get_price_data_smart()), since Yahoo Finance's ~60-day
 intraday history window would otherwise cap any real grid search at a
 couple months. Needs ALPACA_API_KEY/ALPACA_SECRET_KEY in your .env, same
-as live trading, even though this never places an order.
+as live trading, even though this never places an order. Stock tickers on
+daily bars don't need this - Yahoo's daily history is already decades
+deep, no cap to work around.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -53,23 +58,26 @@ from src.backtest import run_backtest
 from src.data import PERIODS_PER_YEAR_24_7, get_price_data_smart
 # Technical indicator computation.
 from src.features import add_features
-# The one strategy this script sweeps parameters for.
-from src.strategies import dip_buy_profit_target
+# The shared "which strategy takes which parameters" dispatch, also used
+# by walk_forward.py - keeps the two scripts from each maintaining their
+# own copy of this mapping.
+from src.strategies import position_for_params
 
 
-def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_bps: float, min_trades: float, periods_per_year: float):
+def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float, min_trades: float, periods_per_year: float):
     """
-    Backtests one (dip, profit, stop) combination against every ticker in
-    test_dfs and averages the results - a single ticker's number never
-    gets reported on its own, only ever as part of this cross-ticker
-    average (see the module docstring on why). Returns None if the
-    combo trades too rarely across the whole set to be filtered out by
-    --min-trades before it ever reaches the results table.
+    Backtests one parameter combination (its shape depends on `strategy`
+    - see _position_for()) against every ticker in test_dfs and averages
+    the results - a single ticker's number never gets reported on its
+    own, only ever as part of this cross-ticker average (see the module
+    docstring on why). Returns None if the combo trades too rarely
+    across the whole set to be filtered out by --min-trades before it
+    ever reaches the results table.
     """
     returns, sharpes, trades = [], [], []
     for test_df in test_dfs.values():
         # Run this one parameter combination against every ticker's data.
-        position = dip_buy_profit_target(test_df, dip_threshold=dip, profit_target=profit, stop_loss=stop)
+        position = position_for_params(strategy, test_df, params)
         result = run_backtest(test_df["Close"], position, cost_bps=cost_bps, periods_per_year=periods_per_year)
         returns.append(result.total_return)
         if result.sharpe == result.sharpe:  # skip NaN (zero-trade combos)
@@ -87,9 +95,7 @@ def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_
         return None
 
     return {
-        "dip_threshold": dip,
-        "profit_target": profit,
-        "stop_loss": stop,
+        **params,
         "avg_total_return": sum(returns) / len(returns),
         "avg_sharpe": sum(sharpes) / len(sharpes) if sharpes else float("nan"),
         "avg_trades": avg_trades,
@@ -103,6 +109,9 @@ def evaluate_combo(test_dfs: dict, dip: float, profit: float, stop: float, cost_
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", required=True, help="e.g. --ticker BTC-USD ETH-USD SOL-USD ...")
+    parser.add_argument("--strategy", choices=["day_trading", "rule_based"], default="day_trading",
+                         help="day_trading = crypto's dip/profit-target/stop-loss shape (default); "
+                              "rule_based = stocks' dip/recovery-exit shape, the rule ml_filtered sits on top of")
     parser.add_argument("--start", required=True)
     parser.add_argument("--split", required=True, help="only data from here onward is used (held-out test period)")
     parser.add_argument("--end", required=True)
@@ -111,8 +120,13 @@ def main():
                          help="cost in basis points charged on EACH position change - a full "
                               "buy-then-sell round trip pays this twice, not once")
     parser.add_argument("--dip-values", default="-0.003,-0.005,-0.008,-0.01,-0.015,-0.02")
-    parser.add_argument("--profit-values", default="0.005,0.008,0.01,0.015,0.02")
-    parser.add_argument("--stop-values", default="0.01,0.015,0.02,0.03")
+    parser.add_argument("--profit-values", default="0.005,0.008,0.01,0.015,0.02",
+                         help="--strategy day_trading only")
+    parser.add_argument("--stop-values", default="0.01,0.015,0.02,0.03",
+                         help="--strategy day_trading only")
+    parser.add_argument("--exit-values", default="-0.01,0.0,0.01",
+                         help="--strategy rule_based only - how far above/below the SMA counts as "
+                              "'recovered enough to sell' (0.0 = back at the average)")
     parser.add_argument("--min-trades", type=float, default=5,
                          help="skip combos averaging fewer than this many trades per ticker - too rare to mean anything")
     parser.add_argument("--top", type=int, default=15)
@@ -127,8 +141,6 @@ def main():
     # Parse each comma-separated string flag into a list of actual floats,
     # e.g. "-0.003,-0.005" -> [-0.003, -0.005].
     dip_values = [float(x) for x in args.dip_values.split(",")]
-    profit_values = [float(x) for x in args.profit_values.split(",")]
-    stop_values = [float(x) for x in args.stop_values.split(",")]
 
     print(f"Loading data for {len(args.ticker)} tickers...")
     test_dfs = {}
@@ -161,9 +173,21 @@ def main():
     # against 5-minute crypto data, which is drastically different from 252).
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
 
-    # Every possible (dip, profit, stop) triple from the three value lists -
-    # this is the actual "grid" the grid search tests exhaustively.
-    combos = list(itertools.product(dip_values, profit_values, stop_values))
+    # Build the actual parameter grid - shape depends on --strategy, since
+    # day_trading and rule_based don't take the same parameters at all.
+    if args.strategy == "day_trading":
+        profit_values = [float(x) for x in args.profit_values.split(",")]
+        stop_values = [float(x) for x in args.stop_values.split(",")]
+        combos = [
+            {"dip_threshold": dip, "profit_target": profit, "stop_loss": stop}
+            for dip, profit, stop in itertools.product(dip_values, profit_values, stop_values)
+        ]
+    else:  # rule_based
+        exit_values = [float(x) for x in args.exit_values.split(",")]
+        combos = [
+            {"dip_threshold": dip, "exit_threshold": exit_}
+            for dip, exit_ in itertools.product(dip_values, exit_values)
+        ]
     print(f"\nSweeping {len(combos)} parameter combinations across {len(test_dfs)} tickers "
           f"({len(combos) * len(test_dfs)} backtests)...\n")
 
@@ -172,8 +196,8 @@ def main():
     # The walrus operator (:=) assigns the result to r inline so it can
     # both be tested for "is not None" and used in the list comprehension
     # without calling evaluate_combo twice.
-    rows = [r for dip, profit, stop in combos
-            if (r := evaluate_combo(test_dfs, dip, profit, stop, args.cost_bps, args.min_trades, periods_per_year)) is not None]
+    rows = [r for params in combos
+            if (r := evaluate_combo(args.strategy, test_dfs, params, args.cost_bps, args.min_trades, periods_per_year)) is not None]
 
     if not rows:
         raise SystemExit("No combination met --min-trades; lower it or widen the parameter ranges.")
@@ -184,26 +208,38 @@ def main():
     results_df = pd.DataFrame(rows).sort_values("avg_total_return", ascending=False)
     results_df.to_csv(args.out, index=False)
 
-    print(f"{'Dip':>8}{'Profit':>8}{'Stop':>8}{'AvgRet':>10}{'AvgSharpe':>11}{'AvgTrades':>11}{'WorstTicker':>13}")
-    for _, row in results_df.head(args.top).iterrows():
-        print(
-            f"{row['dip_threshold']:>7.1%} {row['profit_target']:>7.1%} {row['stop_loss']:>7.1%} "
-            f"{row['avg_total_return']:>9.1%} {row['avg_sharpe']:>11.2f} {row['avg_trades']:>11.1f} "
-            f"{row['worst_ticker_return']:>12.1%}"
-        )
+    if args.strategy == "day_trading":
+        print(f"{'Dip':>8}{'Profit':>8}{'Stop':>8}{'AvgRet':>10}{'AvgSharpe':>11}{'AvgTrades':>11}{'WorstTicker':>13}")
+        for _, row in results_df.head(args.top).iterrows():
+            print(
+                f"{row['dip_threshold']:>7.1%} {row['profit_target']:>7.1%} {row['stop_loss']:>7.1%} "
+                f"{row['avg_total_return']:>9.1%} {row['avg_sharpe']:>11.2f} {row['avg_trades']:>11.1f} "
+                f"{row['worst_ticker_return']:>12.1%}"
+            )
+    else:  # rule_based
+        print(f"{'Dip':>8}{'Exit':>8}{'AvgRet':>10}{'AvgSharpe':>11}{'AvgTrades':>11}{'WorstTicker':>13}")
+        for _, row in results_df.head(args.top).iterrows():
+            print(
+                f"{row['dip_threshold']:>7.1%} {row['exit_threshold']:>7.1%} "
+                f"{row['avg_total_return']:>9.1%} {row['avg_sharpe']:>11.2f} {row['avg_trades']:>11.1f} "
+                f"{row['worst_ticker_return']:>12.1%}"
+            )
 
     # The single best row by average return, called out explicitly below
     # the ranked table.
     best = results_df.iloc[0]
+    if args.strategy == "day_trading":
+        best_desc = f"dip={best['dip_threshold']:.1%} profit={best['profit_target']:.1%} stop={best['stop_loss']:.1%}"
+    else:
+        best_desc = f"dip={best['dip_threshold']:.1%} exit={best['exit_threshold']:.1%}"
     print(
-        f"\nBest average combo: dip={best['dip_threshold']:.1%} profit={best['profit_target']:.1%} "
-        f"stop={best['stop_loss']:.1%}  (avg return {best['avg_total_return']:.1%} across {len(test_dfs)} tickers, "
-        f"worst single ticker {best['worst_ticker_return']:.1%})"
+        f"\nBest average combo: {best_desc}  (avg return {best['avg_total_return']:.1%} across "
+        f"{len(test_dfs)} tickers, worst single ticker {best['worst_ticker_return']:.1%})"
     )
     print(f"Full grid ({len(rows)} combos) saved to {args.out}")
     print(
         "\nIMPORTANT - check for overfitting before trusting this: open the CSV, sort by "
-        "dip_threshold/profit_target/stop_loss, and look at rows NEAR the winner. If nearby values "
+        "the parameter columns, and look at rows NEAR the winner. If nearby values "
         "also perform reasonably well, that's a real signal. If the winner is an isolated spike "
         "surrounded by much worse neighbors, that's almost always noise from testing many "
         "combinations, not a real edge. Either way, re-validate the winner on a DIFFERENT, later "

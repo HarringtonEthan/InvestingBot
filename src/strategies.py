@@ -175,6 +175,33 @@ def dip_buy_profit_target(
     return pd.Series(position, index=df.index)
 
 
+def position_for_params(strategy: str, df: pd.DataFrame, params: dict) -> pd.Series:
+    """
+    Builds a position series for one of the two rule-based strategies
+    this project runs live, given its own parameter shape:
+      - "day_trading": {"dip_threshold", "profit_target", "stop_loss"}
+      - "rule_based": {"dip_threshold", "exit_threshold"}
+    Exists so optimize.py's grid search and walk_forward.py's validation
+    both call through this one dispatch point instead of each keeping
+    its own copy of "which strategy takes which parameters" - two copies
+    of that mapping drifting apart is exactly how the earlier
+    --dip-threshold bug happened (see day_trading_decision above).
+    """
+    if strategy == "day_trading":
+        return dip_buy_profit_target(
+            df, dip_threshold=params["dip_threshold"],
+            profit_target=params["profit_target"], stop_loss=params["stop_loss"],
+        )
+    if strategy == "rule_based":
+        # No profit-target/stop-loss here - this rule exits on mean
+        # reversion (price recovering back above the SMA), not a fixed
+        # target - the same shape ml_filtered's model sits on top of.
+        return rule_based_dip_buy(
+            df, dip_threshold=params["dip_threshold"], exit_threshold=params["exit_threshold"],
+        )
+    raise ValueError(f"unknown strategy: {strategy}")
+
+
 def bollinger_breakout(
     df: pd.DataFrame,
     bb_window: int = 20,

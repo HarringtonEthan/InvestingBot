@@ -198,6 +198,35 @@ python optimize.py --ticker BTC-USD ETH-USD SOL-USD DOGE-USD LTC-USD AVAX-USD LI
   --stop-values 0.02,0.03,0.05
 ```
 
+### Validating the stock side (`--strategy rule_based`)
+
+Both `optimize.py` and `walk_forward.py` default to `--strategy
+day_trading` (crypto's dip/profit-target/stop-loss shape), but also
+support `--strategy rule_based` - the mean-reversion dip/recovery-exit
+rule `ml_filtered` (the live stock strategy) sits on top of. It's a
+different parameter shape (`--dip-values`/`--exit-values`, no
+profit-target or stop-loss - see `position_for_params()` in
+`src/strategies.py`, the one place both scripts get this dispatch from,
+so they can't quietly drift apart on it). The live stock workflow's
+`--dip-threshold -0.03` was never actually validated this way - it was
+just picked:
+
+```bash
+python optimize.py --ticker SPY AAPL QQQ --strategy rule_based \
+  --start 2015-01-01 --split 2022-01-01 --end 2024-12-31 --cost-bps 5 \
+  --dip-values=-0.01,-0.02,-0.03,-0.04,-0.05 \
+  --exit-values 0.0,0.01,0.02
+```
+
+No Alpaca work needed here - stocks run on daily bars, and Yahoo's daily
+history already goes back decades for SPY/AAPL/QQQ, unlike crypto's
+5-minute intraday cap. `--cost-bps 5` (not crypto's 20) matches stock
+commission-free trading's much lower real cost. Take whatever combo
+comes out on top through the same neighbor-robustness check as above,
+then validate it with `walk_forward.py --strategy rule_based
+--dip-threshold ... --exit-threshold ...` before ever changing the live
+stock workflow's `--dip-threshold` value.
+
 ## Validating across time (walk_forward.py)
 
 `optimize.py` above still only scores each combination against one
@@ -212,11 +241,15 @@ up over time" has a real answer instead of a guess:
 python walk_forward.py --ticker BTC-USD ETH-USD SOL-USD --start 2026-06-01 --end 2026-07-25 --windows 4 --interval 5m
 ```
 
-Run with no `--dip-threshold`/`--profit-target`/`--stop-loss` flags, it
-defaults to whatever the live crypto workflow currently trades with (see
-"Current live status" in the main README for the exact numbers - they've
-changed once already, see `CHANGELOG.md` 0.7.0), so this validates the
-strategy actually running, not a hypothetical one. It reports each window's
+Run with no flags beyond `--ticker`/`--start`/`--end`/`--windows`, it
+defaults to `--strategy day_trading` with whatever the live crypto
+workflow currently trades with (see "Current live status" in the main
+README for the exact numbers - they've changed once already, see
+`CHANGELOG.md` 0.7.0), so this validates the strategy actually running,
+not a hypothetical one. Pass `--strategy rule_based --dip-threshold ...
+--exit-threshold ...` to validate a stock candidate from `optimize.py`
+above instead - see "Validating the stock side" there for the parameter
+shape difference. It reports each window's
 return/Sharpe/drawdown/trade count individually (plus which data source
 that window actually came from - see below), then flags how many windows
 were net losers and how many never traded at all (an untested window, not

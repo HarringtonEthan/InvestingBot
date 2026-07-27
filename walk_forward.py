@@ -1,6 +1,9 @@
 """
-Walk-forward validation for the day-trading (dip buy / profit target /
-stop loss) strategy - the one actually running live on crypto.
+Walk-forward validation for either of the two rule-based strategies this
+project runs live:
+  --strategy day_trading  (crypto - dip / profit-target / stop-loss)
+  --strategy rule_based   (stocks - dip / recovery-exit, the rule
+                           ml_filtered's model sits on top of)
 
 Every other backtest tool in this repo (`main.py`, `optimize.py`) scores
 a strategy on ONE held-out test period. A combination that looks great on
@@ -13,10 +16,12 @@ a real answer instead of a guess. This is the "multiple distinct,
 non-overlapping time periods" validation named as a 1.0.0 requirement in
 CHANGELOG.md.
 
-Read-only research tool - it doesn't change what the live crypto bot
-does. Defaults match the parameters the live crypto workflow actually
-runs with, so running this with no threshold flags evaluates the
-strategy currently trading real (paper) money.
+Read-only research tool - it doesn't change what any live bot does.
+Defaults match the parameters the live crypto workflow actually runs
+with, so running this with no threshold flags and --strategy day_trading
+(the default) evaluates the strategy currently trading real (paper)
+money. Pass --strategy rule_based (plus --dip-threshold/--exit-threshold)
+to validate a candidate stock configuration instead.
 
 Data source: crypto tickers pull historical bars from Alpaca first (see
 src/data.py's get_price_data_smart()), since Yahoo Finance's ~60-day
@@ -50,8 +55,10 @@ from src.backtest import run_backtest
 from src.data import PERIODS_PER_YEAR_24_7, get_price_data_smart
 # Technical indicator computation.
 from src.features import add_features
-# The strategy actually running live on crypto.
-from src.strategies import dip_buy_profit_target
+# The shared "which strategy takes which parameters" dispatch, also used
+# by optimize.py - keeps the two scripts from each maintaining their own
+# copy of this mapping.
+from src.strategies import position_for_params
 
 
 def make_windows(start: str, end: str, n_windows: int) -> list[tuple[str, str]]:
@@ -70,7 +77,7 @@ def make_windows(start: str, end: str, n_windows: int) -> list[tuple[str, str]]:
     return [(edges[i].date().isoformat(), edges[i + 1].date().isoformat()) for i in range(n_windows)]
 
 
-def evaluate_window(ticker: str, window_start: str, window_end: str, args, periods_per_year: float):
+def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: str, params: dict, args, periods_per_year: float):
     """
     Runs one ticker's backtest over one window. Returns (BacktestResult,
     source) - source is "alpaca", "yahoo", or "synthetic" (see
@@ -89,9 +96,7 @@ def evaluate_window(ticker: str, window_start: str, window_end: str, args, perio
         # bars to warm up) plus a meaningful number of trading bars after
         # that - too short a window to mean anything.
         return None
-    position = dip_buy_profit_target(
-        df, dip_threshold=args.dip_threshold, profit_target=args.profit_target, stop_loss=args.stop_loss,
-    )
+    position = position_for_params(strategy, df, params)
     result = run_backtest(df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
     return result, source
 
@@ -99,6 +104,10 @@ def evaluate_window(ticker: str, window_start: str, window_end: str, args, perio
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ticker", nargs="+", required=True, help="e.g. --ticker BTC-USD ETH-USD SOL-USD")
+    parser.add_argument("--strategy", choices=["day_trading", "rule_based"], default="day_trading",
+                         help="day_trading = crypto's dip/profit-target/stop-loss shape (default, matches "
+                              "the live crypto workflow); rule_based = stocks' dip/recovery-exit shape, "
+                              "the rule ml_filtered sits on top of")
     parser.add_argument("--start", required=True)
     parser.add_argument("--end", required=True)
     parser.add_argument("--windows", type=int, default=4,
@@ -109,10 +118,14 @@ def main():
                               "run higher than stocks, so don't leave this at a stock-sized default")
     # Defaults intentionally match the parameters .github/workflows/paper-trade-crypto.yml
     # actually runs live with, so `python walk_forward.py --ticker ... --start ... --end ...`
-    # with no threshold flags validates the exact strategy currently trading paper money.
+    # with no threshold flags (and the default --strategy day_trading) validates the exact
+    # strategy currently trading paper money.
     parser.add_argument("--dip-threshold", type=float, default=-0.04)
-    parser.add_argument("--profit-target", type=float, default=0.01)
-    parser.add_argument("--stop-loss", type=float, default=0.05)
+    parser.add_argument("--profit-target", type=float, default=0.01, help="--strategy day_trading only")
+    parser.add_argument("--stop-loss", type=float, default=0.05, help="--strategy day_trading only")
+    parser.add_argument("--exit-threshold", type=float, default=0.0,
+                         help="--strategy rule_based only - how far above/below the SMA counts as "
+                              "'recovered enough to sell' (0.0 = back at the average)")
     parser.add_argument("--out", default="results/walk_forward.csv",
                          help="every window's result gets written here (one row per ticker per window, "
                               "including skipped ones) - a durable, committable record of a validation "
@@ -124,13 +137,19 @@ def main():
     # Alpaca (see get_price_data_smart()), not just Yahoo Finance.
     load_dotenv()
 
+    # The parameter dict shape depends on --strategy - see position_for_params().
+    if args.strategy == "day_trading":
+        params = {"dip_threshold": args.dip_threshold, "profit_target": args.profit_target, "stop_loss": args.stop_loss}
+        params_desc = f"dip={args.dip_threshold:.1%} profit={args.profit_target:.1%} stop={args.stop_loss:.1%}"
+    else:  # rule_based
+        params = {"dip_threshold": args.dip_threshold, "exit_threshold": args.exit_threshold}
+        params_desc = f"dip={args.dip_threshold:.1%} exit={args.exit_threshold:.1%}"
+
     periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
     windows = make_windows(args.start, args.end, args.windows)
 
-    print(
-        f"Walk-forward: {args.windows} sequential windows across {args.start} -> {args.end}, "
-        f"dip={args.dip_threshold:.1%} profit={args.profit_target:.1%} stop={args.stop_loss:.1%}\n"
-    )
+    print(f"Walk-forward: {args.windows} sequential windows across {args.start} -> {args.end}, "
+          f"strategy={args.strategy} {params_desc}\n")
 
     # Every ticker/window's outcome, skipped ones included - written to
     # --out at the end as a durable, committable record of this run, not
@@ -146,13 +165,12 @@ def main():
         window_returns = []
         for w_start, w_end in windows:
             label = f"{w_start} -> {w_end}"
-            outcome = evaluate_window(ticker, w_start, w_end, args, periods_per_year)
+            outcome = evaluate_window(ticker, w_start, w_end, args.strategy, params, args, periods_per_year)
             if outcome is None:
                 print(f"{label:<24}{'SKIPPED (no real data / window too short)':>39}")
                 all_rows.append({
-                    "ticker": ticker, "window_start": w_start, "window_end": w_end,
-                    "dip_threshold": args.dip_threshold, "profit_target": args.profit_target,
-                    "stop_loss": args.stop_loss, "source": "skipped", "total_return": "",
+                    "ticker": ticker, "window_start": w_start, "window_end": w_end, "strategy": args.strategy,
+                    **params, "source": "skipped", "total_return": "",
                     "sharpe": "", "max_drawdown": "", "trades": "",
                 })
                 continue
@@ -163,9 +181,8 @@ def main():
                 f"{result.max_drawdown:>9.1%} {result.num_trades:>9}  {source}"
             )
             all_rows.append({
-                "ticker": ticker, "window_start": w_start, "window_end": w_end,
-                "dip_threshold": args.dip_threshold, "profit_target": args.profit_target,
-                "stop_loss": args.stop_loss, "source": source,
+                "ticker": ticker, "window_start": w_start, "window_end": w_end, "strategy": args.strategy,
+                **params, "source": source,
                 "total_return": result.total_return, "sharpe": result.sharpe,
                 "max_drawdown": result.max_drawdown, "trades": result.num_trades,
             })

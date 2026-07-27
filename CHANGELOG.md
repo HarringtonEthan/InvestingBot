@@ -17,6 +17,49 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.8.0 - 2026-07-27
+
+Stock automation paused; `optimize.py`/`walk_forward.py` can now
+validate the stock side too.
+
+- Paused: the cron-job.org jobs driving `paper-trade-stocks.yml` and
+  `retrain-stock-model.yml` were paused, and the open QQQ position was
+  closed manually on Alpaca. Cause: the account was carrying an
+  unmanaged ~$33k QQQ position (about a third of its value) from an
+  order that silently filled sometime after being submitted outside
+  market hours - never logged, because `live_trade.py` only records a
+  trade at the moment a run makes a fresh decision, not when an old
+  pending order quietly clears later on its own. Investigating that
+  also surfaced a real gap: unlike crypto, `paper-trade-stocks.yml`
+  never had `--max-notional` or `--daily-loss-limit` wired in at all -
+  nothing was capping how large a single stock position could grow.
+  Crypto's cash, positions, and forward-test history under 0.7.0 are
+  completely untouched by any of this - separate account activity, same
+  underlying Alpaca account. `paper-trade-stocks.yml` itself is
+  unmodified and can resume whenever the cron-job.org jobs are unpaused.
+- Added: `optimize.py` and `walk_forward.py` both gained `--strategy
+  {day_trading, rule_based}` (default `day_trading`, unchanged
+  behavior). `rule_based` validates the dip/recovery-exit shape
+  `ml_filtered` (the live stock strategy) is actually built on - a
+  different parameter shape than crypto's dip/profit-target/stop-loss,
+  which the live stock workflow's `--dip-threshold -0.03` was never
+  actually validated against, just picked. No Alpaca data work needed
+  for this - stocks run on daily bars, and Yahoo's daily history is
+  already decades deep for SPY/AAPL/QQQ.
+- Added: `position_for_params()` in `src/strategies.py` - the one place
+  both scripts now get "which strategy takes which parameters" from,
+  instead of each keeping its own copy of that mapping (the same reason
+  `day_trading_decision` was factored out in 0.5.0).
+- Added: 3 new tests in `tests/test_strategies.py` covering
+  `position_for_params()`'s dispatch for both strategies plus the
+  unknown-strategy error case.
+- Read-only research-tooling change for the `--strategy` addition; no
+  code change to live crypto trading. Stopping stock automation is a
+  separate, external decision (a cron-job.org toggle, plus any manual
+  position cleanup on Alpaca's own dashboard) - not a code change,
+  `paper-trade-stocks.yml` itself is untouched either way and can resume
+  the same way it was ever running.
+
 ## Version Richards 0.7.3 - 2026-07-27
 
 - Updated README's opening framing: it stated flatly that the honest
