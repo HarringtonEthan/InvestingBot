@@ -1,4 +1,8 @@
-# InvestingBot
+# InvestingBot — Version Richards 0.4.0
+
+Named after Mike Richards, the Flyers player I grew up watching - this
+project is still in its young, first-era phase, same as he was. Version
+history lives in `CHANGELOG.md`.
 
 A "buy the dip" stock and crypto strategy: I backtest it, search for better
 settings systematically, then optionally run it automatically against a
@@ -54,12 +58,13 @@ whenever the live configuration changes.
   trade dashboard" for what does/doesn't get recorded going forward - in
   particular, this setup has no real-data track record yet, so
   "automated" here isn't the same claim as "proven to work." There's
-  also no actual QQQ position open - two QQQ buy orders from early
-  manual testing never filled (submitted after market close, `Filled
-  Qty: 0.00` on Alpaca's Orders page) - but both are still sitting open
-  and could still fill on a future market open. I'll cancel them on
-  Alpaca's Orders page if I don't want that; see "Fixed: BUY no longer
-  stacks" below for why the bot itself won't know they're there.
+  also no confirmed QQQ position yet as of this writing - two QQQ buy
+  orders from early manual testing never filled (submitted after market
+  close, `Filled Qty: 0.00` on Alpaca's Orders page); one was a genuine
+  duplicate of the other (see "Fixed: BUY no longer stacks" below for
+  why the bot itself never knew they were both sitting open) and has
+  since been cancelled manually on Alpaca's Orders page, leaving one
+  live order queued for the next market open.
 - **Fixed: `--dip-threshold` now actually controls `rule_based` and
   `ml_filtered`.** Those two strategies used to silently ignore the flag
   and always use a hardcoded 3% dip, regardless of what I passed on the
@@ -102,6 +107,56 @@ whenever the live configuration changes.
   order already sitting open - I still need to cancel those manually on
   Alpaca's Orders page if I don't want them to fill; this only stops
   *new* ones from stacking on top going forward.
+- **Fixed a round of measurement/reliability bugs found during a deeper
+  code audit** (none of these changed the crypto trading rules
+  themselves - see each item):
+  - **RSI could never show 100.** `src/features.py`'s RSI calculation
+    defaulted to a neutral 50 during a pure uptrend (zero losses in the
+    window) instead of the correct 100 - muting the strongest possible
+    bullish signal down to "no opinion." Only affects the stock
+    `ml_filtered` model, which uses RSI as a feature; crypto's
+    `day_trading` strategy doesn't use RSI at all.
+  - **The ML model was training on fabricated labels.** `src/model.py`'s
+    `build_labels()` turned rows with an incomplete lookahead window
+    (not enough future days to know the real answer yet) into a
+    confident "didn't bounce," instead of correctly excluding them.
+    Also stock-only - crypto has no ML in it.
+  - **Backtest annualized stats assumed daily bars, always.**
+    `src/backtest.py` hardcoded 252 trading days/year regardless of the
+    actual bar interval, making annualized return/vol/Sharpe meaningless
+    for intraday (e.g. 5-minute crypto) backtests. Fixed with a
+    `periods_per_year` parameter, wired through `main.py`/`optimize.py`
+    based on `--interval`. Only affects the backtesting/research tools,
+    not live trading.
+  - **`--cost-bps` was charged twice per round trip but documented as a
+    one-time cost.** The mechanics were always correct (a real cost is
+    paid on both the entry and the exit); the help text calling it a
+    "round-trip cost" was the actual bug. Fixed the wording, not the math.
+  - **Broker errors could still look identical to "no position held."**
+    `src/broker.py` caught every `APIError` the same way when checking
+    positions - an auth failure, rate limit, or server error would be
+    silently treated as "holding zero," the same failure shape as the
+    slash-URL bug above, just from a different root cause. Now only a
+    genuine HTTP 404 ("position not found") is treated as zero; anything
+    else propagates instead of being swallowed.
+  - **One ticker's API failure could kill the entire run.** `live_trade.py`
+    had no per-ticker error handling - an exception anywhere (checking
+    one coin's position, placing one order) would crash the whole script,
+    silently skipping every other ticker scheduled for that cycle, not
+    just the one that failed. Now isolated per ticker: a failure is
+    logged and the run continues.
+  - **Orders were logged as "placed" the moment they were submitted, not
+    when they actually filled.** `trade_log.csv` recorded the
+    decision-time market price as if it were the real fill price. BUY/SELL
+    orders now briefly poll Alpaca for confirmation and log the real
+    `filled_avg_price`/`filled_qty` when available; if a fill isn't
+    confirmed within that window, the row is explicitly noted as an
+    estimate rather than silently presented as fact.
+  - Also: pinned `requirements.txt` to exact known-working versions
+    (was unbounded `>=`), added `timeout-minutes` to every workflow so a
+    hung run can't block its own concurrency group indefinitely, and
+    real-data fetch failures in `src/data.py` now get printed instead of
+    silently swallowed before falling back to synthetic data.
 - **Dashboard: live and automated, regenerated hourly.** A fourth
   workflow, `update-dashboard.yml`, runs `visualize_log.py --baseline
   100000` and commits `results/trade_dashboard.png` back to the repo -
