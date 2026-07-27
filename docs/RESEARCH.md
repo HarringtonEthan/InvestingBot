@@ -174,6 +174,30 @@ money - finding good settings on one stretch of history is the easy
 part; knowing they'll hold up going forward is the part that actually
 matters. That's exactly what `walk_forward.py` below is for.
 
+Crypto tickers here pull historical bars from Alpaca first, not just
+Yahoo Finance (`get_price_data_smart()`, same data path `walk_forward.py`
+below uses) - so this grid search can run over a genuine year or more of
+real 5-minute data, not the ~60 days Yahoo alone allows. Each ticker's
+line during data loading shows which source served it (`alpaca`/`yahoo`).
+
+**A concrete reason to re-run this:** a `walk_forward.py` run against a
+full year of real Alpaca data found the live -1%/+1%/-3% combo losing
+money in the overwhelming majority of windows across nearly every
+coin, often trading 100-300+ times in a single ~2-month window at
+`--cost-bps 20` - meaning transaction costs alone (roughly trades × 0.2%)
+could plausibly account for a large share of the losses seen. That
+points toward searching for combos that trade less often (wider
+`--dip-values`, larger `--profit-values` relative to the real ~0.2-0.4%
+round-trip fee floor) rather than more often:
+
+```bash
+python optimize.py --ticker BTC-USD ETH-USD SOL-USD DOGE-USD LTC-USD AVAX-USD LINK-USD XRP-USD DOT-USD \
+  --interval 5m --start 2025-08-01 --split 2025-08-15 --end 2026-07-27 --cost-bps 20 \
+  --dip-values=-0.005,-0.01,-0.015,-0.02,-0.03,-0.04 \
+  --profit-values 0.01,0.015,0.02,0.03,0.04 \
+  --stop-values 0.02,0.03,0.05
+```
+
 ## Validating across time (walk_forward.py)
 
 `optimize.py` above still only scores each combination against one

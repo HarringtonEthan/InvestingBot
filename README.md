@@ -1,4 +1,4 @@
-# InvestingBot — Version Richards 0.6.2
+# InvestingBot — Version Richards 0.6.3
 
 Version history lives in `CHANGELOG.md`.
 
@@ -59,13 +59,16 @@ This is a snapshot and will be stale by the time you read it - check
   minutes to run `.github/workflows/paper-trade-crypto.yml`, which runs
   `live_trade.py --strategy day_trading` against **BTC, ETH, SOL, DOGE,
   LTC, AVAX, LINK, XRP, DOT** on 5-minute bars: buy a 1.0% dip, sell at
-  +1.0% profit or -3.0% stop-loss. These are `optimize.py`'s best
-  average-across-all-9-coins combo on the one window tested so far (both
-  it and an earlier combo lost money on average over that period, this
-  one just lost less) - not yet re-validated across multiple windows.
-  `walk_forward.py` (see `docs/RESEARCH.md`) exists specifically to check
-  that; the live thresholds are unchanged pending more real trade history
-  and that validation.
+  +1.0% profit or -3.0% stop-loss. **A `walk_forward.py` run against a
+  full year of real Alpaca data found this combo losing money in the
+  large majority of windows across nearly every coin** - not a single
+  lucky/unlucky window anymore, a real and fairly consistent result.
+  Very high trade counts in the losing windows (100-300+ in ~2 months)
+  point at transaction-cost drag as a likely major contributor, not just
+  a bad directional read. The live thresholds are unchanged for now;
+  `docs/RESEARCH.md` documents the concrete next step (re-running
+  `optimize.py` over this same real data, searching toward
+  less-frequent-trading combos) before any live change is made.
 - **Stocks: ML-filtered, with periodic retraining.** The stock workflow
   runs `--strategy ml_filtered` on SPY/AAPL/QQQ, loading a model that's
   retrained weekly and saved to `models/stock_model.pkl` (see

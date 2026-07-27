@@ -14,6 +14,26 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   picked on.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.6.3 - 2026-07-27
+
+- Added: `optimize.py` now also pulls crypto history from Alpaca first
+  via `get_price_data_smart()`, the same data path added to
+  `walk_forward.py` in 0.6.2 - the parameter-sweep grid search can now
+  run over a genuine year or more of real 5-minute crypto data instead
+  of Yahoo Finance's ~60-day intraday cap. Each ticker's data-loading
+  line now shows which source served it.
+- Context: a `walk_forward.py` run against a full year of real Alpaca
+  data (not yet possible before 0.6.2) found the live -1%/+1%/-3% combo
+  losing money in the large majority of windows across nearly every
+  coin, often with very high trade counts (100-300+ in a single
+  ~2-month window) suggesting transaction-cost drag as a real
+  contributor. `docs/RESEARCH.md` now documents re-running `optimize.py`
+  over this same real data, searching toward less-frequent-trading
+  combos, as the concrete next step - not yet done, and the live
+  -1%/+1%/-3% thresholds are unchanged pending that.
+- Read-only research-tooling change; no live crypto trading behavior
+  affected.
+
 ## Version Richards 0.6.2 - 2026-07-27
 
 - Added: `walk_forward.py` now pulls crypto history from **Alpaca first**

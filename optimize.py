@@ -19,7 +19,14 @@ avoid. Instead of chasing "the highest backtest number," this:
 Still not a substitute for testing the winner on a further, later,
 held-out time window before trusting it with anything beyond fake money -
 this script tells you what looked best on the period you gave it, not
-what will keep working going forward.
+what will keep working going forward. See walk_forward.py for that next
+step.
+
+Data source: crypto tickers pull historical bars from Alpaca first (see
+src/data.py's get_price_data_smart()), since Yahoo Finance's ~60-day
+intraday history window would otherwise cap any real grid search at a
+couple months. Needs ALPACA_API_KEY/ALPACA_SECRET_KEY in your .env, same
+as live trading, even though this never places an order.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -32,13 +39,18 @@ import itertools
 
 # pandas to assemble the results grid and write it out as a CSV.
 import pandas as pd
+# Loads ALPACA_API_KEY / ALPACA_SECRET_KEY from a local .env file, same
+# as live_trade.py - needed here too now that crypto tickers may pull
+# real historical bars from Alpaca, not just Yahoo Finance.
+from dotenv import load_dotenv
 
 # The backtest engine used to score every parameter combination.
 from src.backtest import run_backtest
-# Price data loading; also the bars-per-year table for intraday intervals,
-# reused so the Sharpe column here is scaled correctly for --interval 5m
-# and similar, not silently assuming daily bars.
-from src.data import PERIODS_PER_YEAR_24_7, get_price_data
+# Price data loading (Alpaca-first for crypto, Yahoo otherwise); also
+# the bars-per-year table for intraday intervals, reused so the Sharpe
+# column here is scaled correctly for --interval 5m and similar, not
+# silently assuming daily bars.
+from src.data import PERIODS_PER_YEAR_24_7, get_price_data_smart
 # Technical indicator computation.
 from src.features import add_features
 # The one strategy this script sweeps parameters for.
@@ -99,6 +111,11 @@ def main():
     parser.add_argument("--out", default="results/param_sweep.csv")
     args = parser.parse_args()
 
+    # Populate ALPACA_API_KEY / ALPACA_SECRET_KEY from .env, if present -
+    # needed now that crypto tickers may pull real historical bars from
+    # Alpaca (see get_price_data_smart()), not just Yahoo Finance.
+    load_dotenv()
+
     # Parse each comma-separated string flag into a list of actual floats,
     # e.g. "-0.003,-0.005" -> [-0.003, -0.005].
     dip_values = [float(x) for x in args.dip_values.split(",")]
@@ -108,10 +125,10 @@ def main():
     print(f"Loading data for {len(args.ticker)} tickers...")
     test_dfs = {}
     for ticker in args.ticker:
-        raw, is_synthetic = get_price_data(ticker, args.start, args.end, interval=args.interval)
+        raw, is_synthetic, source = get_price_data_smart(ticker, args.start, args.end, interval=args.interval)
         if is_synthetic:
             # Never let a parameter search draw conclusions from fake
-            # data - drop any ticker Yahoo Finance couldn't actually serve.
+            # data - drop any ticker neither Alpaca nor Yahoo could serve.
             print(f"  {ticker}: SKIPPED (only synthetic fallback data available - no real network access)")
             continue
         df = add_features(raw)
@@ -124,7 +141,7 @@ def main():
             print(f"  {ticker}: SKIPPED (not enough test-period rows; widen --start/--split/--end)")
             continue
         test_dfs[ticker] = test_df
-        print(f"  {ticker}: {len(test_df)} test-period rows")
+        print(f"  {ticker}: {len(test_df)} test-period rows ({source})")
 
     if not test_dfs:
         # Every single ticker failed to produce usable data - nothing to sweep.
