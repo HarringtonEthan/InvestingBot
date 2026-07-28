@@ -17,6 +17,19 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.19 - 2026-07-28
+
+- **Verified the 0.9.18 price-accuracy fix live, then re-enabled both
+  cron-job.org schedulers.** A manually-triggered stock run placed real
+  QQQ/XOM/CAT BUYs; cross-checked all three against three independent
+  sources within a ~2-minute window - the live decision price, the
+  actual confirmed fill price, and the dashboard's live position price
+  (from a manually-triggered dashboard run) - and all three agreed
+  within about 0.1% (XOM: $153.15 / $153.16 / $153.29; QQQ: $675.79 /
+  $675.72 / $675.50; CAT: $831.60 / $831.84 / $830.72), a large
+  improvement on the ~4% CAT gap that exposed the original bug. Both
+  crypto and stocks are running again.
+
 ## Version Richards 0.9.18 - 2026-07-28
 
 - **Fixed the actual root cause of the stock price-accuracy problem,

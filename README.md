@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.18
+# InvestingBot — Version Richards 0.9.19
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 102 passing](https://img.shields.io/badge/tests-102%20passing-4c9a2a)](tests/)
@@ -74,18 +74,21 @@ snapshot and will be stale by the time you read it - check
 covers what's true right now** - every bug, incident, and past decision
 that shaped this configuration is in `CHANGELOG.md`, not repeated here.
 
-**Both crypto and stocks are currently PAUSED** (paper) - the external
-scheduler ([cron-job.org](https://cron-job.org)) that would otherwise
-call each workflow's `workflow_dispatch` endpoint every 5 minutes has
-been turned off for both, following a real live bug found and fixed on
-2026-07-28 (see `CHANGELOG.md`): stock decisions were being made from a
-price that could sit several percent away from Alpaca's own real-time
-pricing. Every open stock position was manually sold and the paper
-account was reset ($99,747.83 is the new tracking baseline) while that
-was fixed. Neither workflow has a GitHub-side `schedule:` trigger
+**Both crypto and stocks are currently RUNNING again** (paper),
+triggered **only** by an external scheduler
+([cron-job.org](https://cron-job.org)) calling each workflow's
+`workflow_dispatch` endpoint every 5 minutes. Both were briefly paused
+on 2026-07-28 after a real live bug (see `CHANGELOG.md`): stock
+decisions were being made from a price that could sit several percent
+away from Alpaca's own real-time pricing. Every open stock position was
+manually sold and the paper account reset ($99,747.83 is the tracking
+baseline since) while that was fixed and verified - a manually-triggered
+run after the fix showed the decision price, actual fill price, and the
+dashboard's live position price all agreeing within ~0.1%, instead of
+the ~4% gap that exposed the original bug - and both schedulers were
+then re-enabled. Neither workflow has a GitHub-side `schedule:` trigger
 either way - GitHub itself never fires either one on its own; only the
-external scheduler (when re-enabled) or a manual "Run workflow" click
-can.
+external scheduler or a manual "Run workflow" click can.
 
 Crypto and stocks are otherwise completely independent - different
 tickers, different strategy code, different thresholds, separate
@@ -95,8 +98,8 @@ neither one is missing information the other has:
 
 | | Crypto | Stocks |
 |---|---|---|
-| **Running right now?** | No - paused | No - paused |
-| **Triggered by** | cron-job.org, every 5 min when re-enabled | cron-job.org, every 5 min when re-enabled |
+| **Running right now?** | Yes | Yes |
+| **Triggered by** | cron-job.org only, every 5 min | cron-job.org only, every 5 min |
 | **Strategy** | `day_trading` (rule-based, no ML) | `rule_based` (rule-based, no ML) |
 | **Tickers** | BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT | SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS |
 | **Bar size** | 5-minute | 5-minute |
@@ -175,13 +178,11 @@ the code isn't broken; it does not mean the strategy is good.
   table (symbol, price, qty, market value, unrealized P&L), the same
   shape Alpaca's own account dashboard shows.
 
-**What's next:** re-enable the cron-job.org schedulers once satisfied
-the stock price-source fix (see `CHANGELOG.md`) is holding up. No
-strategy changes are planned - both configurations above are
-"meaningfully de-risked" candidates, not proven ones, and the plan
-remains to let them trade (paper money) and accumulate enough real
-closed trades to actually test that, not to tune further off a handful
-of days of live data.
+**What's next:** no further changes are planned right now. Both
+configurations above are "meaningfully de-risked" candidates, not
+proven ones - the plan is to let them trade (paper money) and
+accumulate enough real closed trades to actually test that, not to tune
+further off a handful of days of live data.
 
 ---
 
