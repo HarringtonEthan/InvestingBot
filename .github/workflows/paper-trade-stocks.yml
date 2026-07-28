@@ -1,13 +1,15 @@
 name: Paper trade - stocks
 
 on:
-  schedule:
-    # ~3:55pm US Eastern on weekdays. GitHub Actions cron is UTC and does
-    # not adjust for daylight saving, so this drifts by an hour (to
-    # ~4:55pm ET) during EST (roughly Nov-Mar). Fine for a once-a-day
-    # daily-close strategy; not worth the complexity of two DST-aware
-    # cron entries for this use case.
-    - cron: "55 19 * * 1-5"
+  # GitHub's own schedule trigger is intentionally NOT used here. Stocks
+  # are meant to stay fully inert until a human explicitly re-enables
+  # trading on cron-job.org (see docs/AUTOMATION.md) - a native
+  # `schedule:` block here would fire regardless of that "paused"
+  # status, which is exactly what caused an unwanted live BUY on
+  # 2026-07-28 while the README/CHANGELOG said stocks were paused.
+  # workflow_dispatch is still here so cron-job.org (or a manual "Run
+  # workflow" click) can trigger a run on purpose - only removing
+  # GitHub's *automatic* trigger.
   workflow_dispatch: {}
 
 permissions:
@@ -20,8 +22,12 @@ concurrency:
 jobs:
   trade:
     runs-on: ubuntu-latest
-    # A hung run has no cutoff otherwise (GitHub's own default is 6 hours).
-    timeout-minutes: 10
+    # Meant to be called every ~5 minutes during regular market hours by
+    # an external scheduler (see docs/AUTOMATION.md) - matches the
+    # 5-minute bar size the wired-in strategy was actually walk-forward
+    # validated at. 4 minutes leaves margin before the next call, the
+    # same reasoning as paper-trade-crypto.yml's timeout.
+    timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
 
@@ -37,7 +43,22 @@ jobs:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy ml_filtered --dip-threshold -0.03 --execute
+        # rule_based, 5-minute bars, dip=-1.5%/exit=2.0% - the best-of-8
+        # walk-forward candidate (see docs/RESEARCH.md), not ml_filtered.
+        # A prior version of this workflow ran --strategy ml_filtered
+        # --dip-threshold -0.03 (a stale, never-validated combo left over
+        # from before this project's walk-forward work) - that mismatch,
+        # combined with GitHub's own schedule trigger still being active
+        # despite the documented "paused" status, is what caused the
+        # unwanted 2026-07-28 BUYs. --max-notional/--daily-loss-limit
+        # mirror the caps paper-trade-crypto.yml already had, which
+        # stocks were previously missing entirely.
+        run: >
+          python live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS
+          --strategy rule_based --interval 5m
+          --dip-threshold -0.015 --exit-threshold 0.02
+          --max-notional 2000 --daily-loss-limit 0.05
+          --execute
 
       - name: Commit trade log
         run: |

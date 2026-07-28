@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.4
+# InvestingBot — Version Richards 0.9.5
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 71 passing](https://img.shields.io/badge/tests-71%20passing-4c9a2a)](tests/)
@@ -73,11 +73,11 @@ actually running from workflow files six months from now.
 | Component | Status |
 |---|---|
 | Crypto automation | Running (paper), every 5 min |
-| Stock ML automation | **Paused** (2026-07-27 - see below) |
+| Stock automation | **Paused** (2026-07-28 incident - see below); `paper-trade-stocks.yml` has no GitHub-side auto-trigger at all now |
 | Unit tests | 71 passing (`pytest tests/`) |
 | Real-money mode | Disabled (2 independent locks - see `docs/RISK.md`) |
 | Demonstrated edge | No |
-| Best-of-8 stock candidate (not deployed) | `rule_based`, 5m, dip=-1.5%/exit=2.0% - lowest loss rate (17.5%), still not proven |
+| Live stock config (wired in, not yet running) | `rule_based`, 5m, dip=-1.5%/exit=2.0% - the best-of-8 candidate, still not a proven edge |
 | Closed live trades (current config) | 0 - archived 3 prior trades, see below |
 | Max crypto purchase (`--max-notional`) | $2,000 |
 | Daily loss circuit breaker (`--daily-loss-limit`) | 5% |
@@ -161,6 +161,38 @@ This is a snapshot and will be stale by the time you read it - check
   alone could backfire - SPY's 2019-2021 window went from -3.2% to
   -27.4% - fixed by adding the cooldown); `optimize.py`/`walk_forward.py`/
   `train_stock_model.py` all gained `--strategy ml_filtered` support.
+- **Second stock incident, 2026-07-28: "paused" wasn't actually
+  enforced anywhere.** Confirmed via the GitHub Actions API: the run
+  that placed these trades has `event: "schedule"` at
+  `2026-07-27T23:41:42Z` - `.github/workflows/paper-trade-stocks.yml`
+  still had its own native GitHub `schedule:` trigger (cron `55 19 * *
+  1-5`, i.e. ~19:55 UTC), which fired regardless of the README/CHANGELOG
+  saying stocks were paused, and this time nearly 4 hours late (a known
+  failure mode for GitHub's schedule trigger already documented in this
+  repo - previously seen as "silently doesn't fire," this time as
+  "fires very late instead"). Separately, the Actions history also shows
+  `workflow_dispatch` runs at ~19:55 UTC on 2026-07-25 and 2026-07-26
+  (no trades logged those days) - meaning the cron-job.org job for this
+  workflow had *also* remained active the whole time, independent of the
+  native schedule bug, contrary to the "paused" documentation. Both were
+  still running a stale `ml_filtered --dip-threshold -0.03` command left
+  over from before the walk-forward work above, not the validated
+  best-of-8 candidate. That combination bought **3 tickers - QQQ, CAT,
+  and DIS, ~$11,087 each** (confirmed from `logs/trade_log.csv`) - on
+  real (paper) money the account owner never intended to be trading.
+  **Fixed structurally, not just in documentation:** the workflow's
+  `schedule:` trigger has been removed entirely - only
+  `workflow_dispatch: {}` remains, so GitHub itself can never fire it
+  again; the only way it runs is a deliberate manual click or an
+  external scheduler (cron-job.org) call. The committed strategy args
+  were also corrected to the actual best-of-8 candidate (`rule_based`,
+  `--interval 5m`, `--dip-threshold -0.015 --exit-threshold 0.02`) with
+  `--max-notional 2000 --daily-loss-limit 0.05` added - stocks were
+  missing those caps entirely before (each of the 3 buys above spent an
+  uncapped 1/9th of total cash), the same gap the first (QQQ) incident
+  above already found on the daily config. Stocks remain paused: the
+  account owner has now paused the cron-job.org job for this workflow
+  too, so nothing calls it until a human deliberately re-enables it.
   Every grid and walk-forward run is committed as real evidence in
   `results/` (see `docs/RESEARCH.md` for the full candidate-by-candidate
   breakdown and every command used).
@@ -310,7 +342,7 @@ InvestingBot/
 │   └── symbols.py                # Resolves a ticker into Yahoo/Alpaca symbol formats
 ├── .github/workflows/
 │   ├── paper-trade-crypto.yml    # Runs live_trade.py for crypto every 5 minutes
-│   ├── paper-trade-stocks.yml    # Runs live_trade.py for stocks daily near market close
+│   ├── paper-trade-stocks.yml    # Runs live_trade.py for stocks every ~5min in market hours (workflow_dispatch only - no GitHub-side schedule)
 │   ├── retrain-stock-model.yml   # Runs train_stock_model.py weekly
 │   └── update-dashboard.yml      # Runs visualize_log.py hourly
 ├── tests/                        # pytest suite - run with `pytest tests/`

@@ -161,9 +161,12 @@ calls that API on a schedule, working around GitHub's flaky one.
      ```json
      {"ref": "claude/trading-bot-feasibility-31mkkv"}
      ```
-   - **Schedule:** every 5 minutes for crypto; once daily near market
-     close for stocks; weekly for the retrain job; hourly for the
-     dashboard - matching the cadences described elsewhere in this file.
+   - **Schedule:** every 5 minutes for crypto; every 5 minutes during
+     regular market hours (roughly 9:30am-4:00pm ET, weekdays) for
+     stocks - the live stock strategy is a 5-minute-bar candidate, so it
+     needs to be evaluated that often to behave the way it was
+     walk-forward validated, not once a day; weekly for the retrain job;
+     hourly for the dashboard.
 4. **Save, then test it immediately** - cron-job.org lets you trigger a
    job manually rather than waiting for its schedule. Do that, then check
    the **Actions** tab on GitHub for a new run of that workflow. A `401`
@@ -370,20 +373,35 @@ cadence than the 5-minute trading workflows: one image commit an hour is
 a small, bounded cost, where committing an image every 5 minutes forever
 would not be.
 
-## Stock automation: ML with periodic retraining
+## Stock automation: rule-based, 5-minute bars
 
-**Currently paused** (2026-07-27, see `CHANGELOG.md` 0.8.0/0.8.1 and
-"Current live status" in the main README) - the rest of this section
-describes the configuration as written, which resumes exactly as-is
-whenever the cron-job.org jobs are unpaused.
+**Currently paused** (see `CHANGELOG.md` and "Current live status" in
+the main README). `paper-trade-stocks.yml` has **no `schedule:` trigger
+of its own anymore** - only `workflow_dispatch: {}` - so GitHub itself
+will never fire it; it only runs if a human clicks "Run workflow" or an
+external scheduler (cron-job.org) calls its dispatch endpoint on
+purpose. That's a deliberate, structural change, not just a documentation
+note: an earlier version of this workflow kept a native `schedule:`
+trigger active even after the README/CHANGELOG declared stocks
+"paused," which - combined with a stale, never-validated `ml_filtered
+--dip-threshold -0.03` command left over from before this project's
+walk-forward work - caused an unwanted live BUY. "Paused" now means the
+workflow structurally cannot run on its own, not just that the docs say
+it shouldn't.
 
-Stocks run a different strategy than crypto on purpose - `ml_filtered`
-instead of the rule-based `day_trading`, so I have one live example of
-each approach to actually compare over time, and so the ML path gets
-exercised somewhere: crypto's 5-minute bars move far less per bar than
-daily stock bars do, so a dip threshold sized for daily data (the live
-stock workflow runs at 3%) would rarely fire on 5-minute crypto.
+The live strategy is `rule_based`, 5-minute bars, `dip=-1.5% /
+exit=2.0%` - the best-of-8 candidate that actually came out ahead in
+walk-forward validation (see `docs/RESEARCH.md`), not `ml_filtered`.
+Because it's sized for 5-minute bars, it needs to be evaluated about
+every 5 minutes during market hours to behave the way it was tested -
+running it once a day would not reproduce the validated behavior at
+all (see "Setting up cron-job.org" above).
 
+`ml_filtered` is still a real option in `live_trade.py`/`optimize.py`/
+`walk_forward.py` for anyone who wants to keep researching it - it just
+isn't what's wired into the live workflow anymore, since walk-forward
+testing found it wasn't the strongest candidate. Its supporting
+retraining pipeline still exists if you want it:
 `live_trade.py --strategy ml_filtered` loads whatever model is saved at
 `--model-path` (default `models/stock_model.pkl`) rather than training
 one on the spot. That file is produced by a **separate** workflow,
@@ -405,23 +423,23 @@ code:
 python train_stock_model.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --lookback-days 730
 ```
 
-**Setup, in order:**
+**Setup, in order, for the live `rule_based` strategy:**
 1. Complete the GitHub Actions setup above (secrets, write permissions)
-   if you haven't already - `retrain-stock-model.yml` needs the same
-   write permission to commit the model file that the trade-log commits
-   use, though it doesn't need the Alpaca secrets since it only trains,
-   never trades.
-2. Go to the **Actions** tab -> **"Retrain stock ML model"** -> **"Run
-   workflow"** once, manually, to produce the first `models/stock_model.pkl`.
-   Until this has run at least once, `live_trade.py --strategy
-   ml_filtered` falls back to training inline from just that run's data
-   (it prints a warning when this happens) rather than failing outright.
-3. Point cron-job.org (or any external scheduler) at both stock
-   workflows' `workflow_dispatch` endpoints, the same way it's already
-   wired up for crypto - see "Setting up cron-job.org" above for why
-   GitHub's own `schedule:` trigger isn't enough on its own. A
-   reasonable starting cadence: `retrain-stock-model.yml` weekly,
-   `paper-trade-stocks.yml` daily near market close.
+   if you haven't already.
+2. Point cron-job.org (or any external scheduler) at
+   `paper-trade-stocks.yml`'s `workflow_dispatch` endpoint, the same way
+   it's already wired up for crypto - see "Setting up cron-job.org"
+   above. A reasonable cadence: every 5 minutes during regular market
+   hours (roughly 9:30am-4:00pm ET, weekdays) - matching the bar size
+   the live strategy was actually validated at, not once a day.
+3. (Optional, only if you also want `ml_filtered` available for
+   research) Go to the **Actions** tab -> **"Retrain stock ML model"**
+   -> **"Run workflow"** once, manually, to produce the first
+   `models/stock_model.pkl`. Until this has run at least once,
+   `live_trade.py --strategy ml_filtered` falls back to training inline
+   from just that run's data (it prints a warning when this happens)
+   rather than failing outright. A reasonable cadence if you automate
+   it: weekly.
 
 Every retrain also appends a row to `logs/retrain_log.csv` (tickers
 used, training window, row count, calibrated threshold) so I can see

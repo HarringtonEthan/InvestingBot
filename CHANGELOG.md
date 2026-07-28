@@ -17,6 +17,50 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.5 - 2026-07-28
+
+- **Fixed a second live stock incident.** Despite the README/CHANGELOG
+  declaring stocks "paused" as of 0.8.0, `.github/workflows/
+  paper-trade-stocks.yml` still had its own native GitHub `schedule:`
+  trigger. Confirmed via the GitHub Actions API: the run that placed
+  these trades has `event: "schedule"`, fired at 2026-07-27T23:41:42Z -
+  nearly 4 hours after its own `55 19 * * 1-5` (~19:55 UTC) cron target,
+  a known failure mode for this trigger in this project, previously seen
+  as "silently doesn't fire" and this time as "fires very late instead."
+  The Actions history also shows the cron-job.org job for this workflow
+  had independently remained active the whole time (`workflow_dispatch`
+  runs at ~19:55 UTC on 2026-07-25 and 2026-07-26, no trades those days)
+  - so "paused" wasn't enforced on either path. Both were still running
+  a stale `--strategy ml_filtered --dip-threshold -0.03` command from
+  before this session's walk-forward work - not the validated best-of-8
+  candidate. That combination bought **3 tickers - QQQ, CAT, and DIS,
+  ~$11,087 each** (confirmed from `logs/trade_log.csv`) on the paper
+  account without the account owner intending to be trading stocks at
+  all. The owner is canceling/closing all 3 positions manually.
+- **Structural fix, not just a documentation update:** removed the
+  `schedule:` trigger from `paper-trade-stocks.yml` entirely - only
+  `workflow_dispatch: {}` remains, so GitHub itself cannot fire this
+  workflow on its own anymore; only a manual click or an external
+  scheduler call can. "Paused" from here on means the workflow
+  structurally cannot run unattended, not merely that a doc says it
+  shouldn't.
+- Corrected the workflow's committed strategy to the actual best-of-8
+  walk-forward candidate identified in 0.9.3/0.9.4: `rule_based`,
+  `--interval 5m`, `--dip-threshold -0.015 --exit-threshold 0.02` -
+  previously it ran `ml_filtered` with a threshold that was never part
+  of any candidate this session validated. Also added
+  `--max-notional 2000 --daily-loss-limit 0.05`, mirroring the caps
+  `paper-trade-crypto.yml` already had - stocks were missing both
+  entirely, the same gap the first (QQQ) incident found in 0.8.0.
+- Updated `docs/AUTOMATION.md` and the README's file tree/status table:
+  the live stock cadence is now "every ~5 minutes during market hours"
+  (matching the 5-minute-bar candidate actually wired in), not "once
+  daily near market close" - running a 5-minute-bar strategy once a day
+  would not reproduce its validated behavior. `ml_filtered` and
+  `retrain-stock-model.yml` remain available for anyone who wants to
+  keep researching that path, but are no longer what the live workflow
+  runs.
+
 ## Version Richards 0.9.4 - 2026-07-27
 
 - Added a per-ticker small-multiples bar chart for the best-of-8 stock
