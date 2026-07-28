@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.7
+# InvestingBot — Version Richards 0.9.8
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 79 passing](https://img.shields.io/badge/tests-79%20passing-4c9a2a)](tests/)
@@ -72,16 +72,25 @@ actually running from workflow files six months from now. This is a
 snapshot and will be stale by the time you read it - check
 `results/trade_dashboard.png` for the live number.
 
-**Crypto and stocks run completely independently** - different tickers,
-different strategy code, different thresholds, separate on/off
-switches. The table below puts them side by side specifically so
-neither one is a mystery relative to the other:
+**Both crypto and stocks are currently RUNNING** (paper), triggered
+**only** by an external scheduler ([cron-job.org](https://cron-job.org))
+calling GitHub's `workflow_dispatch` API every 5 minutes for each.
+Neither workflow has a GitHub-side `schedule:` trigger anymore - GitHub
+itself never fires either one on its own; cron-job.org is the only
+thing that can. (Stocks were briefly, incorrectly documented as
+"paused" here - see the correction below the table.)
+
+Crypto and stocks are otherwise completely independent - different
+tickers, different strategy code, different thresholds, separate
+on/off switches (each is its own cron-job.org job, so either can be
+paused without touching the other). Same fields, side by side, so
+neither one is missing information the other has:
 
 | | Crypto | Stocks |
 |---|---|---|
-| **Automation** | Running (paper), every 5 min | **Paused** (2026-07-28 incident - see below) |
-| **Auto-trigger** | GitHub's own `schedule:` (every 5 min) | **None** - `paper-trade-stocks.yml` only runs on a manual click or an external call, never on its own |
-| **Strategy** | `day_trading` (rule-based, no ML) | `rule_based` (rule-based, no ML) - wired in, not yet running |
+| **Running right now?** | Yes | Yes |
+| **Triggered by** | cron-job.org only, every 5 min | cron-job.org only, every 5 min |
+| **Strategy** | `day_trading` (rule-based, no ML) | `rule_based` (rule-based, no ML) |
 | **Tickers** | BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT | SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS |
 | **Bar size** | 5-minute | 5-minute |
 | **Buy signal** | price ≥4.0% below its 20-bar average | price ≥1.5% below its 20-bar average |
@@ -89,12 +98,28 @@ neither one is a mystery relative to the other:
 | **Max $ per trade** (`--max-notional`) | $2,000 | $2,000 |
 | **Daily loss circuit breaker** | 5% of that day's starting balance | 5% of that day's starting balance |
 | **Demonstrated edge?** | No - "meaningfully de-risked," not proven | No - best-of-8 walk-forward candidate, not proven |
-| **Closed trades (current config)** | Accumulating - see dashboard | 0 closed - 3 open positions (XOM, CAT, DIS) from 2026-07-28 manual testing, archived trades from 2 prior incidents, see below |
+| **Current positions/trades** | See `results/trade_dashboard.png` | 3 open (XOM, CAT, DIS, opened 2026-07-28), 0 closed - see below |
 
 Both share: **real-money mode disabled** (2 independent locks - see
-`docs/RISK.md`), and **stock model retraining off on purpose**
-(`retrain-stock-model.yml` has no auto-trigger either - `ml_filtered`
-isn't live right now, so there's nothing to retrain for).
+`docs/RISK.md`), and **stock model retraining off** (`retrain-stock-
+model.yml` has no auto-trigger either - `ml_filtered` isn't live right
+now, so there's nothing to retrain for).
+
+**Correction on the "stocks paused" claim above and in 0.9.5/0.9.6:**
+that was wrong. Those entries assumed the 2026-07-28 test trades
+(XOM/CAT/DIS) came from manually clicking "Run workflow," and that
+cron-job.org's job for `paper-trade-stocks.yml` had been paused. Neither
+was true: checking the GitHub Actions run history directly shows
+`workflow_dispatch` events landing every 5 minutes, continuously - the
+signature of an external scheduler, not a human clicking a button once
+in a while. **cron-job.org has been calling `paper-trade-stocks.yml`
+the entire time**, now running the corrected `rule_based`/5m/$2,000-cap
+config from 0.9.5 rather than the old broken one - so nothing dangerous
+is currently happening, but "paused" was never accurate and this
+section shouldn't have said it was. If you want stocks actually stopped,
+that has to happen on cron-job.org's side (pause or delete that job) -
+nothing in this repository can do that from here, since GitHub itself
+was never the thing calling it.
 
 **What "79 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
@@ -177,8 +202,8 @@ every push/PR, so a broken change can't reach this branch unnoticed.
   proven edge** - one year of 5-minute data is a much shorter validation
   window than crypto's, and 8.6 average trades per ticker is a real but
   thin sample. Read it as "the strongest lead of what's been tried,"
-  not "ready to deploy." Stocks stay paused either way (see below) until
-  a candidate clears a materially higher bar than this.
+  not "ready to deploy" - see "Current live status" above for whether
+  stocks are actually running right now.
   `get_stock_bars_range()` (`src/alpaca_data.py`) lets stocks pull
   intraday bars from Alpaca now, the same way crypto does;
   `rule_based_dip_buy()` gained an optional `stop_loss` +
@@ -230,10 +255,11 @@ every push/PR, so a broken change can't reach this branch unnoticed.
   --daily-loss-limit 0.05` added - stocks were missing those caps
   entirely before (each of the 3 buys above spent an uncapped 1/9th of
   total cash), the same gap the first (QQQ) incident above already
-  found on the daily config. Stocks remain paused: the account owner
-  has now paused the cron-job.org job for this workflow too, so nothing
-  calls it until a human deliberately re-enables it. The tainted trade
-  log was archived to `logs/trade_log_archive_pre_2026-07-28.csv` and
+  found on the daily config. **Correction:** this originally said
+  cron-job.org's job for this workflow had also been paused - it hadn't
+  been. See "Current live status" above: stocks are running right now,
+  via cron-job.org, on the corrected config. The tainted trade log was
+  archived to `logs/trade_log_archive_pre_2026-07-28.csv` and
   `logs/trade_log.csv` restarted fresh (`logs/equity_log.csv`
   deliberately not archived - account equity is a continuous truth,
   same reasoning as the first incident's archival).
@@ -392,7 +418,7 @@ InvestingBot/
 │   ├── broker.py                 # Alpaca account/order wrapper
 │   └── symbols.py                # Resolves a ticker into Yahoo/Alpaca symbol formats
 ├── .github/workflows/
-│   ├── paper-trade-crypto.yml    # Runs live_trade.py for crypto every 5 minutes
+│   ├── paper-trade-crypto.yml    # Runs live_trade.py for crypto every ~5min (workflow_dispatch only - no GitHub-side schedule)
 │   ├── paper-trade-stocks.yml    # Runs live_trade.py for stocks every ~5min in market hours (workflow_dispatch only - no GitHub-side schedule)
 │   ├── retrain-stock-model.yml   # Runs train_stock_model.py weekly
 │   └── update-dashboard.yml      # Runs visualize_log.py hourly

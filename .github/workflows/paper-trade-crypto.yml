@@ -1,9 +1,14 @@
 name: Paper trade - crypto
 
 on:
-  # Every 5 minutes, every day - crypto trades 24/7, unlike stocks.
-  schedule:
-    - cron: "*/5 * * * *"
+  # No native GitHub `schedule:` trigger, on purpose - same reasoning as
+  # paper-trade-stocks.yml. This used to have `schedule: "*/5 * * * *"`
+  # alongside workflow_dispatch, meaning GitHub itself and cron-job.org
+  # were BOTH able to trigger a run - an unnecessary second trigger path
+  # for a workflow cron-job.org already calls reliably every 5 minutes
+  # (see docs/AUTOMATION.md), and one more source of the exact kind of
+  # concurrent-commit collision .gitattributes/the retry loop below
+  # exist to handle. workflow_dispatch is the only way this runs now.
   workflow_dispatch: {}
 
 permissions:
@@ -55,12 +60,16 @@ jobs:
           # workflow's own runs are serialized by the concurrency group
           # above, but paper-trade-stocks.yml/update-dashboard.yml can
           # still race it to push at nearly the same moment (all commit
-          # to logs/equity_log.csv), which showed up as real "Commit
-          # trade log" failures on 2026-07-28. A rebase conflict here
-          # just means "someone else pushed first" - not a real merge
-          # problem - so retrying after re-fetching resolves it almost
-          # always; git rebase --abort clears any half-finished rebase
-          # from a failed attempt so the next retry starts clean.
+          # to logs/equity_log.csv). The main fix for that is
+          # .gitattributes (merge=union on the log CSVs) - two
+          # independent appends to the same file no longer conflict at
+          # all, confirmed by reproducing the exact failure locally. This
+          # retry loop is a second layer for the residual case that
+          # isn't a content conflict at all: a plain non-fast-forward
+          # push rejection because someone else's commit landed between
+          # our fetch and our push - re-fetching and pushing again
+          # resolves that. git rebase --abort clears any half-finished
+          # rebase from a failed attempt so the next retry starts clean.
           for i in 1 2 3 4 5; do
             git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0
             echo "Push attempt $i failed (likely a concurrent commit from another workflow) - retrying..."

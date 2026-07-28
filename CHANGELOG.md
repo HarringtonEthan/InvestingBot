@@ -17,6 +17,43 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.8 - 2026-07-28
+
+- **Found and fixed the real cause of the "Commit trade log" failures**
+  the 0.9.7 retry loop didn't actually fix. Reproduced locally: two
+  workflows each appending one new row to the end of the same CSV
+  (`logs/equity_log.csv`) produce a **deterministic** git rebase
+  conflict, not a timing race - confirmed live when a stock run failed
+  identically on all 5 of its retry attempts against the exact same
+  conflict. Retrying the same rebase can never fix a real content
+  conflict. Added `.gitattributes` with `merge=union` for
+  `logs/trade_log.csv` and `logs/equity_log.csv` - verified locally this
+  resolves the exact reproduced conflict cleanly, keeping both sides'
+  rows. The 0.9.7 retry loop stays in all 4 workflows as a second layer,
+  now correctly scoped to the genuine residual case (a plain
+  non-fast-forward push rejection with no content conflict).
+- **Removed `paper-trade-crypto.yml`'s native GitHub `schedule:`
+  trigger** (`workflow_dispatch` only now), matching what 0.9.5 already
+  did for stocks. cron-job.org already calls it reliably every 5
+  minutes; the native schedule was a second, redundant trigger path -
+  another source of the exact kind of concurrent-commit collision fixed
+  above.
+- **Corrected a wrong claim from 0.9.5/0.9.6: stocks were never actually
+  paused.** Checking the GitHub Actions run history directly shows
+  `workflow_dispatch` events on `paper-trade-stocks.yml` landing every 5
+  minutes, continuously - cron-job.org calling it the whole time, not
+  occasional manual clicks as previously assumed, and not paused despite
+  what the README said. Nothing dangerous resulted (it's been running
+  the corrected `rule_based`/5m/$2,000-cap config since 0.9.5), but the
+  documentation was wrong and has been corrected in place rather than
+  quietly edited away - see the "Current live status" section's
+  correction note.
+- **Rebuilt the status table again** after feedback that it still
+  wasn't showing the same information for both asset classes: dropped
+  the separate "Automation"/"Auto-trigger" rows (now identical for both,
+  so stated once above the table instead of duplicated) and made every
+  remaining row use parallel wording for crypto vs. stocks.
+
 ## Version Richards 0.9.7 - 2026-07-28
 
 - **Fixed a real, live git-push race**, confirmed via GitHub Actions
