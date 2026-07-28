@@ -387,20 +387,40 @@ chosen for one purpose will look "wrong" if read as the other, even
 though the number itself is correct for what it was actually measuring.
 
 **The two P&L panels can also show live unrealized P&L, not just closed
-trades.** A position that's still open (never sold) has no realized
-P&L to plot, but it's very much not "nothing happening" - a held stock
-or coin can be up or down real money right now. Pass `--live-positions`
-(needs `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` in the environment) to have
+trades - and two more panels show current holdings directly.** A
+position that's still open (never sold) has no realized P&L to plot,
+but it's very much not "nothing happening" - a held stock or coin can
+be up or down real money right now. Pass `--live-positions` (needs
+`ALPACA_API_KEY`/`ALPACA_SECRET_KEY` in the environment) to have
 `visualize_log.py` pull every currently-open position straight from
 Alpaca (`Broker.get_all_positions()`), split it into crypto vs stock by
 Alpaca's own `asset_class` field, sum each side's `unrealized_pl`, and
 annotate that total directly on the crypto/stock P&L panels alongside
-whatever realized-trade history is already there. This is read-only -
-it's the only thing in `visualize_log.py` that ever talks to Alpaca,
-and it never places an order. `update-dashboard.yml` passes this flag
-on every scheduled run, so `results/trade_dashboard.png` always shows
-"is crypto or stocks winning right now," not just "did their closed
-trades win."
+whatever realized-trade history is already there. The same pulled
+positions also render as two more panels - one table per asset class,
+listing symbol/price/qty/market value/unrealized P&L per position, the
+same shape Alpaca's own account dashboard shows - so it's not just "up
+or down" but *which specific holdings* are up or down and by how much.
+This is read-only - it's the only thing in `visualize_log.py` that ever
+talks to Alpaca, and it never places an order. `update-dashboard.yml`
+passes this flag on every scheduled run, so `results/trade_dashboard.png`
+always shows "is crypto or stocks winning right now," not just "did
+their closed trades win."
+
+**The whole-account panel is kept reconciled to the same live snapshot
+when `--live-positions` is on.** Without it, panel 1 reads only the
+last row of the equity log - a snapshot from whenever the 5-minute
+trading cron last happened to run, which can already be a few minutes
+stale by the time the dashboard actually regenerates. Sitting a
+whole-account number computed at one moment next to a per-asset-class
+unrealized number pulled live just now can make two individually-correct
+numbers look inconsistent (e.g. the account showing -$9 net while a
+single asset class alone shows an $18 live unrealized loss - both true,
+just measured minutes apart). `--live-positions` also fetches the
+account's current live equity in the same call and appends it as a
+fresh point on panel 1's timeline (`append_live_equity_point` in
+`visualize_log.py`), so every number on the dashboard describes the
+same instant.
 
 It also runs on a schedule: `.github/workflows/update-dashboard.yml`
 regenerates and commits `results/trade_dashboard.png` roughly hourly

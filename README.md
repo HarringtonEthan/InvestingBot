@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.13
+# InvestingBot — Version Richards 0.9.14
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 85 passing](https://img.shields.io/badge/tests-85%20passing-4c9a2a)](tests/)
+[![Tests: 89 passing](https://img.shields.io/badge/tests-89%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -151,7 +151,7 @@ the code isn't broken; it does not mean the strategy is good.
 
   <img src="results/param_sweep/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
 
-- **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
+- **Dashboard: seven panels, regenerated hourly.** `results/trade_dashboard.png`
   is committed automatically, viewable directly on github.com: one
   whole-account net gain/loss panel, plus cumulative realized P&L and
   win/loss-per-ticker each split into separate crypto/stock panels
@@ -160,7 +160,11 @@ the code isn't broken; it does not mean the strategy is good.
   show **live unrealized P&L** for currently-open positions (pulled
   read-only from Alpaca), so it's clear at a glance whether crypto or
   stocks is gaining or losing money right now - not just whether their
-  closed trades won historically.
+  closed trades won historically - and the account-total panel is kept
+  reconciled to the same live snapshot, not a stale cron-logged one. Two
+  more panels show **current open positions per asset class** as a
+  table (symbol, price, qty, market value, unrealized P&L), the same
+  shape Alpaca's own account dashboard shows.
 
 ---
 

@@ -17,6 +17,32 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.14 - 2026-07-28
+
+- **Fixed the dashboard's account-total panel not reconciling with the
+  new live unrealized-P&L numbers from 0.9.13.** Reported live: net
+  account gain/loss showed -$9.44 while the stock P&L panel's live
+  unrealized number showed -$18.87 with zero crypto held - looked like a
+  bug, and the math confirmed why: panel 1 read the last row of the
+  equity log (a snapshot from whenever the 5-minute trading cron last
+  ran), while the live unrealized number was pulled from Alpaca at
+  dashboard-generation time, several minutes later, after stock prices
+  had moved further. Both numbers were individually correct, just
+  computed at different instants. Fixed by having `--live-positions`
+  also fetch the account's current live equity (same broker call, same
+  moment as the positions pulled for the P&L panels) and append it to
+  panel 1's timeline via the new `append_live_equity_point()` in
+  `visualize_log.py`, so every number on the dashboard now describes the
+  same instant.
+- **Added a current-open-positions table per asset class.** Two new
+  panels (crypto and stocks) list every currently-open position - symbol,
+  price, qty, market value, unrealized P&L - the same shape Alpaca's own
+  account dashboard shows, via the new `plot_positions_table()`. Only
+  populated with `--live-positions`; without it, the panels say so
+  rather than showing stale or fabricated numbers. Dashboard is now
+  seven panels total. New tests in `tests/test_live_positions.py` cover
+  the reconciliation logic and the positions table's sorting/formatting.
+
 ## Version Richards 0.9.13 - 2026-07-28
 
 - **Added live unrealized P&L per asset class to the dashboard.** The

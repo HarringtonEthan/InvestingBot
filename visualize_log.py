@@ -5,7 +5,7 @@ live_trade.py's --log-suffix) into a dashboard chart - the numbers in
 those CSVs are accurate but not exactly readable at a glance, especially
 once there's weeks of rows in them.
 
-Five panels:
+Seven panels:
   1. Net account gain/loss over time (whole account, both asset classes
      combined - this is the one true "how much has this account actually
      made" figure) - equity minus the *first* value in logs/equity_log.csv,
@@ -36,6 +36,11 @@ Five panels:
      for the same reason - a ticker's wins/losses are only meaningfully
      compared against tickers running the same strategy. Flagged trades
      are hatched in these panels too, same reasoning as above.
+  6/7. Current open positions, crypto and stocks in their own tables -
+     symbol, price, qty, market value, and unrealized P&L per position,
+     the same shape Alpaca's own account dashboard shows. Only populated
+     with --live-positions; without it, these panels just say so rather
+     than showing stale or fabricated numbers.
 
 Reads whatever data exists; a strategy that trades rarely (or an asset
 class with zero closed trades yet - e.g. right after archiving the log
@@ -50,7 +55,13 @@ never been sold has no realized P&L to plot, but it's very much not
 "nothing happening," and the whole-account panel alone doesn't say
 whether that's coming from crypto or stocks specifically. This is the
 only thing in this script that ever talks to Alpaca; it's a read-only
-account/position query, never an order.
+account/position query, never an order. It also appends a live equity
+point to panel 1 at the same moment, so the whole-account number and
+the per-asset-class numbers describe the same instant instead of panel
+1 showing whatever the last 5-minute trading cron happened to log
+(which can look inconsistent with a truly-live per-asset-class number
+even though both are individually correct - they were just computed
+minutes apart).
 """
 
 # Lets type hints work without issue in this Python version.
@@ -109,6 +120,23 @@ def aggregate_unrealized_pnl(positions: list[dict]) -> tuple[float, float]:
     crypto_total = sum(p["unrealized_pl"] for p in positions if p["is_crypto"])
     stock_total = sum(p["unrealized_pl"] for p in positions if not p["is_crypto"])
     return crypto_total, stock_total
+
+
+def append_live_equity_point(equity_df: pd.DataFrame | None, live_equity: float) -> pd.DataFrame:
+    """Appends a "right now" row to the equity timeline using a value
+    pulled live from Alpaca, so panel 1's net gain/loss reflects the same
+    instant as --live-positions' per-asset-class unrealized numbers,
+    instead of whatever the last 5-minute trading cron happened to log -
+    which can be stale by several minutes and produce a whole-account
+    number that doesn't reconcile with the live per-asset-class ones even
+    though both are individually correct."""
+    live_row = pd.DataFrame([{
+        "timestamp_utc": pd.Timestamp.now(tz="UTC"),
+        "portfolio_value_usd": live_equity,
+    }])
+    if equity_df is None:
+        return live_row
+    return pd.concat([equity_df, live_row], ignore_index=True).sort_values("timestamp_utc")
 
 
 def _unrealized_note(unrealized_pnl: float | None) -> str:
@@ -247,6 +275,54 @@ def plot_win_loss(ax, sells: pd.DataFrame, label: str):
     ax.legend(fontsize=8)
 
 
+def plot_positions_table(ax, positions: list[dict] | None, label: str):
+    """
+    Current open positions for one asset class, rendered as a table -
+    symbol, price, qty, market value, and unrealized P&L per position,
+    the same shape Alpaca's own dashboard shows - rather than only the
+    asset-class-wide unrealized total the P&L panels annotate. Only
+    meaningful with --live-positions (there's no way to know what's
+    *currently* held from the trade log alone, since it only records
+    past BUY/SELL decisions, never a live snapshot of what's still open) -
+    positions=None (as opposed to an empty list) means that flag wasn't
+    passed at all, which gets a different message than "genuinely holding
+    nothing right now".
+    """
+    ax.axis("off")
+    ax.set_title(f"{label}: current open positions")
+    if positions is None:
+        ax.text(0.5, 0.5, "Run with --live-positions to see current holdings",
+                ha="center", va="center")
+        return
+    if not positions:
+        ax.text(0.5, 0.5, f"No open {label} positions right now", ha="center", va="center")
+        return
+
+    # Largest position first - the one most worth looking at.
+    positions = sorted(positions, key=lambda p: p["market_value"], reverse=True)
+    columns = ["Symbol", "Price", "Qty", "Market Value", "Unrealized P/L"]
+    rows = [
+        [
+            p["symbol"],
+            f"${p['current_price']:,.2f}",
+            f"{p['qty']:,.6f}".rstrip("0").rstrip("."),
+            f"${p['market_value']:,.2f}",
+            f"{p['unrealized_pl']:+,.2f} ({p['unrealized_plpc']:+.2%})",
+        ]
+        for p in positions
+    ]
+    table = ax.table(cellText=rows, colLabels=columns, loc="center", cellLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1, 1.6)
+    # Color each row's P&L cell green/red so a gain or loss is visible at
+    # a glance, not just readable from the sign of the number.
+    for row_idx, p in enumerate(positions, start=1):
+        color = "tab:green" if p["unrealized_pl"] >= 0 else "tab:red"
+        table[row_idx, len(columns) - 1].get_text().set_color(color)
+        table[row_idx, len(columns) - 1].get_text().set_fontweight("bold")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--equity-log", nargs="+", default=["logs/equity_log_crypto.csv", "logs/equity_log_stocks.csv"],
@@ -275,6 +351,8 @@ def main():
 
     crypto_unrealized = None
     stock_unrealized = None
+    crypto_positions: list[dict] | None = None
+    stock_positions: list[dict] | None = None
     if args.live_positions:
         # Imported here, not at module level, so running this script
         # without --live-positions never requires alpaca-py to be
@@ -283,6 +361,21 @@ def main():
         broker = Broker(allow_live=True)  # read-only query - this script never places orders
         positions = broker.get_all_positions()
         crypto_unrealized, stock_unrealized = aggregate_unrealized_pnl(positions)
+        crypto_positions = [p for p in positions if p["is_crypto"]]
+        stock_positions = [p for p in positions if not p["is_crypto"]]
+
+        # Panel 1's "net account gain/loss" otherwise reads only the last
+        # row of --equity-log - a snapshot from whenever the 5-minute
+        # trading cron last happened to run, which can be several minutes
+        # stale by the time this script actually runs. Left alone, that
+        # produces a whole-account number computed at one moment sitting
+        # next to a per-asset-class unrealized number pulled live just
+        # now - two different instants that won't reconcile even though
+        # both are individually correct, which reads as a bug even when
+        # it isn't one. Appending a live equity point (same broker call,
+        # same moment as the positions pulled above) keeps every number
+        # on this dashboard describing the same instant.
+        equity_df = append_live_equity_point(equity_df, broker.get_equity())
 
     sells = pd.DataFrame()
     if trade_df is not None:
@@ -322,10 +415,11 @@ def main():
         stock_sells = pd.DataFrame()
 
     # A 2-column grid: row 1 spans both columns (the one whole-account
-    # figure), rows 2-3 are crypto | stocks side by side.
+    # figure), rows 2-4 are crypto | stocks side by side.
     fig, axes = plt.subplot_mosaic(
-        [["net", "net"], ["crypto_pnl", "stock_pnl"], ["crypto_winloss", "stock_winloss"]],
-        figsize=(14, 14),
+        [["net", "net"], ["crypto_pnl", "stock_pnl"], ["crypto_winloss", "stock_winloss"],
+         ["crypto_positions", "stock_positions"]],
+        figsize=(14, 18),
     )
 
     # ---- Panel 1: net account gain/loss over time (whole account) ----
@@ -372,6 +466,10 @@ def main():
     # ---- Panels 4/5: win/loss per ticker, crypto and stocks separately ----
     plot_win_loss(axes["crypto_winloss"], crypto_sells, "Crypto")
     plot_win_loss(axes["stock_winloss"], stock_sells, "Stocks")
+
+    # ---- Panels 6/7: current open positions, crypto and stocks separately ----
+    plot_positions_table(axes["crypto_positions"], crypto_positions, "Crypto")
+    plot_positions_table(axes["stock_positions"], stock_positions, "Stocks")
 
     # Adjust spacing so the panels' titles/labels don't overlap each
     # other, then write the final image to disk.
