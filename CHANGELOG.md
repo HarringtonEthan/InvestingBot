@@ -17,6 +17,36 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.7 - 2026-07-28
+
+- **Fixed a real, live git-push race**, confirmed via GitHub Actions
+  screenshots: while manually testing `paper-trade-stocks.yml` after the
+  0.9.5/0.9.6 fixes, 2 of 4 runs failed at their "Commit trade log"
+  step. Root cause: this workflow's own runs are serialized against each
+  other by its `concurrency` group, but crypto's 5-minute schedule and
+  the dashboard/retrain workflows all commit to the same
+  `logs/equity_log.csv`, so two *different* workflows can still race to
+  push at nearly the same moment - whichever loses hits a rebase
+  conflict and previously just failed outright. Added a retry loop
+  (pull --rebase + push, up to 5 attempts with `git rebase --abort`
+  between them so a failed attempt doesn't block the next one) to all 4
+  operational workflows' commit steps - a conflict here just means
+  "someone else pushed first," not a real merge problem, so retrying
+  after re-fetching resolves it almost every time.
+- **Rebuilt the README's "Current live status" section** after feedback
+  that it didn't explain crypto clearly and didn't show the same fields
+  for both asset classes. Replaced the old single mixed table with a
+  side-by-side crypto-vs-stocks comparison (automation state,
+  auto-trigger, strategy, tickers, bar size, buy/sell signal, max $ per
+  trade, daily loss breaker, demonstrated edge, closed trades) so
+  neither asset class is missing information the other one has.
+- **Added a plain explanation of what "79 tests passing" means**: fast,
+  offline checks that specific code behaves correctly on made-up
+  numbers (e.g. "does the stop-loss actually trigger at exactly -5%") -
+  not proof either strategy makes money. That's a separate question,
+  answered only by the backtests/grid searches/walk-forward validation
+  described elsewhere in this README, never by the test suite.
+
 ## Version Richards 0.9.6 - 2026-07-28
 
 - **Corrected the 2026-07-28 incident writeup: 3 tickers, not 2.**

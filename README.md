@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.6
+# InvestingBot — Version Richards 0.9.7
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 79 passing](https://img.shields.io/badge/tests-79%20passing-4c9a2a)](tests/)
@@ -68,24 +68,47 @@ architecture. Deeper material lives in `docs/`:
 ## Current live status (as of this writing)
 
 I keep this section updated so I don't have to reverse engineer what's
-actually running from workflow files six months from now.
-
-| Component | Status |
-|---|---|
-| Crypto automation | Running (paper), every 5 min |
-| Stock automation | **Paused** (2026-07-28 incident - see below); `paper-trade-stocks.yml` has no GitHub-side auto-trigger at all now |
-| Stock model retraining | **Off on purpose** - `retrain-stock-model.yml` has no GitHub-side auto-trigger either; `ml_filtered` isn't the live strategy right now |
-| Unit tests | 79 passing (`pytest tests/`) |
-| CI | Runs the test suite on every push/PR (`.github/workflows/ci.yml`) |
-| Real-money mode | Disabled (2 independent locks - see `docs/RISK.md`) |
-| Demonstrated edge | No |
-| Live stock config (wired in, not yet running) | `rule_based`, 5m, dip=-1.5%/exit=2.0% - the best-of-8 candidate, still not a proven edge |
-| Closed live trades (current config) | 0 - archived trades from both prior incidents, see below |
-| Max crypto purchase (`--max-notional`) | $2,000 |
-| Daily loss circuit breaker (`--daily-loss-limit`) | 5% |
-
-This is a snapshot and will be stale by the time you read it - check
+actually running from workflow files six months from now. This is a
+snapshot and will be stale by the time you read it - check
 `results/trade_dashboard.png` for the live number.
+
+**Crypto and stocks run completely independently** - different tickers,
+different strategy code, different thresholds, separate on/off
+switches. The table below puts them side by side specifically so
+neither one is a mystery relative to the other:
+
+| | Crypto | Stocks |
+|---|---|---|
+| **Automation** | Running (paper), every 5 min | **Paused** (2026-07-28 incident - see below) |
+| **Auto-trigger** | GitHub's own `schedule:` (every 5 min) | **None** - `paper-trade-stocks.yml` only runs on a manual click or an external call, never on its own |
+| **Strategy** | `day_trading` (rule-based, no ML) | `rule_based` (rule-based, no ML) - wired in, not yet running |
+| **Tickers** | BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT | SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS |
+| **Bar size** | 5-minute | 5-minute |
+| **Buy signal** | price ≥4.0% below its 20-bar average | price ≥1.5% below its 20-bar average |
+| **Sell signal** | +1.0% profit **or** -5.0% stop-loss from entry | back within 2.0% of the average (no stop-loss) |
+| **Max $ per trade** (`--max-notional`) | $2,000 | $2,000 |
+| **Daily loss circuit breaker** | 5% of that day's starting balance | 5% of that day's starting balance |
+| **Demonstrated edge?** | No - "meaningfully de-risked," not proven | No - best-of-8 walk-forward candidate, not proven |
+| **Closed trades (current config)** | Accumulating - see dashboard | 0 closed - 3 open positions (XOM, CAT, DIS) from 2026-07-28 manual testing, archived trades from 2 prior incidents, see below |
+
+Both share: **real-money mode disabled** (2 independent locks - see
+`docs/RISK.md`), and **stock model retraining off on purpose**
+(`retrain-stock-model.yml` has no auto-trigger either - `ml_filtered`
+isn't live right now, so there's nothing to retrain for).
+
+**What "79 tests passing" (`pytest tests/`) actually means:** these are
+fast, offline checks that specific pieces of code do what they're
+supposed to on made-up numbers - e.g. "does the stop-loss actually
+trigger when price falls exactly 5% below entry," "does the circuit
+breaker actually block a new BUY once the account is down 5% today,"
+"does `has_open_order()` actually stop a second order from stacking on
+an unfilled one." **They say nothing about whether either strategy
+makes money** - that question is only ever answered by the backtests,
+grid searches, and walk-forward validation described below, run
+against real market data, never by the test suite. A green test suite
+means the code isn't broken; it does not mean the strategy is good. CI
+(`.github/workflows/ci.yml`) runs this same suite automatically on
+every push/PR, so a broken change can't reach this branch unnoticed.
 
 - **Crypto: rule-based, no ML. Thresholds changed 2026-07-27, backed by
   real validation evidence.** An external free scheduler

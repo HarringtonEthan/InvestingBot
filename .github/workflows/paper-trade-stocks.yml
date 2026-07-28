@@ -68,5 +68,22 @@ jobs:
           [ -f logs/equity_log.csv ] && git add logs/equity_log.csv
           git diff --cached --quiet && exit 0
           git commit -m "Log stock trading run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          git pull --rebase origin "${{ github.ref_name }}"
-          git push origin "HEAD:${{ github.ref_name }}"
+          # Retries pull+rebase+push a few times before giving up - this
+          # workflow's own runs are serialized by the concurrency group
+          # above, but paper-trade-crypto.yml/update-dashboard.yml can
+          # still race it to push at nearly the same moment (all commit
+          # to logs/equity_log.csv), which caused real "Commit trade
+          # log" failures on 2026-07-28 (2 of 4 manual test runs). A
+          # rebase conflict here just means "someone else pushed first" -
+          # not a real merge problem - so retrying after re-fetching
+          # resolves it almost always; git rebase --abort clears any
+          # half-finished rebase from a failed attempt so the next retry
+          # starts clean.
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0
+            echo "Push attempt $i failed (likely a concurrent commit from another workflow) - retrying..."
+            git rebase --abort 2>/dev/null || true
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "::error::Failed to push the trade log after 5 attempts."
+          exit 1
