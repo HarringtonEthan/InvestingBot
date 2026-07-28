@@ -17,6 +17,56 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.10.1 - 2026-07-28
+
+Full codebase bug sweep after 0.10.0, requested specifically because that
+fix touched the live stock decision path so recently. Found one real
+regression it introduced; everything else checked out.
+
+- **Fixed a regression 0.10.0 itself introduced: its date-bound fix
+  silently broke the Yahoo-fallback tier for live stock decisions.**
+  0.10.0 changed `decide()`'s stock branch to pass
+  `dt.datetime.now(dt.timezone.utc)` (a full timestamp) as `end` to
+  `get_price_data_smart()`, to stop the request from excluding today's
+  session. That same string also gets handed to the Yahoo-fallback path
+  if Alpaca fails - and `yfinance`'s own date parser
+  (`yfinance.utils._parse_user_dt`) does
+  `datetime.strptime(str(dt), '%Y-%m-%d')` on it, which raises
+  `ValueError` on anything that isn't exactly a bare `"YYYY-MM-DD"`
+  string. That exception doesn't crash the run - `get_price_data()`'s own
+  broad except-and-fall-back-to-synthetic swallows it - so the practical
+  effect was silently disabling the Yahoo fallback tier for live stock
+  decisions specifically, not an obvious failure: any ticker that would
+  have gotten a legitimate Yahoo Finance price if Alpaca ever failed
+  would instead get treated as "only synthetic data available" and
+  skipped for that run. Not a live-money-safety bug (nothing traded on
+  synthetic data - it's still hard-blocked, same as always), but a real
+  loss of resilience.
+  - Confirmed directly:
+    `datetime.strptime(dt.datetime.now(dt.timezone.utc).isoformat(), '%Y-%m-%d')`
+    raises `ValueError: unconverted data remains: T19:24:45.513748+00:00`.
+  - Fixed by passing **tomorrow's bare date** as `end` instead of a full
+    timestamp - still exactly the `"YYYY-MM-DD"` shape both Alpaca
+    (via `pd.Timestamp`) and Yahoo (via `yfinance`'s strptime) can
+    parse, but strictly later than today's date, so midnight UTC of
+    that bound is always still in the future relative to right now -
+    the same fix as 0.10.0's, just without breaking Yahoo along the way.
+  - `optimize.py`/`walk_forward.py`/`train_stock_model.py` were never
+    affected - they either always passed bare dates already, or (for
+    `train_stock_model.py`'s daily-bar default) never reach the branch
+    that mattered.
+  - Updated `tests/test_bars_freshness.py`'s regression test to check
+    for exactly this shape (`test_decide_passes_tomorrows_bare_date_as_end`)
+    and added a direct test that feeds `end` through the real
+    `datetime.strptime` call yfinance itself makes
+    (`test_end_is_a_bare_date_yfinance_can_parse`), so a regression like
+    this would fail a test immediately instead of only being caught by
+    chance during a manual sweep - 108 total passing.
+- Reviewed every other source file (`src/broker.py`, `src/strategies.py`,
+  `src/model.py`, `src/model_store.py`, `src/backtest.py`,
+  `visualize_log.py`) - no further bugs found; comments were already
+  current from prior sweeps.
+
 ## Version Richards 0.10.0 - 2026-07-28
 
 Bumped the minor version instead of continuing the 0.9.x patch run (which

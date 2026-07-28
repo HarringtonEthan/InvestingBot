@@ -384,22 +384,32 @@ def decide(ticker: str, args, broker: Broker):
         # this used to skip entirely: confirmed live (see CHANGELOG) that
         # a stock decision was silently being computed from a frozen bars
         # series showing the previous trading day's close hours into the
-        # next one. The real cause: `end` was passed as a bare calendar
-        # date (dt.date.today().isoformat()), which pd.Timestamp(...,
-        # tz="UTC") turns into midnight UTC - hours *before* the moment
-        # the run actually executes - so the request's own upper bound
-        # silently excluded the entire current trading session, every
-        # single run, regardless of what time it was. Passing a real
-        # timestamp (dt.datetime.now, not dt.date.today) for `end` fixes
-        # that at the source; check_bars_freshness() below is the second,
-        # independent line of defense for any other way a returned series
-        # could still end up stale (an Alpaca outage, a market holiday,
-        # etc.) - the same guarantee get_crypto_bars() already gives
-        # crypto, applied symmetrically to stocks. get_price_data_smart()
-        # itself is untouched by either of these - it's still the exact
-        # same function/mechanism optimize.py's/walk_forward.py's
-        # validation depends on.
-        end = dt.datetime.now(dt.timezone.utc)
+        # next one. The real cause: `end` was passed as *today's* bare
+        # calendar date (dt.date.today().isoformat()), which
+        # pd.Timestamp(..., tz="UTC") turns into midnight UTC *at the
+        # start* of today - hours before the moment the run actually
+        # executes - so the request's own upper bound silently excluded
+        # the entire current trading session, every single run,
+        # regardless of what time it was.
+        #
+        # Fixed by using *tomorrow's* bare date instead of today's - still
+        # a plain "YYYY-MM-DD" string (required below: get_price_data_smart()
+        # also hands this same string to yfinance's fallback path, and
+        # yfinance's own date parser rejects anything that isn't exactly
+        # that format, including a full timestamp - an earlier version of
+        # this fix passed dt.datetime.now() directly here, which silently
+        # broke the Yahoo fallback tier for stocks this same way). Midnight
+        # UTC tomorrow is always still in the future relative to right
+        # now, so the request's upper bound can never again exclude
+        # today's session, on Alpaca's side or Yahoo's. check_bars_freshness()
+        # below is a second, independent line of defense for any other way
+        # a returned series could still end up stale (an Alpaca outage, a
+        # market holiday, etc.) - the same guarantee get_crypto_bars()
+        # already gives crypto, applied symmetrically to stocks.
+        # get_price_data_smart() itself is untouched by either of these -
+        # it's still the exact same function/mechanism optimize.py's/
+        # walk_forward.py's validation depends on.
+        end = dt.date.today() + dt.timedelta(days=1)
         start = end - dt.timedelta(days=lookback_days)
         raw, is_synthetic, source = get_price_data_smart(ticker, start.isoformat(), end.isoformat(), interval=args.interval)
         if is_synthetic:

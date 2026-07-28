@@ -10,12 +10,19 @@ passing `dt.date.today().isoformat()` (a bare calendar date, e.g.
 turns a bare date into midnight UTC of that day, which is *hours before*
 the moment a live run actually executes - so every live stock fetch's
 own upper bound silently excluded the entire current trading session,
-regardless of what the real time was. Fixed by passing a real timestamp
-(dt.datetime.now(dt.timezone.utc)) instead. check_bars_freshness() is the
-second, independent safety net: even with the correct `end` bound, a
-returned series could still end up stale for some other reason (an
-Alpaca outage, a market holiday) - the same guarantee get_crypto_bars()
-already has, applied to stocks too.
+regardless of what the real time was. Fixed by using *tomorrow's* bare
+date instead of today's, still as a plain "YYYY-MM-DD" string - not a
+full timestamp: an earlier version of this fix passed
+dt.datetime.now(dt.timezone.utc) directly, which silently broke the
+Yahoo-fallback tier instead (yfinance's own date parser requires exactly
+"YYYY-MM-DD" and raises on anything else; that raise gets swallowed by
+get_price_data()'s own broad except-and-fall-back-to-synthetic, so the
+Yahoo fallback tier just silently stopped being reachable for live stock
+decisions rather than crashing). check_bars_freshness() is the second,
+independent safety net: even with the correct `end` bound, a returned
+series could still end up stale for some other reason (an Alpaca outage,
+a market holiday) - the same guarantee get_crypto_bars() already has,
+applied to stocks too.
 """
 
 import datetime as dt
@@ -66,13 +73,16 @@ class _Args:
     rule_stop_cooldown = None
 
 
-def test_decide_passes_a_real_timestamp_not_a_bare_date_as_end(monkeypatch):
+def test_decide_passes_tomorrows_bare_date_as_end(monkeypatch):
     """
     Regression test for the actual root cause: decide()'s stock branch
-    must ask get_price_data_smart() for bars up through the real current
-    moment, not midnight UTC of today (which a bare `dt.date.today()`
-    would silently produce, and did in production - see module docstring
-    above).
+    must ask get_price_data_smart() for bars up through at least today,
+    not midnight UTC at the *start* of today (which a bare
+    `dt.date.today()` would silently produce, and did in production -
+    see module docstring above) - while still passing a plain bare-date
+    string, not a full timestamp (see module docstring for why a full
+    timestamp is its own, different bug: it silently breaks the
+    Yahoo-fallback tier).
     """
     captured = {}
 
@@ -88,10 +98,44 @@ def test_decide_passes_a_real_timestamp_not_a_bare_date_as_end(monkeypatch):
     decide("AAPL", _Args(), FakeBroker())
 
     # A bare calendar date string is exactly 10 characters (e.g.
-    # "2026-07-28"); a real timestamp's isoformat() is always longer
-    # (it includes a "T" and a time-of-day component).
-    assert len(captured["end"]) > len("2026-07-28")
-    assert "T" in captured["end"]
+    # "2026-07-28") - must stay exactly that shape, never a full
+    # timestamp (yfinance's date parser rejects anything else - see
+    # test_end_is_a_bare_date_yfinance_can_parse below for the direct check).
+    assert len(captured["end"]) == len("2026-07-28")
+    # And it must be strictly *after* today - "today" itself (the
+    # original bug) would still exclude the entire current session.
+    assert captured["end"] > dt.date.today().isoformat()
+
+
+def test_end_is_a_bare_date_yfinance_can_parse(monkeypatch):
+    """
+    Direct regression test for the second bug found during a bug sweep:
+    an earlier version of this fix passed a full timestamp
+    (dt.datetime.now(dt.timezone.utc).isoformat()) as `end`, which
+    get_price_data_smart() also hands to yfinance's Yahoo-fallback path
+    if Alpaca fails. yfinance's own date parser
+    (yfinance.utils._parse_user_dt) does `datetime.strptime(str(dt),
+    '%Y-%m-%d')` on a string `end` - which raises ValueError on anything
+    that isn't exactly that bare-date shape. That exception doesn't
+    crash the run (get_price_data()'s own except-and-fall-back-to-
+    synthetic swallows it), so the practical effect was silently
+    disabling the Yahoo fallback tier for live stock decisions, not an
+    obvious failure - exactly the kind of bug that's easy to miss without
+    a test that actually feeds `end` through the real parser.
+    """
+    captured = {}
+
+    def fake_get_price_data_smart(ticker, start, end, interval="1d"):
+        captured["end"] = end
+        idx = pd.date_range(end="2026-07-28 18:00:00+00:00", periods=25, freq="5min", tz="UTC")
+        df = pd.DataFrame({"Close": list(range(25))}, index=idx)
+        return df, False, "alpaca"
+
+    monkeypatch.setattr("live_trade.get_price_data_smart", fake_get_price_data_smart)
+
+    decide("AAPL", _Args(), FakeBroker())
+
+    dt.datetime.strptime(captured["end"], "%Y-%m-%d")  # must not raise
 
 
 def test_decide_skips_stock_ticker_when_returned_bars_are_stale(monkeypatch):

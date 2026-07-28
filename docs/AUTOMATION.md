@@ -497,20 +497,39 @@ this problem would be visible immediately instead of by chance.
 `get_price_data_smart()` fixed *which* data source was queried, but not
 a separate bug in *how* it was queried: `decide()`'s stock branch built
 the request's `end` bound from `dt.date.today().isoformat()` - a bare
-calendar date, which turns into midnight UTC once parsed - hours before
-the moment a live run actually executes, silently excluding the entire
-current trading session from every single fetch, every run, regardless
-of the real time. That's the real explanation for why the "as of"
-timestamp a live decision logged stayed frozen on the previous session
-for hours - not Alpaca's data being stale, `live_trade.py`'s own request
-window never actually reaching into the current session at all. Fixed
-by passing a real timestamp instead of a bare date, plus a second,
-independent safety net (`check_bars_freshness()`) that skips a ticker
-outright if the returned series is still too old for any other reason -
-the same guarantee crypto's `get_crypto_bars()` already had, applied
-symmetrically to stocks. `get_price_data_smart()` itself was never
-touched by either fix - live stock decisions still use exactly the same
-mechanism `optimize.py`/`walk_forward.py`'s validation depends on.
+calendar date, which turns into midnight UTC *at the start of* today
+once parsed - hours before the moment a live run actually executes,
+silently excluding the entire current trading session from every single
+fetch, every run, regardless of the real time. That's the real
+explanation for why the "as of" timestamp a live decision logged stayed
+frozen on the previous session for hours - not Alpaca's data being
+stale, `live_trade.py`'s own request window never actually reaching into
+the current session at all. Fixed by using **tomorrow's** bare date as
+`end` instead of today's, plus a second, independent safety net
+(`check_bars_freshness()`) that skips a ticker outright if the returned
+series is still too old for any other reason - the same guarantee
+crypto's `get_crypto_bars()` already had, applied symmetrically to
+stocks. `get_price_data_smart()` itself was never touched by either fix -
+live stock decisions still use exactly the same mechanism
+`optimize.py`/`walk_forward.py`'s validation depends on.
+
+**A follow-up bug sweep (0.10.1) found a regression in that very fix.**
+An earlier version passed a full timestamp
+(`dt.datetime.now(dt.timezone.utc)`) as `end` instead of tomorrow's bare
+date - which does stop the bars request from excluding today, but that
+same string also gets handed to the Yahoo-fallback path if Alpaca ever
+fails, and `yfinance`'s own date parser requires exactly a bare
+`"YYYY-MM-DD"` string - a full timestamp raises `ValueError` there. That
+exception gets silently swallowed by `get_price_data()`'s own
+except-and-fall-back-to-synthetic handling, so the practical effect
+wasn't a crash - it was quietly disabling the Yahoo fallback tier for
+live stock decisions specifically. This did briefly run live (a real
+QQQ/XOM/CAT/DIS BUY run), but never actually hit the bug in practice -
+Alpaca was healthy throughout, so the Yahoo-fallback branch was never
+reached. Found during a follow-up bug sweep and fixed by using
+tomorrow's bare date instead: still exactly the `"YYYY-MM-DD"` shape
+both Alpaca and Yahoo can parse, but strictly later than today, so it
+can never again exclude the current session.
 
 `ml_filtered` is still a real option in `live_trade.py`/`optimize.py`/
 `walk_forward.py` for anyone who wants to keep researching it - it just

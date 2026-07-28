@@ -187,15 +187,17 @@ def get_stock_bars_range(symbol: str, interval: str, start: str, end: str) -> pd
     history begins).
 
     start/end are plain date strings (e.g. "2026-07-28"), which
-    pd.Timestamp(..., tz="UTC") turns into midnight UTC of that date -
-    correct for a deliberately historical range (both bounds are meant to
-    be whole calendar days), but NOT something a live caller should ever
-    pass as `end` for "as of right now": midnight UTC is hours in the
-    past by the time a live run actually executes, which would silently
-    exclude the entire current session. live_trade.py's live stock path
-    passes a full timestamp (not a bare date) as `end` for exactly this
-    reason - see its module docstring for the real incident this
-    protects against.
+    pd.Timestamp(..., tz="UTC") turns into midnight UTC *at the start* of
+    that date - correct for a deliberately historical range (both bounds
+    are meant to be whole calendar days), but passing *today's* date as
+    `end` from a live caller would silently exclude the entire current
+    session (midnight UTC is hours in the past by the time a live run
+    actually executes). live_trade.py's live stock path passes
+    *tomorrow's* bare date as `end` for exactly this reason, not today's -
+    see its module docstring for the real incident this protects against,
+    and for why it stays a bare date rather than a full timestamp (this
+    same string is also handed to yfinance's fallback path, whose own
+    date parser requires exactly this "YYYY-MM-DD" shape).
     """
     amount, unit = _INTERVAL_MAP.get(interval, (5, TimeFrameUnit.Minute))
 
