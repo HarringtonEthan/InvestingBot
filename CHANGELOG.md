@@ -17,6 +17,42 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.16 - 2026-07-28
+
+- **Added a market-hours guard for stock orders.** Prompted by an
+  external review of the repo that correctly identified this as the
+  single most valuable gap: nothing in the code itself ever checked
+  whether the stock market was actually open before submitting a BUY/
+  SELL - the only thing preventing an out-of-hours order was "the
+  external scheduler is configured to only call this during market
+  hours," which is exactly the same class of failure (an external
+  trigger misbehaving) that caused the real unmanaged-position incident
+  earlier in this project's history (see 0.9.5). Added
+  `Broker.is_market_open()` (wraps Alpaca's own `/clock` endpoint) and a
+  new `stock_market_closed()` check in `live_trade.py`: any stock BUY/
+  SELL is now skipped - logged with a clear note, never silently - if
+  the market is confirmed closed at decision time, regardless of why the
+  run happened to fire. Crypto is completely unaffected (it trades 24/7
+  and never calls this at all). Fetched once per run, not per ticker,
+  since every real workflow's `--ticker` list is always one asset class.
+  New tests in `tests/test_market_clock.py` (6 tests, 97 total passing).
+- **Fixed a stale, contradictory section in `docs/AUTOMATION.md`.** "Make
+  it run automatically, on a schedule" still described the strategy as a
+  once-a-day, near-market-close decision - true of an early version of
+  this project, not the 5-minute `rule_based` strategy that's actually
+  live now (correctly described later in the same document). Rewrote it
+  to match current reality and pointed out explicitly that it's an
+  alternative to GitHub Actions (what's actually deployed), not a
+  description of it.
+- Both changes came out of reviewing an external AI-generated repo audit
+  (ChatGPT) against the actual code - most of its higher-risk suggestions
+  (deterministic `client_order_id`s, a persistent order-reconciliation
+  ledger, moving runtime state off git) were judged not worth the added
+  engineering surface for this project's current scale and "let it
+  gather real data" phase, but these two were cheap, safe (can only ever
+  add a restriction, never loosen one), and directly closed off the
+  actual incident class this project has already hit once.
+
 ## Version Richards 0.9.15 - 2026-07-28
 
 - **Full codebase bug sweep.** Found and fixed two real, if narrow-scope,

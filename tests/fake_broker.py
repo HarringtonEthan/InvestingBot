@@ -66,6 +66,19 @@ class FakeBroker:
         # calls above), unrealized P&L has to be set directly by a test
         # that wants to exercise the live-positions aggregation logic.
         self._unrealized: dict[str, tuple[bool, float]] = {}
+        # Defaults to open (True) so every existing test that never calls
+        # set_market_open() keeps exercising the normal, market-open code
+        # path without having to know this attribute exists at all.
+        self._market_open = True
+
+    def set_market_open(self, is_open: bool):
+        """Test helper: control what is_market_open() reports, for
+        exercising live_trade.py's market-hours guard without a real
+        Alpaca clock call."""
+        self._market_open = is_open
+
+    def is_market_open(self) -> bool:
+        return self._market_open
 
     def set_unrealized_pl(self, symbol: str, is_crypto: bool, unrealized_pl: float):
         """Test helper: record what get_all_positions() should report for

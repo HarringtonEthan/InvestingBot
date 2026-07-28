@@ -253,6 +253,23 @@ def daily_loss_exceeded(broker: Broker, threshold_pct: float, equity_log_paths: 
     return drawdown >= threshold_pct
 
 
+def stock_market_closed(is_crypto: bool, market_open: bool | None) -> bool:
+    """
+    True only if this decision is for a stock (not crypto) AND the
+    market is confirmed closed - the condition that should skip a live
+    stock BUY/SELL rather than let it submit and possibly queue for a
+    later session. Crypto trades 24/7, so this is always False for a
+    crypto decision regardless of market_open. Checks `is False`
+    specifically, not just falsiness: an all-crypto run never calls
+    Broker.is_market_open() at all (see main()), leaving market_open as
+    None ("never checked") - that must never be treated the same as a
+    confirmed-closed market for a stock decision that genuinely wasn't
+    checked (which can't happen given main()'s logic, but this function
+    shouldn't rely on that invariant holding to stay correct).
+    """
+    return not is_crypto and market_open is False
+
+
 def compute_buy_budget(per_ticker_budget: float, max_notional: float | None) -> float:
     """
     How much a single BUY is allowed to spend: the even per-ticker split,
@@ -517,6 +534,25 @@ def main():
         if breaker_tripped:
             print(f"[circuit breaker] Account is down {args.daily_loss_limit:.0%}+ from today's starting equity - "
                   f"blocking new BUYs for the rest of the run. SELLs are unaffected.")
+
+        # Stock orders only ever make sense while the market is actually
+        # open - see Broker.is_market_open()'s docstring for the real
+        # incident (an unmanaged position from an order that silently
+        # filled outside market hours) this closes off generally, instead
+        # of relying solely on the external scheduler only firing during
+        # market hours. Crypto trades 24/7, so this is never checked (and
+        # never blocks) a crypto decision. Fetched once per run, not per
+        # ticker - it can't change mid-run, and every ticker in a real
+        # workflow run is always one asset class anyway (see the
+        # workflows' fixed --ticker lists). Stays None ("never checked")
+        # for an all-crypto run, so the per-ticker check below never
+        # mistakes "didn't check" for "market is closed".
+        market_open = None
+        if any(not d["symbol"].is_crypto for d in decisions):
+            market_open = broker.is_market_open()
+            if not market_open:
+                print("[market clock] Stock market is currently closed - any stock BUY/SELL "
+                      "this run will be skipped rather than submitted to sit queued for a later session.")
     except Exception as e:
         print(f"ERROR fetching account info: {type(e).__name__}: {e} - aborting this run, will retry next cycle.")
         return
@@ -546,7 +582,10 @@ def main():
             fill_note = ""
             fill_price = decision["last_price"]
             if action != "HOLD" and args.execute:
-                if action == "BUY":
+                if stock_market_closed(symbol.is_crypto, market_open):
+                    print(f"[{ticker}] Skipping {action} - stock market is currently closed.")
+                    fill_note = "Stock market was closed at decision time - order not submitted."
+                elif action == "BUY":
                     if breaker_tripped:
                         # Circuit breaker already reported once above -
                         # just skip this specific BUY without repeating

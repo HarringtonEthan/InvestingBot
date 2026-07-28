@@ -86,6 +86,24 @@ class Broker:
         account = self.client.get_account()
         return float(account.equity)
 
+    def is_market_open(self) -> bool:
+        """
+        Whether the stock market is open RIGHT NOW, per Alpaca's own
+        market clock - not derived from a schedule string or DAY-order
+        expiry semantics, which is what live_trade.py relied on
+        exclusively before this existed. Only meaningful for stocks;
+        crypto trades 24/7, so callers should never gate a crypto
+        decision on this. This exists specifically because the account
+        has already carried an unmanaged position from a stock order
+        that was submitted (and silently filled) outside market hours -
+        see CHANGELOG.md - which a native GitHub `schedule:` trigger
+        firing at an unexpected time caused once already. Removing that
+        trigger fixed the specific cause; this closes the general case,
+        so a live order can never be submitted while the market is
+        closed regardless of why the run happened to fire.
+        """
+        return bool(self.client.get_clock().is_open)
+
     @staticmethod
     def _position_symbol(symbol: str) -> str:
         # alpaca-py builds position/close-position URLs by plain string

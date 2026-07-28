@@ -61,20 +61,28 @@ below for what gets recorded and where.
 
 ## 5. Make it run automatically, on a schedule
 
-The strategy is a once-a-day decision (it's based on daily closing
-prices), so I schedule it to run once a day, a few minutes before market
-close (4pm ET / 3:55pm ET), on whatever machine I leave running:
+**This section describes running it yourself, on your own machine - not
+what's actually live right now.** The strategy that's currently deployed
+(`rule_based`, 5-minute bars - see "Stock automation" below) needs to be
+evaluated roughly every 5 minutes during market hours to behave the way
+it was walk-forward validated, not once a day. An earlier version of
+this project only had a once-a-day daily-close strategy, which is where
+a "run it once, near market close" schedule came from - that's no longer
+what's live, so don't set this up expecting it to match. If you want to
+run this yourself on your own machine instead of GitHub Actions (below),
+schedule it every 5 minutes during market hours instead:
 
 **macOS/Linux (cron):**
 ```bash
 crontab -e
-# Add a line like this (adjust the path and time; cron uses your system's local time):
-55 15 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY AAPL QQQ --strategy rule_based --execute >> logs/cron.log 2>&1
+# Add a line like this (adjust the path; cron uses your system's local time -
+# convert 9:30am-4:00pm ET to your machine's own timezone first):
+*/5 9-16 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy rule_based --dip-threshold -0.015 --exit-threshold 0.02 --max-notional 2000 --daily-loss-limit 0.05 --execute >> logs/cron.log 2>&1
 ```
 
-**Windows (Task Scheduler):** create a new task that runs
-`live_trade.py --ticker SPY AAPL QQQ --strategy rule_based --execute` in
-the `InvestingBot` folder, triggered daily on weekdays at 3:55pm.
+**Windows (Task Scheduler):** create a new task that runs the same
+`live_trade.py ... --execute` command in the `InvestingBot` folder,
+triggered every 5 minutes during market hours on weekdays.
 
 My laptop needs to be on and awake at that time for cron/Task Scheduler
 to fire. If that's not realistic, see "Running without your computer on"

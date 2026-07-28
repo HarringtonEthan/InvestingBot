@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.15
+# InvestingBot — Version Richards 0.9.16
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 91 passing](https://img.shields.io/badge/tests-91%20passing-4c9a2a)](tests/)
+[![Tests: 97 passing](https://img.shields.io/badge/tests-97%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -97,6 +97,7 @@ neither one is missing information the other has:
 | **Sell signal** | +1.0% profit **or** -5.0% stop-loss from entry | back within 2.0% of the average (no stop-loss) |
 | **Max $ per trade** (`--max-notional`) | $2,000 | $2,000 |
 | **Daily loss circuit breaker** | 5% of that day's starting balance | 5% of that day's starting balance |
+| **Market-hours guard** | N/A - crypto trades 24/7 | Yes - refuses to submit a BUY/SELL unless Alpaca's own market clock confirms the market is open right now |
 | **Demonstrated edge?** | No - "meaningfully de-risked," not proven | No - best-of-8 walk-forward candidate, not proven |
 | **Current positions/trades** | See `results/trade_dashboard.png` | See `results/trade_dashboard.png` |
 
@@ -105,7 +106,7 @@ Both share: **real-money mode disabled** (2 independent locks - see
 live right now, so there's nothing to retrain for), and **CI running
 the test suite on every push/PR** (`.github/workflows/ci.yml`).
 
-**What "91 tests passing" (`pytest tests/`) actually means:** these are
+**What "97 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
