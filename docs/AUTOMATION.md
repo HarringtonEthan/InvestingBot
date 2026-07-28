@@ -382,11 +382,11 @@ looking at is never ambiguous. Two common choices:
 - **Original funding amount** (e.g. `--baseline 100000`) - gives
   all-time P&L since the account was funded, matching Alpaca's own
   total account P&L.
-- **A specific reset/tracking-period start** (e.g. `--baseline 99747.83`,
-  the account's real equity right after the 2026-07-28 manual reset -
-  every open position sold outside the bot, following the stale-price
-  incident documented in `CHANGELOG.md`) - gives P&L *since that point*
-  specifically, ignoring everything before it. This is what
+- **A specific reset/tracking-period start** (e.g. `--baseline 99751.68`,
+  the account's real equity right after the second 2026-07-28 manual
+  reset - every open position sold outside the bot, following the
+  stale-data incidents documented in `CHANGELOG.md`) - gives P&L *since
+  that point* specifically, ignoring everything before it. This is what
   `update-dashboard.yml` currently uses - it needs to be updated to a
   fresh anchor value whenever a new tracking period (a reset, or just
   "today") is what should be measured going forward, or the panel keeps
@@ -402,8 +402,8 @@ plots every row in the equity log - including everything from before
 the baseline value even existed - measured against a number that didn't
 apply to it yet. That reads as a real gain/loss swing right where the
 old data meets the new baseline, when it's really just old equity held
-up against the wrong reference point. `--baseline-since 2026-07-28T18:15:51+00:00`
-(paired with `--baseline 99747.83`) tells the chart to only plot from
+up against the wrong reference point. `--baseline-since 2026-07-28T18:53:05+00:00`
+(paired with `--baseline 99751.68`) tells the chart to only plot from
 the reset moment forward, so the line only ever measures what it's
 actually supposed to.
 
@@ -491,6 +491,26 @@ trading finally sees the same data source that was actually tested.
 Each run's console log now also prints where that run's price came from
 (`alpaca`/`yahoo`/`synthetic`) for exactly this reason - so a repeat of
 this problem would be visible immediately instead of by chance.
+
+**That 2026-07-28 fix turned out to be incomplete - see `CHANGELOG.md`
+0.10.0 for the actual root cause and fix.** Switching to
+`get_price_data_smart()` fixed *which* data source was queried, but not
+a separate bug in *how* it was queried: `decide()`'s stock branch built
+the request's `end` bound from `dt.date.today().isoformat()` - a bare
+calendar date, which turns into midnight UTC once parsed - hours before
+the moment a live run actually executes, silently excluding the entire
+current trading session from every single fetch, every run, regardless
+of the real time. That's the real explanation for why the "as of"
+timestamp a live decision logged stayed frozen on the previous session
+for hours - not Alpaca's data being stale, `live_trade.py`'s own request
+window never actually reaching into the current session at all. Fixed
+by passing a real timestamp instead of a bare date, plus a second,
+independent safety net (`check_bars_freshness()`) that skips a ticker
+outright if the returned series is still too old for any other reason -
+the same guarantee crypto's `get_crypto_bars()` already had, applied
+symmetrically to stocks. `get_price_data_smart()` itself was never
+touched by either fix - live stock decisions still use exactly the same
+mechanism `optimize.py`/`walk_forward.py`'s validation depends on.
 
 `ml_filtered` is still a real option in `live_trade.py`/`optimize.py`/
 `walk_forward.py` for anyone who wants to keep researching it - it just

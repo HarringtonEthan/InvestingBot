@@ -17,6 +17,73 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.10.0 - 2026-07-28
+
+Bumped the minor version instead of continuing the 0.9.x patch run (which
+had reached 0.9.20 without the project ever having shipped a 1.x) - this
+release also finally resolves the gap 0.9.20 could only flag, so it's a
+real dividing line, not just a renumbering.
+
+- **Found and fixed the actual root cause of the stale-rolling-average
+  bug flagged as unresolved in 0.9.20.** It was never a genuine Alpaca
+  data-freshness problem: `decide()`'s stock branch built the historical
+  bars request's `end` bound from `dt.date.today().isoformat()` - a bare
+  calendar date (e.g. `"2026-07-28"`), which `pd.Timestamp(..., tz="UTC")`
+  turns into **midnight UTC of today**, hours *before* the moment any
+  live run actually executes. That silently excluded the entire current
+  trading session from every single stock fetch, every run, regardless
+  of the real time - so the freshest bar available was always the
+  previous session's last one, exactly matching the frozen
+  "2026-07-27" timestamp seen in production for hours into the next
+  day. Fixed by passing a real timestamp
+  (`dt.datetime.now(dt.timezone.utc)`) instead of a bare date. This was
+  a `live_trade.py`-only bug - crypto's live path (`get_crypto_bars()`)
+  already built its request bound from `dt.datetime.now()`, never
+  `date.today()`, which is why this was never observed on crypto.
+- **Added `check_bars_freshness()` as a second, independent safety net**
+  for the stock path: raises (skipping that ticker for the run) if the
+  freshest bar returned is still older than the same per-interval
+  thresholds `get_crypto_bars()` already enforces for crypto
+  (`src/alpaca_data.py`'s `STALENESS_MINUTES`, now public so both paths
+  share one set of numbers). This only runs at the live call site, not
+  inside `get_price_data_smart()`/`get_stock_bars_range()` themselves -
+  both are shared with `optimize.py`'s/`walk_forward.py`'s backtesting,
+  which deliberately fetches an already-historical range and must never
+  be rejected just for "looking old."
+- **Removed `apply_live_price_override()` and `get_stock_latest_price()`
+  from the live decision path** (0.9.18's fix) - patching only the bars
+  series' last Close value never addressed the real problem (the whole
+  series' `end` bound, not just its last cell) and is superseded by
+  actually fixing the request bound plus the freshness check above.
+  `get_price_data_smart()` itself is completely untouched, so live
+  stock decisions are built from exactly the same Alpaca-first bars
+  mechanism `optimize.py`/`walk_forward.py`'s validation already uses -
+  a live decision was never meant to diverge from that methodology, and
+  now it doesn't.
+  - A design considered and rejected during this fix: a persistent,
+    self-maintained live-price log that `decide()` would append to and
+    read back from, replacing the bars fetch entirely. Rejected because
+    it would have built the rolling average from a fundamentally
+    different series (one live trade print per irregular cron tick)
+    than the fixed-grid historical bars series walk-forward validation
+    was actually tested against - exactly the kind of live/research
+    mismatch this project has been trying to close, not widen.
+  - **Every open stock position was manually sold and the paper account
+    was reset again while this was being found.** New tracking
+    baseline: **$99,751.68** (`update-dashboard.yml`'s `--baseline`
+    and `--baseline-since`, updated from 99747.83 /
+    2026-07-28T18:15:51+00:00 to 99751.68 / 2026-07-28T18:53:05+00:00).
+    `logs/trade_log_stocks.csv` was archived to
+    `logs/trade_log_stocks_archive_pre_2026-07-28_reset2.csv` and
+    restarted empty; both equity logs got a fresh anchor row at the
+    reset value.
+  - Removed `tests/test_live_price_override.py` and
+    `tests/test_alpaca_data.py`'s `get_stock_latest_price` tests
+    (superseded); added `tests/test_bars_freshness.py`
+    (`check_bars_freshness()`, plus a regression test confirming
+    `decide()` passes a real timestamp - not a bare date - as `end`) -
+    107 total passing.
+
 ## Version Richards 0.9.20 - 2026-07-28
 
 - **Fixed the dashboard's net-gain/loss panel showing pre-reset history

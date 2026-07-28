@@ -33,15 +33,18 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Generate dashboard
-        # 99747.83 is the account's real value right after the
+        # 99751.68 is the account's real value right after the SECOND
         # 2026-07-28 manual reset (every open position sold outside the
-        # bot, after the stale-price incident documented in CHANGELOG.md)
-        # - not the original $100k funding amount, and not the earlier
-        # 99787.08 anchor from before that incident. This is a deliberate
-        # choice to show "P&L since the reset," not "all-time P&L since
-        # funding" - see docs/AUTOMATION.md's baseline explanation for
-        # the difference and why this needs updating again whenever a
-        # fresh tracking period is what should be measured going forward.
+        # bot again, this time because the still-in-progress rolling-average
+        # rewrite documented in CHANGELOG.md meant the stock BUYs placed
+        # after the first reset were also built on a stale/incomplete
+        # indicator computation) - not the original $100k funding amount,
+        # and not either of the two earlier anchors (99787.08, 99747.83)
+        # from before this second incident. This is a deliberate choice to
+        # show "P&L since the reset," not "all-time P&L since funding" -
+        # see docs/AUTOMATION.md's baseline explanation for the difference
+        # and why this needs updating again whenever a fresh tracking period
+        # is what should be measured going forward.
         # --baseline-since matches the exact same reset moment, so panel
         # 1 only plots the timeline from the reset forward - without it,
         # the chart would still show the whole day's earlier equity
@@ -57,7 +60,7 @@ jobs:
           # other workflows - this script only ever reads positions, but
           # there's no reason to let a stray live-endpoint secret enable that.
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python visualize_log.py --baseline 99747.83 --baseline-since 2026-07-28T18:15:51+00:00 --live-positions
+        run: python visualize_log.py --baseline 99751.68 --baseline-since 2026-07-28T18:53:05+00:00 --live-positions
 
       - name: Commit updated dashboard
         run: |

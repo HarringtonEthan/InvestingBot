@@ -4,10 +4,18 @@ Alpaca account (paper by default) and, if a position needs to change,
 place the order.
 
 Meant to be run on a schedule via cron / Task Scheduler / GitHub Actions -
-see docs/AUTOMATION.md for setup. Each run is
-stateless: it re-derives that period's buy/sell/hold decision from price
-history and your *actual* broker position for each ticker, so it's safe
-to run it manually as many times as you want to check what it would do.
+see docs/AUTOMATION.md for setup. Each run is stateless: it re-derives
+that period's buy/sell/hold decision from price history and your
+*actual* broker position for each ticker, so it's safe to run it
+manually as many times as you want to check what it would do. Price
+history is fetched via get_price_data_smart() (src/data.py) for stocks
+and get_crypto_bars() (src/alpaca_data.py) for crypto - the exact same
+Alpaca-first bars mechanism optimize.py/walk_forward.py use to validate a
+strategy, so a live decision's rolling indicators are built the same way
+the numbers behind that validation were. See decide()'s docstring for
+the one live-only addition on top of that shared mechanism: an explicit
+freshness check, since a deliberately historical backtest range is
+supposed to look "old" but a live decision never should.
 
 Safety defaults:
   - Points at Alpaca's PAPER endpoint unless ALPACA_BASE_URL is changed.
@@ -15,7 +23,7 @@ Safety defaults:
     it prints what it *would* do and stops.
   - Refuses to touch a live account at all unless you also pass
     --i-understand-this-is-live (on top of changing ALPACA_BASE_URL).
-  - Aborts a ticker instead of trading it on synthetic/fallback data.
+  - Aborts a ticker instead of trading it on synthetic/fallback or stale data.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -34,19 +42,16 @@ from pathlib import Path
 # .env file into the environment, so they don't need to be exported by hand.
 from dotenv import load_dotenv
 
-# Only used by apply_live_price_override() below, to patch a single cell
-# in the already-fetched bars DataFrame.
-import pandas as pd
-
 # The status value that means an order has actually been executed - used
 # to distinguish a confirmed fill from a merely-submitted order.
 from alpaca.trading.enums import OrderStatus
 
 # Alpaca-sourced crypto price bars (used instead of Yahoo for crypto - see
-# module docstring in src/alpaca_data.py); get_stock_latest_price is a
-# genuinely live single-trade price for stocks, used to correct the most
-# recent point of an otherwise slightly-lagged bars series - see decide().
-from src.alpaca_data import get_crypto_bars, get_stock_latest_price
+# module docstring in src/alpaca_data.py); STALENESS_MINUTES is the same
+# per-interval staleness thresholds get_crypto_bars() already enforces
+# internally - reused here so the stock path (see check_bars_freshness()
+# below) applies the identical standard, not a separately hand-picked one.
+from src.alpaca_data import STALENESS_MINUTES, get_crypto_bars
 # The Alpaca account/order wrapper.
 from src.broker import Broker
 # Alpaca-first (falling back to Yahoo Finance, then synthetic) price data,
@@ -312,18 +317,39 @@ def poll_for_fill(broker: Broker, order, attempts: int = 3, delay_seconds: float
     return False, None, None
 
 
-def apply_live_price_override(raw: pd.DataFrame, live_price: float) -> pd.DataFrame:
+def check_bars_freshness(ticker: str, last_date, interval: str) -> None:
     """
-    Overwrites just the last row's Close with a fresh live price, leaving
-    every earlier bar untouched - see decide()'s comment on why this
-    combination (a slightly-lagged bars series for rolling-indicator
-    context, plus a genuinely live price for "right now") is worth
-    doing at all. Returns a copy; never mutates the caller's DataFrame,
-    since `raw` may still be referenced elsewhere before this returns.
+    Raises if the freshest bar get_price_data_smart() returned for a
+    stock is older than the sane per-interval threshold in
+    STALENESS_MINUTES - the live-only counterpart to get_crypto_bars()'s
+    own built-in staleness check (src/alpaca_data.py), which the stock
+    path never had.
+
+    This has to live here, called explicitly from decide() below, rather
+    than inside get_price_data_smart()/get_stock_bars_range() themselves:
+    both are shared with optimize.py's/walk_forward.py's backtesting,
+    which deliberately fetches an already-historical date range and must
+    never be rejected just for "looking old" relative to right now - see
+    those functions' own docstrings. Only a live decision should ever be
+    compared against the actual current wall-clock time.
     """
-    raw = raw.copy()
-    raw.iloc[-1, raw.columns.get_loc("Close")] = live_price
-    return raw
+    now = dt.datetime.now(dt.timezone.utc)
+    last_ts = last_date
+    if getattr(last_ts, "tzinfo", None) is None:
+        # df.index[-1] is normally a tz-aware pandas Timestamp (has
+        # tz_localize), but a plain tz-naive datetime.datetime doesn't -
+        # handle both rather than assume one specific type.
+        if hasattr(last_ts, "tz_localize"):
+            last_ts = last_ts.tz_localize("UTC")
+        else:
+            last_ts = last_ts.replace(tzinfo=dt.timezone.utc)
+    age_minutes = (now - last_ts).total_seconds() / 60
+    threshold = STALENESS_MINUTES.get(interval, 30)
+    if age_minutes > threshold:
+        raise RuntimeError(
+            f"Latest {ticker} bar is {age_minutes:.0f} min old (threshold {threshold} min) - "
+            f"data looks stale, refusing to trade on it"
+        )
 
 
 def decide(ticker: str, args, broker: Broker):
@@ -341,6 +367,8 @@ def decide(ticker: str, args, broker: Broker):
         # crypto bars can silently go stale for hours without erroring,
         # which is worse than a hard failure. Alpaca is also the actual
         # execution venue, so "current price" means what it says.
+        # get_crypto_bars() already has its own staleness check built in
+        # (raises if the latest bar is too old) - nothing extra needed here.
         try:
             raw = get_crypto_bars(symbol.alpaca, args.interval, lookback_days)
         except Exception as e:
@@ -354,15 +382,24 @@ def decide(ticker: str, args, broker: Broker):
         # falling back to Yahoo Finance only if Alpaca doesn't have enough -
         # the exact same reasoning already applied to crypto above, which
         # this used to skip entirely: confirmed live (see CHANGELOG) that
-        # plain Yahoo Finance can silently return the SAME stale bar run
-        # after run for hours - including the run that placed this
-        # project's first real stock trades - without ever raising an
-        # error or tripping the is_synthetic fallback below, so nothing
-        # here would have caught it. get_price_data_smart() is also
-        # already what optimize.py/walk_forward.py use for this same
-        # interval - live trading was the one place still solely
-        # depending on Yahoo for stocks.
-        end = dt.date.today()
+        # a stock decision was silently being computed from a frozen bars
+        # series showing the previous trading day's close hours into the
+        # next one. The real cause: `end` was passed as a bare calendar
+        # date (dt.date.today().isoformat()), which pd.Timestamp(...,
+        # tz="UTC") turns into midnight UTC - hours *before* the moment
+        # the run actually executes - so the request's own upper bound
+        # silently excluded the entire current trading session, every
+        # single run, regardless of what time it was. Passing a real
+        # timestamp (dt.datetime.now, not dt.date.today) for `end` fixes
+        # that at the source; check_bars_freshness() below is the second,
+        # independent line of defense for any other way a returned series
+        # could still end up stale (an Alpaca outage, a market holiday,
+        # etc.) - the same guarantee get_crypto_bars() already gives
+        # crypto, applied symmetrically to stocks. get_price_data_smart()
+        # itself is untouched by either of these - it's still the exact
+        # same function/mechanism optimize.py's/walk_forward.py's
+        # validation depends on.
+        end = dt.datetime.now(dt.timezone.utc)
         start = end - dt.timedelta(days=lookback_days)
         raw, is_synthetic, source = get_price_data_smart(ticker, start.isoformat(), end.isoformat(), interval=args.interval)
         if is_synthetic:
@@ -373,27 +410,11 @@ def decide(ticker: str, args, broker: Broker):
                   f"(no real network access to Alpaca or Yahoo Finance from here).")
             return None
 
-        # Even Alpaca's own free IEX historical-bars feed above can sit
-        # several percent away from Alpaca's real-time pricing at the
-        # exact same moment - confirmed live on 2026-07-28 (see
-        # CHANGELOG.md): a 5-minute bar's close only reflects whenever
-        # that bar's window happened to end, not literally "right now,"
-        # and IEX alone (a single exchange) doesn't always track the
-        # true market closely. Rolling indicators (SMA/RSI, computed
-        # below by add_features) tolerate a few minutes of lag fine -
-        # that's what "rolling" means - but the actual dip/exit
-        # comparison shouldn't be made against a stale final point.
-        # Overwriting just the series' last Close with a genuinely live
-        # trade price, before add_features() runs, keeps the rolling
-        # context from the (possibly lagged) bars while making sure
-        # "where is price right now" uses a live number. Best-effort:
-        # if this extra call fails, still trade off the bars series
-        # alone rather than skip the ticker over one failed API call.
         try:
-            raw = apply_live_price_override(raw, get_stock_latest_price(symbol.alpaca))
+            check_bars_freshness(ticker, raw.index[-1], args.interval)
         except Exception as e:
-            print(f"[{ticker}] Could not fetch a live quote to refine the latest bar "
-                  f"({type(e).__name__}: {e}) - using the historical bar's own close instead.")
+            print(f"[{ticker}] SKIPPED: {e}")
+            return None
 
     # Compute technical indicators on whatever price data was fetched.
     df = add_features(raw)

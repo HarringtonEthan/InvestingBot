@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.20
+# InvestingBot — Version Richards 0.10.0
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 106 passing](https://img.shields.io/badge/tests-106%20passing-4c9a2a)](tests/)
+[![Tests: 107 passing](https://img.shields.io/badge/tests-107%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -74,21 +74,24 @@ snapshot and will be stale by the time you read it - check
 covers what's true right now** - every bug, incident, and past decision
 that shaped this configuration is in `CHANGELOG.md`, not repeated here.
 
-**Both crypto and stocks are currently RUNNING again** (paper),
-triggered **only** by an external scheduler
-([cron-job.org](https://cron-job.org)) calling each workflow's
-`workflow_dispatch` endpoint every 5 minutes. Both were briefly paused
-on 2026-07-28 after a real live bug (see `CHANGELOG.md`): stock
-decisions were being made from a price that could sit several percent
-away from Alpaca's own real-time pricing. Every open stock position was
-manually sold and the paper account reset ($99,747.83 is the tracking
-baseline since) while that was fixed and verified - a manually-triggered
-run after the fix showed the decision price, actual fill price, and the
-dashboard's live position price all agreeing within ~0.1%, instead of
-the ~4% gap that exposed the original bug - and both schedulers were
-then re-enabled. Neither workflow has a GitHub-side `schedule:` trigger
-either way - GitHub itself never fires either one on its own; only the
-external scheduler or a manual "Run workflow" click can.
+**Both crypto and stocks are currently PAUSED** (paper) - the external
+scheduler ([cron-job.org](https://cron-job.org)) that's the *only* thing
+that ever triggers either workflow's `workflow_dispatch` endpoint has
+been turned off, pending confirmation that 0.10.0's fix (see
+`CHANGELOG.md`) is holding up. This is the second pause on 2026-07-28:
+the first (0.9.18) fixed live stock prices diverging from Alpaca's own
+real-time pricing by several percent; this one found and fixed the
+actual root cause of the rolling-average staleness that first fix had
+only flagged, not resolved - a `live_trade.py` bug (a bare calendar date
+passed as the historical-bars request's upper bound, silently excluding
+the entire current trading session from every stock fetch), not an
+Alpaca data problem. Every open stock position was manually sold and the
+paper account reset again ($99,751.68 is the tracking baseline since).
+Re-enable both schedulers once a manually-triggered run confirms the
+"as of" timestamp a live decision logs is actually current, not frozen
+on a prior session. Neither workflow has a GitHub-side `schedule:`
+trigger either way - GitHub itself never fires either one on its own;
+only the external scheduler or a manual "Run workflow" click can.
 
 Crypto and stocks are otherwise completely independent - different
 tickers, different strategy code, different thresholds, separate
@@ -98,12 +101,12 @@ neither one is missing information the other has:
 
 | | Crypto | Stocks |
 |---|---|---|
-| **Running right now?** | Yes | Yes |
+| **Running right now?** | Paused | Paused |
 | **Triggered by** | cron-job.org only, every 5 min | cron-job.org only, every 5 min |
 | **Strategy** | `day_trading` (rule-based, no ML) | `rule_based` (rule-based, no ML) |
 | **Tickers** | BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT | SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS |
 | **Bar size** | 5-minute | 5-minute |
-| **Price data source** | Alpaca's own live feed, always | Alpaca first (bars for rolling indicators, plus a live trade price patched onto the latest point - see `CHANGELOG.md` 2026-07-28), Yahoo only as a last resort |
+| **Price data source** | Alpaca first (bars, own built-in staleness check), Yahoo only as a last resort | Alpaca first (bars, same `get_price_data_smart()` mechanism `optimize.py`/`walk_forward.py` validate against, plus an explicit staleness check - see `CHANGELOG.md` 0.10.0), Yahoo only as a last resort |
 | **Buy signal** | price ≥4.0% below its 20-bar average | price ≥1.5% below its 20-bar average |
 | **Sell signal** | +1.0% profit **or** -5.0% stop-loss from entry | back within 2.0% of the average (no stop-loss) |
 | **Max $ per trade** (`--max-notional`) | $2,000 | $2,000 |
@@ -117,7 +120,7 @@ Both share: **real-money mode disabled** (2 independent locks - see
 live right now, so there's nothing to retrain for), and **CI running
 the test suite on every push/PR** (`.github/workflows/ci.yml`).
 
-**What "106 tests passing" (`pytest tests/`) actually means:** these are
+**What "107 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
