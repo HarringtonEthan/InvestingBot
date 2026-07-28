@@ -416,7 +416,26 @@ def main():
                               "Existing positions' own profit-target/stop-loss exits still run normally.")
     parser.add_argument("--execute", action="store_true", help="actually submit orders; without this, dry-run only")
     parser.add_argument("--i-understand-this-is-live", action="store_true", dest="allow_live")
+    parser.add_argument("--log-suffix", default="",
+                         help="appended to the log filenames, e.g. --log-suffix _crypto writes "
+                              "logs/trade_log_crypto.csv/logs/equity_log_crypto.csv instead of the "
+                              "plain logs/trade_log.csv/logs/equity_log.csv. Lets the crypto and "
+                              "stock workflows each write to their own files so two workflows "
+                              "committing at nearly the same moment never touch the same file - "
+                              "see .gitattributes for the belt-and-suspenders fix that still covers "
+                              "any two processes that DO share a log file (e.g. manual local runs).")
     args = parser.parse_args()
+
+    if args.log_suffix:
+        # Reassign the module-level paths rather than threading a path
+        # argument through every log_trade()/log_equity() call site -
+        # every log_* function already looks these up by name at call
+        # time (not captured at import time), so this is picked up
+        # immediately, the same way tests/test_circuit_breaker.py
+        # already monkeypatches EQUITY_LOG_PATH directly.
+        global TRADE_LOG_PATH, EQUITY_LOG_PATH
+        TRADE_LOG_PATH = Path(f"logs/trade_log{args.log_suffix}.csv")
+        EQUITY_LOG_PATH = Path(f"logs/equity_log{args.log_suffix}.csv")
 
     # Populate environment variables (ALPACA_API_KEY etc.) from .env, if present.
     load_dotenv()

@@ -1,7 +1,9 @@
 """
-Turns logs/equity_log.csv and logs/trade_log.csv into a dashboard chart -
-the numbers in those CSVs are accurate but not exactly readable at a
-glance, especially once there's weeks of rows in them.
+Turns the equity/trade logs (logs/equity_log_crypto.csv +
+logs/equity_log_stocks.csv, and the trade_log equivalents - see
+live_trade.py's --log-suffix) into a dashboard chart - the numbers in
+those CSVs are accurate but not exactly readable at a glance, especially
+once there's weeks of rows in them.
 
 Five panels:
   1. Net account gain/loss over time (whole account, both asset classes
@@ -57,23 +59,36 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 
-def load_csv(path: str) -> pd.DataFrame | None:
-    try:
-        df = pd.read_csv(path)
-    except FileNotFoundError:
-        # Log file doesn't exist yet (e.g. a fresh checkout before the
-        # bot has ever run) - not an error, just "no data yet".
+def load_csv(paths: list[str]) -> pd.DataFrame | None:
+    """
+    Reads one or more CSVs sharing the same columns and returns them as
+    one combined, chronologically-sorted DataFrame - crypto and stocks
+    each write to their own log file now (see live_trade.py's
+    --log-suffix) so two workflows never race to commit the same file,
+    but a single combined timeline is still what every panel below
+    actually wants (e.g. the whole-account equity line doesn't care
+    which workflow happened to log a given sample).
+    """
+    frames = []
+    for path in paths:
+        try:
+            df = pd.read_csv(path)
+        except FileNotFoundError:
+            # This particular log doesn't exist yet - not an error, just
+            # nothing to contribute from this file.
+            continue
+        if not df.empty:
+            frames.append(df)
+    if not frames:
+        # Every path was missing or empty - genuinely nothing to show.
         return None
-    if df.empty:
-        # File exists but has no data rows (e.g. only a header, or
-        # completely empty) - same "nothing to show" case as above.
-        return None
+    combined = pd.concat(frames, ignore_index=True)
     # Parse the timestamp column into actual datetime objects (in UTC) so
     # it can be used as a proper time axis rather than plain strings.
-    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
-    # Rows should already be roughly chronological, but sort explicitly to
-    # be safe regardless of how they were appended.
-    return df.sort_values("timestamp_utc")
+    combined["timestamp_utc"] = pd.to_datetime(combined["timestamp_utc"], utc=True)
+    # Rows from different files won't already be in a single chronological
+    # order relative to each other - sort explicitly across all of them.
+    return combined.sort_values("timestamp_utc")
 
 
 def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str):
@@ -189,8 +204,12 @@ def plot_win_loss(ax, sells: pd.DataFrame, label: str):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--equity-log", default="logs/equity_log.csv")
-    parser.add_argument("--trade-log", default="logs/trade_log.csv")
+    parser.add_argument("--equity-log", nargs="+", default=["logs/equity_log_crypto.csv", "logs/equity_log_stocks.csv"],
+                         help="one or more equity log files, combined into one timeline - crypto and "
+                              "stocks each write to their own file (see live_trade.py's --log-suffix) "
+                              "so two workflows never race to commit the same one")
+    parser.add_argument("--trade-log", nargs="+", default=["logs/trade_log_crypto.csv", "logs/trade_log_stocks.csv"],
+                         help="one or more trade log files, combined the same way as --equity-log")
     parser.add_argument("--out", default="results/trade_dashboard.png")
     parser.add_argument("--baseline", type=float, default=None,
                          help="account value to measure net gain/loss from, e.g. --baseline 100000 "
@@ -283,7 +302,7 @@ def main():
     else:
         # No equity log yet - show an empty panel with an explanatory message.
         ax.set_title("Net account gain/loss (no data yet)")
-        ax.text(0.5, 0.5, "logs/equity_log.csv is empty or missing", ha="center", va="center")
+        ax.text(0.5, 0.5, "No equity log data found", ha="center", va="center")
 
     # ---- Panels 2/3: cumulative realized P&L, crypto and stocks separately ----
     plot_cumulative_pnl(axes["crypto_pnl"], crypto_sells, "Crypto")
