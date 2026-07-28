@@ -17,6 +17,44 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.11 - 2026-07-28
+
+- **Reorganized `results/` into `results/param_sweep/` and
+  `results/walk_forward/` subfolders**, per feedback that the top level
+  had gotten cluttered with grid-search/validation output. Only
+  `trade_dashboard.png` (the one worth checking first) and
+  `equity_curve.png` stay directly in `results/`. Added a `README.md` in
+  each new subfolder explicitly labeling which specific file(s) back the
+  currently ACTIVE live crypto/stock config versus which are
+  explored-but-not-deployed candidates - `param_sweep.csv`/
+  `param_sweep_overview.png`/`walk_forward.csv`/`walk_forward_winner.png`
+  for crypto (day_trading -4%/+1%/-5%); `walk_forward_stocks_5m_best.csv`/
+  `walk_forward_stocks_5m_best_candidate.png`/`walk_forward_stocks_summary.*`
+  and the 5-minute grid-search overview chart for stocks (`rule_based`
+  5m dip=-1.5%/exit=2.0%, the best of 8). `optimize.py`/`walk_forward.py`'s
+  `--out` defaults updated to match; every reference in README/
+  `docs/RESEARCH.md`/`docs/AUTOMATION.md` updated.
+- **Seeded both split equity logs with one shared historical anchor
+  row** (`2026-07-28T07:05:54Z, $99,787.08` - the last known real
+  account value before today's stock trades, from the archived
+  pre-split history) so the dashboard's whole-account timeline shows
+  today's full picture from before market open, not just the last few
+  minutes since the 0.9.9 split. Both `logs/equity_log_crypto.csv` and
+  `logs/equity_log_stocks.csv` start with this identical real value -
+  it's shared because account equity is one number regardless of which
+  workflow happens to sample it, not two separate balances.
+- **Fixed a real commit-authorship mistake**: while reproducing the
+  0.9.8 git-conflict bug locally in a temporary `git worktree`, running
+  `git config user.email/user.name` there silently changed the *main*
+  repository's committer identity too (worktrees share the same
+  `.git/config` unless told otherwise) - every commit from 0.9.8 through
+  0.9.10 was authored as `t <t@t.com>` instead of the correct `Claude
+  <noreply@anthropic.com>`. Content of those commits is unaffected; only
+  the author label was wrong. Local override removed; commits from here
+  on use the correct identity. Not rewriting the already-pushed history
+  to relabel it - force-pushing on a branch with cron-job.org committing
+  every 5 minutes isn't worth the risk for a cosmetic fix.
+
 ## Version Richards 0.9.10 - 2026-07-28
 
 - **Trimmed the README's "Current live status" section** after feedback
