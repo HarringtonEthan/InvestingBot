@@ -17,6 +17,36 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.17 - 2026-07-28
+
+- **Fixed live stock trading silently running on stale, day-old price
+  data since before this project's first real stock trades.** Found by
+  checking the console output of live production runs across a 2+ hour
+  window (13:31 UTC, the exact run that placed the first real XOM/CAT/
+  DIS BUYs, through 15:40 UTC): every single run reported the identical
+  "as of 2026-07-27 15:55:00-04:00" bar - Monday's close, 5 minutes
+  before market close - never once advancing to a fresh Tuesday bar,
+  and never raising an error or tripping the existing synthetic-data
+  check. Root cause: `live_trade.py`'s stock path called plain
+  `get_price_data()` (Yahoo Finance only) - the exact same failure mode
+  crypto already hit and was fixed for months ago (see
+  `src/alpaca_data.py`'s docstring: "Yahoo's intraday crypto bars can
+  silently go stale for hours without erroring"), but that fix was never
+  applied to stocks. `optimize.py`/`walk_forward.py` (the tools that
+  actually validated the live `rule_based` 5-minute strategy) already
+  used Alpaca-first data via `get_price_data_smart()` - live trading was
+  the one place still solely depending on Yahoo. Switched
+  `live_trade.py`'s stock path to `get_price_data_smart()` too, so live
+  trading now sees the same data source the strategy was validated
+  against. Each run's console log now also prints which source served
+  that decision (`alpaca`/`yahoo`/`synthetic`) specifically so a repeat
+  of this would be visible immediately in the log, not discovered by
+  chance again.
+- Also fixed `docs/AUTOMATION.md`'s "Stock automation" section, which
+  still said stocks were "Currently paused" - stale since stocks
+  resumed; the main README's "Current live status" is the one kept
+  accurate day to day.
+
 ## Version Richards 0.9.16 - 2026-07-28
 
 - **Added a market-hours guard for stock orders.** Prompted by an

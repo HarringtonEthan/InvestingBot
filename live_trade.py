@@ -43,8 +43,10 @@ from alpaca.trading.enums import OrderStatus
 from src.alpaca_data import get_crypto_bars
 # The Alpaca account/order wrapper.
 from src.broker import Broker
-# Yahoo Finance (or synthetic fallback) price data, used for stocks.
-from src.data import get_price_data
+# Alpaca-first (falling back to Yahoo Finance, then synthetic) price data,
+# used for stocks - see decide()'s comment for why plain Yahoo alone isn't
+# enough here.
+from src.data import get_price_data_smart
 # Technical indicator computation.
 from src.features import add_features
 # Inline ML model training, used as a fallback if no saved model exists.
@@ -313,6 +315,7 @@ def decide(ticker: str, args, broker: Broker):
     # default for whatever bar interval was requested.
     lookback_days = args.lookback_days or DEFAULT_LOOKBACK_DAYS.get(args.interval, 30)
 
+    source = "alpaca"
     if symbol.is_crypto:
         # Alpaca's own crypto feed, not Yahoo Finance: Yahoo's intraday
         # crypto bars can silently go stale for hours without erroring,
@@ -327,15 +330,27 @@ def decide(ticker: str, args, broker: Broker):
             print(f"[{ticker}] SKIPPED: {e}")
             return None
     else:
-        # Stocks use plain Yahoo Finance, looking back lookback_days from today.
+        # Stocks try Alpaca's own intraday feed first (get_price_data_smart),
+        # falling back to Yahoo Finance only if Alpaca doesn't have enough -
+        # the exact same reasoning already applied to crypto above, which
+        # this used to skip entirely: confirmed live (see CHANGELOG) that
+        # plain Yahoo Finance can silently return the SAME stale bar run
+        # after run for hours - including the run that placed this
+        # project's first real stock trades - without ever raising an
+        # error or tripping the is_synthetic fallback below, so nothing
+        # here would have caught it. get_price_data_smart() is also
+        # already what optimize.py/walk_forward.py use for this same
+        # interval - live trading was the one place still solely
+        # depending on Yahoo for stocks.
         end = dt.date.today()
         start = end - dt.timedelta(days=lookback_days)
-        raw, is_synthetic = get_price_data(symbol.yfinance, start.isoformat(), end.isoformat(), interval=args.interval)
+        raw, is_synthetic, source = get_price_data_smart(ticker, start.isoformat(), end.isoformat(), interval=args.interval)
         if is_synthetic:
             # Never trade real (paper) money on made-up fallback data -
-            # bail out for this ticker if Yahoo Finance wasn't reachable.
+            # bail out for this ticker if neither Alpaca nor Yahoo Finance
+            # was reachable.
             print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
-                  f"(no real network access to Yahoo Finance from here).")
+                  f"(no real network access to Alpaca or Yahoo Finance from here).")
             return None
 
     # Compute technical indicators on whatever price data was fetched.
@@ -410,6 +425,13 @@ def decide(ticker: str, args, broker: Broker):
         "gain_pct": gain_pct,
         "pct_below_sma20": pct_below,
         "action": action,
+        # Where this decision's price data actually came from ("alpaca" or
+        # "yahoo" for stocks, always "alpaca" for crypto) - printed in
+        # main()'s per-ticker log line so a silent, hours-long stale-data
+        # problem (like the one this was added to catch and fix) would
+        # show up in the run's own console output immediately, not just
+        # get noticed by chance.
+        "source": source,
     }
 
 
@@ -571,7 +593,7 @@ def main():
             dip_str = ""
             if decision["gain_pct"] is None and decision["pct_below_sma20"] is not None and args.strategy == "day_trading":
                 dip_str = f"  vs_20period_avg={decision['pct_below_sma20']:+.2%} (buys at {args.dip_threshold:+.2%})"
-            print(f"[{mode}] {ticker} ({kind}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
+            print(f"[{mode}] {ticker} ({kind}, {decision['source']}) as of {decision['last_date']}: price=${decision['last_price']:.2f}  "
                   f"strategy={args.strategy}  current_qty={decision['current_qty']}{gain_str}{dip_str}  -> {action}")
 
             executed = False

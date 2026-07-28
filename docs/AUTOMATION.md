@@ -442,19 +442,18 @@ where committing an image every 5 minutes forever would not be.
 
 ## Stock automation: rule-based, 5-minute bars
 
-**Currently paused** (see `CHANGELOG.md` and "Current live status" in
-the main README). `paper-trade-stocks.yml` has **no `schedule:` trigger
-of its own anymore** - only `workflow_dispatch: {}` - so GitHub itself
-will never fire it; it only runs if a human clicks "Run workflow" or an
-external scheduler (cron-job.org) calls its dispatch endpoint on
-purpose. That's a deliberate, structural change, not just a documentation
-note: an earlier version of this workflow kept a native `schedule:`
-trigger active even after the README/CHANGELOG declared stocks
-"paused," which - combined with a stale, never-validated `ml_filtered
---dip-threshold -0.03` command left over from before this project's
-walk-forward work - caused an unwanted live BUY. "Paused" now means the
-workflow structurally cannot run on its own, not just that the docs say
-it shouldn't.
+**Currently running** (see "Current live status" in the main README for
+the up-to-date picture - this section can go stale between edits, that
+one is kept current). `paper-trade-stocks.yml` has **no `schedule:`
+trigger of its own** - only `workflow_dispatch: {}` - so GitHub itself
+never fires it on its own; it only runs when cron-job.org (or a manual
+"Run workflow" click) calls its dispatch endpoint. That's a deliberate,
+structural change, not just a documentation note: an earlier version of
+this workflow kept a native `schedule:` trigger active even after the
+README/CHANGELOG declared stocks "paused," which - combined with a
+stale, never-validated `ml_filtered --dip-threshold -0.03` command left
+over from before this project's walk-forward work - caused an unwanted
+live BUY.
 
 The live strategy is `rule_based`, 5-minute bars, `dip=-1.5% /
 exit=2.0%` - the best-of-8 candidate that actually came out ahead in
@@ -463,6 +462,21 @@ Because it's sized for 5-minute bars, it needs to be evaluated about
 every 5 minutes during market hours to behave the way it was tested -
 running it once a day would not reproduce the validated behavior at
 all (see "Setting up cron-job.org" above).
+
+**Live stock price data now tries Alpaca first, the same as crypto,**
+instead of depending solely on Yahoo Finance. This was a real, live bug
+found and fixed on 2026-07-28 (see `CHANGELOG.md`): plain Yahoo Finance
+silently returned the exact same stale bar - identical price, identical
+timestamp - for over two hours across dozens of runs, including the run
+that placed this project's first real stock trades, without ever
+raising an error. `live_trade.py`'s stock path now calls
+`get_price_data_smart()` (falls back to Yahoo, then synthetic, only if
+Alpaca doesn't have enough) - the same function `optimize.py`/
+`walk_forward.py` already used to validate this strategy, so live
+trading finally sees the same data source that was actually tested.
+Each run's console log now also prints where that run's price came from
+(`alpaca`/`yahoo`/`synthetic`) for exactly this reason - so a repeat of
+this problem would be visible immediately instead of by chance.
 
 `ml_filtered` is still a real option in `live_trade.py`/`optimize.py`/
 `walk_forward.py` for anyone who wants to keep researching it - it just
