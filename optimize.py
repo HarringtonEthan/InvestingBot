@@ -179,7 +179,7 @@ def main():
     parser.add_argument("--min-trades", type=float, default=5,
                          help="skip combos averaging fewer than this many trades per ticker - too rare to mean anything")
     parser.add_argument("--top", type=int, default=15)
-    parser.add_argument("--out", default="results/param_sweep.csv")
+    parser.add_argument("--out", default="results/param_sweep/param_sweep.csv")
     args = parser.parse_args()
 
     # Populate ALPACA_API_KEY / ALPACA_SECRET_KEY from .env, if present -

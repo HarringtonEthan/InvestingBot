@@ -162,7 +162,7 @@ python optimize.py --ticker BTC-USD ETH-USD SOL-USD DOGE-USD LTC-USD AVAX-USD LI
 leading `-` for a new flag.)
 
 It prints the top combinations by average return and writes the full
-grid to `results/param_sweep.csv`. **Before trusting whatever comes out
+grid to `results/param_sweep/param_sweep.csv`. **Before trusting whatever comes out
 on top:** open that CSV and check whether nearby parameter values also
 perform reasonably well (a real signal) or whether the winner is an
 isolated spike surrounded by much worse neighbors (almost always noise
@@ -338,26 +338,26 @@ around there, and Alpaca's IEX feed is one exchange's view rather than
 the consolidated tape Yahoo's daily data reflects.
 
 Every run also writes its full per-window results to `--out` (default
-`results/walk_forward.csv`), one row per ticker per window including
+`results/walk_forward/walk_forward.csv`), one row per ticker per window including
 skipped ones - a durable, committable record instead of console output
 that scrolls away, the same way `optimize.py`'s grid gets saved to
-`results/param_sweep.csv`.
+`results/param_sweep/param_sweep.csv`.
 
 **A worked example is committed in this repo**: the live crypto
 thresholds changed on 2026-07-27 from -1%/+1%/-3% to -4%/+1%/-5%, and the
 evidence behind that change is exactly these two files -
-[`results/param_sweep.csv`](../results/param_sweep.csv) (the grid search
+[`results/param_sweep/param_sweep.csv`](../results/param_sweep/param_sweep.csv) (the grid search
 that found the new combo) and
-[`results/walk_forward.csv`](../results/walk_forward.csv) (its per-window
+[`results/walk_forward/walk_forward.csv`](../results/walk_forward/walk_forward.csv) (its per-window
 validation across a real year of Alpaca data). See `CHANGELOG.md` 0.7.0
 for the full reasoning, including the caveats (the gain is concentrated
 in two specific windows, not spread evenly) that keep this "meaningfully
 de-risked" rather than "a proven edge." Rendered versions of both, for a
 quicker read than the raw CSVs:
 
-<img src="../results/param_sweep_overview.png" alt="Scatter plot of the 90-combination grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. Return climbs sharply as trade count drops, and the chosen combo (circled) sits at the top-left with the fewest trades and the best return." width="720">
+<img src="../results/param_sweep/param_sweep_overview.png" alt="Scatter plot of the 90-combination grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. Return climbs sharply as trade count drops, and the chosen combo (circled) sits at the top-left with the fewest trades and the best return." width="720">
 
-<img src="../results/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
+<img src="../results/walk_forward/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
 
 (Each bar in the second chart is labeled by the date its window *ends*,
 not starts - the first version labeled by start date, so the final
@@ -374,12 +374,12 @@ anytime to check a new result the same way.
 A grid search (`optimize.py --strategy rule_based`, 9 tickers, 2022-01-01
 to 2026-07-27 held out, `--cost-bps 5`) ranked 18 dip/exit combinations;
 the top 15 are committed at
-[`results/param_sweep_stocks.csv`](../results/param_sweep_stocks.csv)
+[`results/param_sweep/param_sweep_stocks.csv`](../results/param_sweep/param_sweep_stocks.csv)
 (the other 3, all `dip=-4%`, scored lowest and weren't printed to the
 console this run captured). Three candidates from that grid were then
 walk-forward validated across the same 9 tickers and 7 sequential windows
 spanning 2015-01-01 to 2026-07-27, committed at
-[`results/walk_forward_stocks.csv`](../results/walk_forward_stocks.csv):
+[`results/walk_forward/walk_forward_stocks.csv`](../results/walk_forward/walk_forward_stocks.csv):
 
 | Candidate | Avg return/ticker (walk-forward) | Losing ticker-windows | What it actually shows |
 |---|---|---|---|
@@ -409,9 +409,9 @@ the same calendar range to judge the strategy fairly, instead of drawing
 
 Rendered charts, generated straight from the two CSVs above:
 
-<img src="../results/param_sweep_overview_stocks.png" alt="Scatter plot of the stock grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. The highest-return combo trades far more often than most of the cluster below it, unlike crypto's chart where fewer trades meant a better result." width="720">
+<img src="../results/param_sweep/param_sweep_overview_stocks.png" alt="Scatter plot of the stock grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. The highest-return combo trades far more often than most of the cluster below it, unlike crypto's chart where fewer trades meant a better result." width="720">
 
-<img src="../results/walk_forward_stocks_candidate.png" alt="Nine small-multiple bar charts, one per stock ticker, showing the dip=-6%/exit=1% candidate's return in each of 7 sequential windows from 2015 to 2026. Mixed green and red bars throughout, with SPY, JNJ, and KO all showing a shared red or flat window around 2019-2021." width="720">
+<img src="../results/walk_forward/walk_forward_stocks_candidate.png" alt="Nine small-multiple bar charts, one per stock ticker, showing the dip=-6%/exit=1% candidate's return in each of 7 sequential windows from 2015 to 2026. Mixed green and red bars throughout, with SPY, JNJ, and KO all showing a shared red or flat window around 2019-2021." width="720">
 
 The bar chart shows the `-6%/1%` candidate specifically - not because it
 won, but because it was the most recently tested. Swap in `dip_threshold`/
@@ -485,27 +485,27 @@ average trades per ticker, while more real signal than the daily
 under-trading problem, is still a thin sample to stake much confidence
 on.
 
-Full table: [`results/walk_forward_stocks_summary.csv`](../results/walk_forward_stocks_summary.csv).
+Full table: [`results/walk_forward/walk_forward_stocks_summary.csv`](../results/walk_forward/walk_forward_stocks_summary.csv).
 Every candidate's raw per-window data is also committed:
-[`results/walk_forward_stocks.csv`](../results/walk_forward_stocks.csv)
-(the 3 daily rule_based candidates), [`results/walk_forward_stocks_5m_best.csv`](../results/walk_forward_stocks_5m_best.csv)
+[`results/walk_forward/walk_forward_stocks.csv`](../results/walk_forward/walk_forward_stocks.csv)
+(the 3 daily rule_based candidates), [`results/walk_forward/walk_forward_stocks_5m_best.csv`](../results/walk_forward/walk_forward_stocks_5m_best.csv)
 (the winning 5-minute dip=-1.5%/exit=2.0% candidate, charted per-ticker below),
-and [`results/walk_forward_stocks_ml_filtered.csv`](../results/walk_forward_stocks_ml_filtered.csv).
+and [`results/walk_forward/walk_forward_stocks_ml_filtered.csv`](../results/walk_forward/walk_forward_stocks_ml_filtered.csv).
 Every grid search behind these candidates is committed too:
-[`results/param_sweep_stocks.csv`](../results/param_sweep_stocks.csv),
-[`results/param_sweep_stocks_daily_stop.csv`](../results/param_sweep_stocks_daily_stop.csv),
-[`results/param_sweep_stocks_daily_ml_filtered.csv`](../results/param_sweep_stocks_daily_ml_filtered.csv),
-[`results/param_sweep_stocks_5m.csv`](../results/param_sweep_stocks_5m.csv),
-[`results/param_sweep_stocks_5m_stop.csv`](../results/param_sweep_stocks_5m_stop.csv),
-[`results/param_sweep_stocks_5m_ml_filtered.csv`](../results/param_sweep_stocks_5m_ml_filtered.csv).
+[`results/param_sweep/param_sweep_stocks.csv`](../results/param_sweep/param_sweep_stocks.csv),
+[`results/param_sweep/param_sweep_stocks_daily_stop.csv`](../results/param_sweep/param_sweep_stocks_daily_stop.csv),
+[`results/param_sweep/param_sweep_stocks_daily_ml_filtered.csv`](../results/param_sweep/param_sweep_stocks_daily_ml_filtered.csv),
+[`results/param_sweep/param_sweep_stocks_5m.csv`](../results/param_sweep/param_sweep_stocks_5m.csv),
+[`results/param_sweep/param_sweep_stocks_5m_stop.csv`](../results/param_sweep/param_sweep_stocks_5m_stop.csv),
+[`results/param_sweep/param_sweep_stocks_5m_ml_filtered.csv`](../results/param_sweep/param_sweep_stocks_5m_ml_filtered.csv).
 
-<img src="../results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant. The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black with a star and an annotation calling out its clearly lower loss rate (about 17.5%) versus every other candidate (25-32%), while its return still sits mid-pack." width="720">
+<img src="../results/walk_forward/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant. The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black with a star and an annotation calling out its clearly lower loss rate (about 17.5%) versus every other candidate (25-32%), while its return still sits mid-pack." width="720">
 
-<img src="../results/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
+<img src="../results/walk_forward/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
 
-<img src="../results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered - average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points sit in a visibly lower return band than the plain-rule points. A note box clarifies the overall best-of-8 candidate actually came from the 5-minute search in the next chart, not from this daily one." width="720">
+<img src="../results/param_sweep/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered - average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points sit in a visibly lower return band than the plain-rule points. A note box clarifies the overall best-of-8 candidate actually came from the 5-minute search in the next chart, not from this daily one." width="720">
 
-<img src="../results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered. All three variants are intermixed in a loose cloud with no variant clearly separated from the others, except one circled and labeled point - dip=-1.5% exit=2.0%, plain rule-based - marked as the best walk-forward result of all 8 candidates tested." width="720">
+<img src="../results/param_sweep/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches - plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered. All three variants are intermixed in a loose cloud with no variant clearly separated from the others, except one circled and labeled point - dip=-1.5% exit=2.0%, plain rule-based - marked as the best walk-forward result of all 8 candidates tested." width="720">
 
 **Important caveat on the two grid-search overview charts above**: the
 three daily grids were NOT all tested over the same held-out period, and

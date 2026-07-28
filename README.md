@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.9
+# InvestingBot — Version Richards 0.9.10
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 81 passing](https://img.shields.io/badge/tests-81%20passing-4c9a2a)](tests/)
@@ -124,13 +124,13 @@ the code isn't broken; it does not mean the strategy is good.
   sits in two specific calendar windows where several coins moved
   together (more likely a broad market swing than nine independent
   edges). **Real evidence, committed and checkable:**
-  [`results/param_sweep.csv`](results/param_sweep.csv) (the grid search)
-  and [`results/walk_forward.csv`](results/walk_forward.csv) (its
+  [`results/param_sweep/param_sweep.csv`](results/param_sweep/param_sweep.csv) (the grid search)
+  and [`results/walk_forward/walk_forward.csv`](results/walk_forward/walk_forward.csv) (its
   per-window validation). Full writeup: `CHANGELOG.md` 0.7.0.
 
-  <img src="results/param_sweep_overview.png" alt="Scatter plot of the 90-combination grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. Return climbs sharply as trade count drops, and the chosen combo (circled) sits at the top-left with the fewest trades and the best return." width="720">
+  <img src="results/param_sweep/param_sweep_overview.png" alt="Scatter plot of the 90-combination grid search: average trades per ticker on the x-axis, average return on the y-axis, colored by dip threshold. Return climbs sharply as trade count drops, and the chosen combo (circled) sits at the top-left with the fewest trades and the best return." width="720">
 
-  <img src="results/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
+  <img src="results/walk_forward/walk_forward_winner.png" alt="Nine small-multiple bar charts, one per coin, showing the chosen combo's return in each of 6 sequential real-data windows from August 2025 to July 2026. Most windows are small positive or flat bars; a handful are large positive spikes concentrated in the same two calendar windows across several coins; a few are small red losses." width="720">
 
 - **Stocks: `rule_based`, 5-minute bars, dip=-1.5% / exit=2.0% - the
   best of 8 candidates walk-forward tested.** Its loss rate (**17.5%**
@@ -143,13 +143,13 @@ the code isn't broken; it does not mean the strategy is good.
   **Full candidate-by-candidate breakdown, every command used:**
   `docs/RESEARCH.md`.
 
-  <img src="results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant (plain rule, rule plus stop-loss, ML-filtered). The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black and marked with a star, with an annotation pointing out its clearly lower loss rate (about 17.5%) compared to every other candidate (25-32%), while its return sits mid-pack." width="720">
+  <img src="results/walk_forward/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant (plain rule, rule plus stop-loss, ML-filtered). The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black and marked with a star, with an annotation pointing out its clearly lower loss rate (about 17.5%) compared to every other candidate (25-32%), while its return sits mid-pack." width="720">
 
-  <img src="results/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
+  <img src="results/walk_forward/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
 
-  <img src="results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered), average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points (triangles) sit in a visibly lower return band than the plain-rule points (circles and squares), which cluster together around 20-25 percent. A note box explains that the overall best-of-8 candidate actually came from the 5-minute search shown in the next chart, not from this daily one." width="720">
+  <img src="results/param_sweep/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered), average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points (triangles) sit in a visibly lower return band than the plain-rule points (circles and squares), which cluster together around 20-25 percent. A note box explains that the overall best-of-8 candidate actually came from the 5-minute search shown in the next chart, not from this daily one." width="720">
 
-  <img src="results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
+  <img src="results/param_sweep/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
 
 - **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
   is committed automatically, viewable directly on github.com: one
@@ -284,7 +284,9 @@ InvestingBot/
 ├── docs/                         # Beginner guide, automation setup, risk controls, research tools
 ├── logs/                         # Generated: trade_log_{crypto,stocks}.csv, equity_log_{crypto,stocks}.csv, retrain_log.csv
 ├── models/                       # Generated: the saved stock_model.pkl and its metadata
-├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv, walk_forward.csv, and their chart renders
+├── results/                      # Generated: trade_dashboard.png (the one to check first), equity_curve.png
+│   ├── param_sweep/               #   all optimize.py grid-search output (CSVs + scatter charts)
+│   └── walk_forward/              #   all walk_forward.py validation output (CSVs + candidate charts)
 ├── CHANGELOG.md                  # Full version history
 └── README.md                     # This file
 ```

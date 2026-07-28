@@ -166,10 +166,10 @@ def main():
                               "decline instead of actually protecting capital - see --stop-loss-values "
                               "in optimize.py for the real example that motivated this. Omit for no "
                               "cooldown (0 bars).")
-    parser.add_argument("--out", default="results/walk_forward.csv",
+    parser.add_argument("--out", default="results/walk_forward/walk_forward.csv",
                          help="every window's result gets written here (one row per ticker per window, "
                               "including skipped ones) - a durable, committable record of a validation "
-                              "run, the same way optimize.py saves results/param_sweep.csv")
+                              "run, the same way optimize.py saves results/param_sweep/param_sweep.csv")
     args = parser.parse_args()
 
     # Populate ALPACA_API_KEY / ALPACA_SECRET_KEY from .env, if present -

@@ -224,7 +224,7 @@ and the same real-data validation improved to 49 of 54 non-negative
 results - see `CHANGELOG.md` 0.7.0 and `docs/RESEARCH.md` for the full
 evidence (both the `optimize.py` grid search and the `walk_forward.py`
 validation that found this combo are committed as
-`results/param_sweep.csv` and `results/walk_forward.csv`, not just
+`results/param_sweep/param_sweep.csv` and `results/walk_forward/walk_forward.csv`, not just
 described). I re-run that search periodically as more real trade history
 accumulates, since "best on the data tested" isn't a permanent property.
 

@@ -17,6 +17,21 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.10 - 2026-07-28
+
+- **Trimmed the README's "Current live status" section** after feedback
+  that it had become mostly history, not status: removed the QQQ
+  incident writeup, the second stock incident writeup, the
+  post-incident hardening writeup, and a stale 2026-07-27 results
+  snapshot - all of it was already recorded in this changelog (0.8.0,
+  0.9.5, 0.9.6, 0.9.8), just duplicated at length in the README too. The
+  section now covers only what's actually true right now: which
+  workflows are running, how they're triggered, the crypto/stock
+  comparison table, what the test suite does and doesn't prove, and the
+  evergreen strategy-validation summaries (with their charts) that
+  explain why the current configuration was chosen - not the blow-by-
+  blow story of how it got there.
+
 ## Version Richards 0.9.9 - 2026-07-28
 
 - **Split crypto and stock logs into separate files entirely** -
@@ -232,7 +247,7 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
 
 - Added a per-ticker small-multiples bar chart for the best-of-8 stock
   candidate (`rule_based`, 5-minute bars, `dip=-1.5% exit=2.0%`):
-  `results/walk_forward_stocks_5m_best_candidate.png`, one panel per
+  `results/walk_forward/walk_forward_stocks_5m_best_candidate.png`, one panel per
   ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS) showing its return
   in each of the 7 walk-forward windows, matching the style already used
   for the daily candidate chart. Previously the winning candidate only
@@ -240,7 +255,7 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   its actual per-ticker behavior visible, including which tickers never
   traded (SPY, KO - mostly gray) and which one is the clear weak point
   (DIS - 4 of 7 windows negative). Its raw per-window data is newly
-  committed as `results/walk_forward_stocks_5m_best.csv`, cross-checked
+  committed as `results/walk_forward/walk_forward_stocks_5m_best.csv`, cross-checked
   against the already-committed summary row (avg return and losing-window
   count both matched before anything was written).
 - Embedded this new chart directly in the README (immediately after the
@@ -262,9 +277,9 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   just a different one. Still explicitly **not** a proven edge - one
   year of 5-minute data and 8.6 average trades/ticker is a thin sample -
   and stocks remain paused either way.
-- `results/walk_forward_stocks_summary.png`,
-  `results/param_sweep_overview_stocks_5m_all.png`, and
-  `results/param_sweep_overview_stocks_daily_all.png` regenerated to
+- `results/walk_forward/walk_forward_stocks_summary.png`,
+  `results/param_sweep/param_sweep_overview_stocks_5m_all.png`, and
+  `results/param_sweep/param_sweep_overview_stocks_daily_all.png` regenerated to
   visually mark this candidate (outlined/circled with an annotation)
   instead of showing all 8 with no distinction. README's "Current live
   status" table now has a dedicated row for it.
@@ -324,11 +339,11 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   `walk_forward.py` eventually found something worth trusting. Stocks
   remain paused; nothing here resumes live stock trading on its own.
 - Added 3 new committed charts summarizing the entire search:
-  [`results/walk_forward_stocks_summary.png`](results/walk_forward_stocks_summary.png)
+  [`results/walk_forward/walk_forward_stocks_summary.png`](results/walk_forward/walk_forward_stocks_summary.png)
   (all 8 candidates' return/consistency side by side),
-  [`results/param_sweep_overview_stocks_daily_all.png`](results/param_sweep_overview_stocks_daily_all.png)
+  [`results/param_sweep/param_sweep_overview_stocks_daily_all.png`](results/param_sweep/param_sweep_overview_stocks_daily_all.png)
   and
-  [`results/param_sweep_overview_stocks_5m_all.png`](results/param_sweep_overview_stocks_5m_all.png)
+  [`results/param_sweep/param_sweep_overview_stocks_5m_all.png`](results/param_sweep/param_sweep_overview_stocks_5m_all.png)
   (all three daily/5-minute grid-search variants combined). Every
   underlying grid and walk-forward run behind these charts is also
   committed as CSV - see `docs/RESEARCH.md`'s "Final tally" section for
@@ -398,12 +413,12 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
 
 ## Version Richards 0.8.6 - 2026-07-27
 
-- Fixed: `results/walk_forward_winner.png` (the crypto walk-forward chart)
+- Fixed: `results/walk_forward/walk_forward_winner.png` (the crypto walk-forward chart)
   labeled each bar by its window's **start** date, so the final window
   (2026-05-28 -> 2026-07-27) only ever showed "May '26" - June and July
   2026 never appeared as labels even though the chart's own title
   correctly states the data runs through July 2026, and the underlying
-  `results/walk_forward.csv` data was always correct. Regenerated with
+  `results/walk_forward/walk_forward.csv` data was always correct. Regenerated with
   window **end** dates as labels instead; no data changed, cosmetic only.
 - Added: `stop_cooldown_bars` to `rule_based_dip_buy()`
   (`src/strategies.py`) - real walk-forward evidence found the new
@@ -466,10 +481,10 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   is a real `walk_forward.py --strategy rule_based --interval 5m` run.
 - Added: real committed stock validation evidence, gathered the same way
   the 0.7.0 crypto combo was -
-  [`results/param_sweep_stocks.csv`](results/param_sweep_stocks.csv) (top
+  [`results/param_sweep/param_sweep_stocks.csv`](results/param_sweep/param_sweep_stocks.csv) (top
   15 of an 18-combo `optimize.py --strategy rule_based` grid search,
   2022-01-01 to 2026-07-27 held out) and
-  [`results/walk_forward_stocks.csv`](results/walk_forward_stocks.csv)
+  [`results/walk_forward/walk_forward_stocks.csv`](results/walk_forward/walk_forward_stocks.csv)
   (three candidate combos - dip=-3%/exit=1%, dip=-6%/exit=1%,
   dip=-8%/exit=1% - each walk-forward validated across the same 9
   tickers and 7 sequential windows spanning 2015-01-01 to 2026-07-27).
@@ -480,11 +495,11 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   years), and the middle ground (-6%/1%) split the difference on both
   return and consistency rather than clearly beating either extreme. See
   `docs/RESEARCH.md` for the full comparison. Charts mirroring
-  `results/param_sweep_overview.png` and `results/walk_forward_winner.png`
+  `results/param_sweep/param_sweep_overview.png` and `results/walk_forward/walk_forward_winner.png`
   are committed too:
-  [`results/param_sweep_overview_stocks.png`](results/param_sweep_overview_stocks.png)
+  [`results/param_sweep/param_sweep_overview_stocks.png`](results/param_sweep/param_sweep_overview_stocks.png)
   and
-  [`results/walk_forward_stocks_candidate.png`](results/walk_forward_stocks_candidate.png)
+  [`results/walk_forward/walk_forward_stocks_candidate.png`](results/walk_forward/walk_forward_stocks_candidate.png)
   (the -6%/1% candidate, chosen for the chart only because it was the
   most recently tested, not because it won).
 - Stocks remain paused; none of this resumes stock automation on its own.
@@ -640,10 +655,10 @@ touched since 0.6.0.
 
 ## Version Richards 0.7.1 - 2026-07-27
 
-- Added: `results/param_sweep_overview.png` and
-  `results/walk_forward_winner.png` - rendered charts of the 0.7.0
-  evidence CSVs, generated straight from `results/param_sweep.csv` and
-  `results/walk_forward.csv` (not hand-edited), embedded in README's
+- Added: `results/param_sweep/param_sweep_overview.png` and
+  `results/walk_forward/walk_forward_winner.png` - rendered charts of the 0.7.0
+  evidence CSVs, generated straight from `results/param_sweep/param_sweep.csv` and
+  `results/walk_forward/walk_forward.csv` (not hand-edited), embedded in README's
   "Current live status" and `docs/RESEARCH.md`'s worked example. The
   scatter plot makes the "trading less often did better" pattern visible
   at a glance; the small-multiples grid makes clear where the 0.7.0
@@ -671,7 +686,7 @@ touched since 0.6.0.
   also widened (1%/5% vs 1%/3%) to give a genuine 4%+ dip room to bounce
   without an early stop-out. `--max-notional` ($2,000) and
   `--daily-loss-limit` (5%) are unchanged.
-- Added: `results/param_sweep.csv` - the full 90-combination grid search
+- Added: `results/param_sweep/param_sweep.csv` - the full 90-combination grid search
   (`optimize.py`, real Alpaca 5-minute data, 2025-08-01 to 2026-07-27)
   that surfaced this combo as the best average-return result, with its
   closest neighbors (same dip/profit, different stop) landing within a
@@ -679,7 +694,7 @@ touched since 0.6.0.
   check `docs/RESEARCH.md` describes.
   `worst_ticker_return` on the top two rows is **positive** - every one
   of the 9 coins was profitable, not just the average.
-- Added: `results/walk_forward.csv` - the walk-forward validation of
+- Added: `results/walk_forward/walk_forward.csv` - the walk-forward validation of
   this specific combo (`walk_forward.py`, same real data, split into 6
   sequential ~2-month windows). 49 of 54 ticker/window results were
   non-negative (vs. 1 of 54 for the old combo) - a real, large
@@ -694,8 +709,8 @@ touched since 0.6.0.
   edge" - see README's "Current live status" for the same caveat in
   context.
 - Added: `walk_forward.py` now writes its own results to
-  `results/walk_forward.csv` (`--out` to change the path), matching
-  `optimize.py`'s existing `results/param_sweep.csv` output - every
+  `results/walk_forward/walk_forward.csv` (`--out` to change the path), matching
+  `optimize.py`'s existing `results/param_sweep/param_sweep.csv` output - every
   future validation run is now a durable, committable record instead of
   console output that scrolls away.
 
