@@ -17,6 +17,79 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.6 - 2026-07-28
+
+- **Corrected the 2026-07-28 incident writeup: 3 tickers, not 2.**
+  `logs/trade_log.csv` at the time showed QQQ, CAT, and DIS all bought
+  at ~$11,087 each, not 2 tickers as first assumed - corrected in
+  README.md and here.
+- **Disabled `retrain-stock-model.yml`'s native GitHub schedule too**
+  (`workflow_dispatch` only now), same reasoning as `paper-trade-
+  stocks.yml` in 0.9.5 - `ml_filtered` isn't the live strategy right
+  now, so there's no reason for this to run unattended either.
+- **Archived the incident-tainted trade log.** `logs/trade_log.csv`
+  (the 3 erroneous `ml_filtered` BUY rows) moved to
+  `logs/trade_log_archive_pre_2026-07-28.csv`, `logs/trade_log.csv`
+  restarted fresh with just its header - same precedent as the
+  2026-07-25/07-27 rewrites. `logs/equity_log.csv` deliberately NOT
+  archived (continuous truth, same reasoning as before). Regenerated
+  `results/trade_dashboard.png` against both the archived and fresh
+  logs before committing either, same verification as the earlier
+  rewrites.
+- **Fixed the intraday-stock annualization bug** flagged by an
+  independent technical review of this repo: `main.py`/`optimize.py`/
+  `walk_forward.py` previously used a 24/7 bars-per-year count
+  (`PERIODS_PER_YEAR_24_7`) for ANY intraday interval regardless of
+  asset class - correct for crypto (trades around the clock), wrong for
+  stocks (regular market hours only, ~6.5 hours/day). Total return and
+  max drawdown were never affected by this - only annualized return,
+  annualized volatility, and Sharpe - and the 8-candidate stock
+  comparison in 0.9.0/0.9.3 was based on total return and loss-rate, not
+  Sharpe, so that conclusion stands unchanged. Added `src/data.py`'s
+  `periods_per_year(interval, is_crypto)`, computed per-ticker (via
+  `resolve_symbol().is_crypto`) everywhere a backtest is scored, so a
+  single script run can never silently misjudge one asset class using
+  the other's calendar. 3 new tests in `tests/test_data.py`.
+- **Added a CI workflow** (`.github/workflows/ci.yml`): runs the full
+  test suite on every push and PR. Previously this repo's only GitHub
+  Actions workflows were operational (trading/retrain/dashboard) - a
+  broken test could reach the default branch with nothing catching it.
+  Deliberately scoped to just tests for now, not lint/type-check/
+  dependency-audit - those need their own pass to see what they'd
+  actually turn up on a codebase that's never had them, not to be
+  bundled in blind.
+- **Pinned all 5 GitHub Actions workflows' `actions/checkout` and
+  `actions/setup-python` to full commit SHAs** (verified against the
+  real upstream tags via `git ls-remote` - `v4` → `v4.4.0`
+  `11d5960a326750d5838078e36cf38b85af677262`, `v5` → `v5.6.0`
+  `a26af69be951a213d495a4c3e4e4022e16d87065`) instead of movable version
+  tags, per GitHub's own secure-use guidance - a moving tag can be
+  repointed by the action's maintainer (or, worse, an attacker who
+  compromises their account) to different code without this repo
+  changing a single line.
+- **Added a model-file integrity check** to `src/model_store.py`:
+  `save_model()` now records a SHA256 hash of the model file in its
+  metadata sidecar; `load_model()` recomputes and compares it before
+  calling `joblib.load()`, refusing to load (raising `ValueError`) on a
+  mismatch. `joblib.load()` can execute arbitrary code for a tampered or
+  corrupted file, and this one is written by an automation workflow then
+  trusted unconditionally by live trading code later - this closes that
+  gap for any file saved from now on. Models saved before this check
+  existed (no recorded hash) still load, with a warning, since there's
+  nothing to verify them against. 5 new tests in
+  `tests/test_model_store.py` (previously zero coverage for this file).
+- These fixes came from a second-opinion technical review of this
+  repository (an independent LLM-generated assessment) - agreed with:
+  the annualization bug, missing CI, unpinned Actions, and the
+  `joblib.load()` concern, all verified against the actual code before
+  fixing, not taken on faith. Deliberately NOT done, as disproportionate
+  for a solo paper-trading research project: migrating logs off Git to
+  a real database, signed/attested model artifacts, and a full
+  microservices-style research/execution/reporting split. Also
+  deliberately no `LICENSE` file added - the account owner prefers the
+  default "all rights reserved" protection that gives over an open
+  license.
+
 ## Version Richards 0.9.5 - 2026-07-28
 
 - **Fixed a second live stock incident.** Despite the README/CHANGELOG

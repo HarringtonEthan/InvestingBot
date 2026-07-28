@@ -37,10 +37,15 @@ import pandas as pd
 
 # The backtest engine that turns a position series into an equity curve.
 from src.backtest import run_backtest
-# Loads real (or synthetic fallback) price data; also has the table of how
-# many bars occur per year at each intraday interval, reused below so
-# annualized stats scale correctly for non-daily bars.
-from src.data import PERIODS_PER_YEAR_24_7, get_price_data
+# Loads real (or synthetic fallback) price data; periods_per_year() gives
+# the bars-per-year count reused below so annualized stats scale
+# correctly for non-daily bars.
+from src.data import get_price_data, periods_per_year
+# Tells crypto tickers (e.g. BTC-USD) apart from stocks/ETFs - this
+# module accepts both (it's used for ad hoc crypto backtests too, e.g.
+# docs/AUTOMATION.md's "python main.py --ticker BTC-USD --interval 1h"),
+# even though it always fetches through Yahoo rather than Alpaca.
+from src.symbols import resolve_symbol
 # Computes technical indicator columns from raw price data.
 from src.features import add_features
 # Trains the ML dip-filter model.
@@ -67,10 +72,12 @@ def run_for_ticker(ticker: str, args):
     print(f"Rows: {len(raw)}  Range: {raw.index.min().date()} -> {raw.index.max().date()}\n")
 
     # How many bars occur per year at this --interval, so annualized
-    # return/vol/Sharpe are scaled correctly below - 252 (standard US
-    # trading days) for daily bars, or the 24/7 bars-per-year figure for
-    # anything intraday (matches how crypto actually trades around the clock).
-    periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
+    # return/vol/Sharpe are scaled correctly below. Crypto trades 24/7;
+    # stocks/ETFs don't - previously this used the 24/7 count for any
+    # intraday interval regardless of ticker, overstating annualized
+    # return/vol/Sharpe for intraday stock backtests (total return and
+    # drawdown were never affected, only the annualized figures).
+    ppy = periods_per_year(args.interval, is_crypto=resolve_symbol(ticker).is_crypto)
 
     # Add all the technical indicator columns (SMA, RSI, etc.) used by
     # both the rule-based strategies and the ML model.
@@ -123,7 +130,7 @@ def run_for_ticker(ticker: str, args):
     for name, position in strategies.items():
         # Turn this strategy's position series into an actual simulated
         # equity curve and performance stats.
-        result = run_backtest(test_df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
+        result = run_backtest(test_df["Close"], position, cost_bps=args.cost_bps, periods_per_year=ppy)
         results[name] = result
         print(
             f"{name:<28}{result.total_return:>11.1%} {result.annualized_return:>11.1%} "

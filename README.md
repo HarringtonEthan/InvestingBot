@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.5
+# InvestingBot — Version Richards 0.9.6
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 71 passing](https://img.shields.io/badge/tests-71%20passing-4c9a2a)](tests/)
+[![Tests: 79 passing](https://img.shields.io/badge/tests-79%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -74,11 +74,13 @@ actually running from workflow files six months from now.
 |---|---|
 | Crypto automation | Running (paper), every 5 min |
 | Stock automation | **Paused** (2026-07-28 incident - see below); `paper-trade-stocks.yml` has no GitHub-side auto-trigger at all now |
-| Unit tests | 71 passing (`pytest tests/`) |
+| Stock model retraining | **Off on purpose** - `retrain-stock-model.yml` has no GitHub-side auto-trigger either; `ml_filtered` isn't the live strategy right now |
+| Unit tests | 79 passing (`pytest tests/`) |
+| CI | Runs the test suite on every push/PR (`.github/workflows/ci.yml`) |
 | Real-money mode | Disabled (2 independent locks - see `docs/RISK.md`) |
 | Demonstrated edge | No |
 | Live stock config (wired in, not yet running) | `rule_based`, 5m, dip=-1.5%/exit=2.0% - the best-of-8 candidate, still not a proven edge |
-| Closed live trades (current config) | 0 - archived 3 prior trades, see below |
+| Closed live trades (current config) | 0 - archived trades from both prior incidents, see below |
 | Max crypto purchase (`--max-notional`) | $2,000 |
 | Daily loss circuit breaker (`--daily-loss-limit`) | 5% |
 
@@ -161,6 +163,17 @@ This is a snapshot and will be stale by the time you read it - check
   alone could backfire - SPY's 2019-2021 window went from -3.2% to
   -27.4% - fixed by adding the cooldown); `optimize.py`/`walk_forward.py`/
   `train_stock_model.py` all gained `--strategy ml_filtered` support.
+  Every grid and walk-forward run is committed as real evidence in
+  `results/` (see `docs/RESEARCH.md` for the full candidate-by-candidate
+  breakdown and every command used).
+
+  <img src="results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant (plain rule, rule plus stop-loss, ML-filtered). The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black and marked with a star, with an annotation pointing out its clearly lower loss rate (about 17.5%) compared to every other candidate (25-32%), while its return sits mid-pack." width="720">
+
+  <img src="results/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
+
+  <img src="results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered), average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points (triangles) sit in a visibly lower return band than the plain-rule points (circles and squares), which cluster together around 20-25 percent. A note box explains that the overall best-of-8 candidate actually came from the 5-minute search shown in the next chart, not from this daily one." width="720">
+
+  <img src="results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
 - **Second stock incident, 2026-07-28: "paused" wasn't actually
   enforced anywhere.** Confirmed via the GitHub Actions API: the run
   that placed these trades has `event: "schedule"` at
@@ -178,32 +191,47 @@ This is a snapshot and will be stale by the time you read it - check
   still running a stale `ml_filtered --dip-threshold -0.03` command left
   over from before the walk-forward work above, not the validated
   best-of-8 candidate. That combination bought **3 tickers - QQQ, CAT,
-  and DIS, ~$11,087 each** (confirmed from `logs/trade_log.csv`) - on
-  real (paper) money the account owner never intended to be trading.
+  and DIS, ~$11,087 each** (confirmed from the archived
+  `logs/trade_log_archive_pre_2026-07-28.csv`) - on real (paper) money
+  the account owner never intended to be trading.
   **Fixed structurally, not just in documentation:** the workflow's
   `schedule:` trigger has been removed entirely - only
   `workflow_dispatch: {}` remains, so GitHub itself can never fire it
   again; the only way it runs is a deliberate manual click or an
-  external scheduler (cron-job.org) call. The committed strategy args
-  were also corrected to the actual best-of-8 candidate (`rule_based`,
-  `--interval 5m`, `--dip-threshold -0.015 --exit-threshold 0.02`) with
-  `--max-notional 2000 --daily-loss-limit 0.05` added - stocks were
-  missing those caps entirely before (each of the 3 buys above spent an
-  uncapped 1/9th of total cash), the same gap the first (QQQ) incident
-  above already found on the daily config. Stocks remain paused: the
-  account owner has now paused the cron-job.org job for this workflow
-  too, so nothing calls it until a human deliberately re-enables it.
-  Every grid and walk-forward run is committed as real evidence in
-  `results/` (see `docs/RESEARCH.md` for the full candidate-by-candidate
-  breakdown and every command used).
-
-  <img src="results/walk_forward_stocks_summary.png" alt="Two side-by-side bar charts comparing all 8 walk-forward-tested stock candidates: average return per ticker on the left, percent of losing ticker-windows on the right, colored by strategy variant (plain rule, rule plus stop-loss, ML-filtered). The 5-minute dip=-1.5%/exit=2.0% candidate is outlined in black and marked with a star, with an annotation pointing out its clearly lower loss rate (about 17.5%) compared to every other candidate (25-32%), while its return sits mid-pack." width="720">
-
-  <img src="results/walk_forward_stocks_5m_best_candidate.png" alt="Nine small bar charts, one per ticker (SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS), each showing that ticker's return across the same 7 sequential walk-forward windows for the winning candidate (5-minute bars, dip=-1.5%/exit=2.0%). Most tickers show mostly green (positive) windows with only one or two red (negative) ones; SPY and KO show several gray (no-trade) windows; DIS is the clear outlier with 4 of 7 windows negative." width="720">
-
-  <img src="results/param_sweep_overview_stocks_daily_all.png" alt="Scatter plot combining three daily grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered), average trades per ticker on the x-axis, average return on the y-axis. The ML-filtered points (triangles) sit in a visibly lower return band than the plain-rule points (circles and squares), which cluster together around 20-25 percent. A note box explains that the overall best-of-8 candidate actually came from the 5-minute search shown in the next chart, not from this daily one." width="720">
-
-  <img src="results/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
+  external scheduler (cron-job.org) call. `retrain-stock-model.yml`'s
+  native schedule was removed too, on the same reasoning, since
+  `ml_filtered` isn't the live strategy right now. The committed
+  strategy args were also corrected to the actual best-of-8 candidate
+  (`rule_based`, `--interval 5m`, `--dip-threshold -0.015
+  --exit-threshold 0.02`) with `--max-notional 2000
+  --daily-loss-limit 0.05` added - stocks were missing those caps
+  entirely before (each of the 3 buys above spent an uncapped 1/9th of
+  total cash), the same gap the first (QQQ) incident above already
+  found on the daily config. Stocks remain paused: the account owner
+  has now paused the cron-job.org job for this workflow too, so nothing
+  calls it until a human deliberately re-enables it. The tainted trade
+  log was archived to `logs/trade_log_archive_pre_2026-07-28.csv` and
+  `logs/trade_log.csv` restarted fresh (`logs/equity_log.csv`
+  deliberately not archived - account equity is a continuous truth,
+  same reasoning as the first incident's archival).
+- **Post-incident hardening, 2026-07-28.** Also fixed while addressing
+  the incident above, from an independent technical review: `main.py`/
+  `optimize.py`/`walk_forward.py` previously scaled annualized
+  return/volatility/Sharpe for ANY intraday interval using a 24/7
+  bars-per-year count (correct for crypto, wrong for stocks - US
+  equities trade ~6.5 regular hours/day, not around the clock). Total
+  return and drawdown were never affected, only the annualized figures -
+  the 8-candidate comparison above was based on total return, so it's
+  unaffected by this. Added `src/data.py`'s `periods_per_year()`,
+  asset-class-aware, used consistently now. Also added: a CI workflow
+  (`.github/workflows/ci.yml`) running the test suite on every push/PR,
+  since none existed before; all 5 workflows' `actions/checkout`/
+  `actions/setup-python` pinned to full commit SHAs instead of movable
+  version tags; and a SHA256 integrity check on the saved ML model file
+  in `src/model_store.py` - `joblib.load()` can execute arbitrary code
+  for a tampered file, and this one is written by automation and trusted
+  by live code later, so `load_model()` now refuses to load a file whose
+  hash doesn't match what was recorded when it was last saved.
 - **Dashboard: five panels, regenerated hourly.** `results/trade_dashboard.png`
   is committed automatically, viewable directly on github.com: one
   whole-account net gain/loss panel, plus cumulative realized P&L and

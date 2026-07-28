@@ -12,7 +12,7 @@ get_stock_bars_range and src.data._fetch_real are monkeypatched.
 
 import pandas as pd
 
-from src.data import get_price_data_smart
+from src.data import get_price_data_smart, periods_per_year
 
 
 def _fake_bars(n=100):
@@ -86,3 +86,24 @@ def test_intraday_stock_falls_back_when_alpaca_returns_too_few_bars(monkeypatch)
     monkeypatch.setattr("src.data._fetch_real", lambda *a, **k: None)
     df, is_synthetic, source = get_price_data_smart("SPY", "2025-01-01", "2025-01-05", interval="5m", seed=1)
     assert source == "synthetic"
+
+
+def test_periods_per_year_intraday_differs_by_asset_class():
+    # Stocks only trade regular market hours, ~252 days/year - crypto
+    # trades around the clock. Reusing crypto's 24/7 count for an
+    # intraday stock bar (the pre-fix behavior) overstated how many bars
+    # occur in a year, inflating annualized return/vol/Sharpe.
+    stock_5m = periods_per_year("5m", is_crypto=False)
+    crypto_5m = periods_per_year("5m", is_crypto=True)
+    assert stock_5m < crypto_5m
+    assert stock_5m == 252 * 78
+
+
+def test_periods_per_year_daily_is_252_regardless_of_asset_class():
+    assert periods_per_year("1d", is_crypto=False) == 252
+    assert periods_per_year("1d", is_crypto=True) == 252
+
+
+def test_periods_per_year_unknown_interval_falls_back_to_252():
+    assert periods_per_year("1w", is_crypto=False) == 252
+    assert periods_per_year("1w", is_crypto=True) == 252

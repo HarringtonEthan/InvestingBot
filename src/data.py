@@ -33,6 +33,38 @@ PERIODS_PER_YEAR_24_7 = {
     "5m": 365 * 24 * 12,
 }
 
+# US equities only trade ~6.5 regular hours/day, ~252 days/year - unlike
+# crypto's 24/7 calendar above. Reusing PERIODS_PER_YEAR_24_7 for an
+# intraday STOCK bar overstates how many bars occur in a year (it assumes
+# a bar exists in every hour of every day, all year), which inflates
+# annualized return/volatility/Sharpe for anything other than "1d" stock
+# backtests - total return and drawdown aren't affected, only the
+# annualized figures. 252 trading days * (6.5 hours or its equivalent in
+# bars) gives each interval's real count.
+PERIODS_PER_YEAR_STOCK_INTRADAY = {
+    "1h": 252 * 7,    # 6.5hr session, rounded up to 7 hourly bars/day
+    "30m": 252 * 13,  # 6.5hr * 2
+    "15m": 252 * 26,  # 6.5hr * 4
+    "5m": 252 * 78,   # 6.5hr * 60 / 5
+}
+
+
+def periods_per_year(interval: str, is_crypto: bool) -> float:
+    """
+    How many bars of size `interval` occur in a year - the scaling factor
+    run_backtest() uses to annualize return/volatility/Sharpe. Daily bars
+    ("1d") use 252 (standard US trading days) regardless of asset class -
+    crypto's daily-bar behavior hasn't been part of this project's actual
+    live/researched strategies, so that case is left as-is rather than
+    guessed at. Anything intraday splits by asset class: crypto uses
+    PERIODS_PER_YEAR_24_7 (it really does trade around the clock);
+    stocks use PERIODS_PER_YEAR_STOCK_INTRADAY (they don't).
+    """
+    if interval == "1d":
+        return 252
+    table = PERIODS_PER_YEAR_24_7 if is_crypto else PERIODS_PER_YEAR_STOCK_INTRADAY
+    return table.get(interval, 252)
+
 
 def get_price_data(
     ticker: str, start: str, end: str, interval: str = "1d", seed: int | None = None

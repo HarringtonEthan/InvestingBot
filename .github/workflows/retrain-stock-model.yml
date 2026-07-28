@@ -1,13 +1,15 @@
 name: Retrain stock ML model
 
 on:
-  # Best-effort only - GitHub's own schedule trigger has been unreliable
-  # in this project (see docs/AUTOMATION.md). Point an
-  # external scheduler (e.g. cron-job.org) at this workflow's
-  # workflow_dispatch endpoint instead, the same way it's already wired
-  # up for the crypto trading workflow.
-  schedule:
-    - cron: "0 10 * * 1"
+  # No native GitHub `schedule:` trigger, on purpose - the live stock
+  # strategy is currently `rule_based` (see paper-trade-stocks.yml), not
+  # `ml_filtered`, so there's no live path consuming a fresh model right
+  # now. Kept deliberately off (workflow_dispatch only) rather than
+  # left on a schedule "just in case" - the 2026-07-28 incident on the
+  # trading workflow was exactly a `schedule:` trigger firing on
+  # something meant to stay inert. Re-add a schedule (or call
+  # workflow_dispatch from cron-job.org) only when ml_filtered is
+  # actually the live strategy again.
   workflow_dispatch: {}
 
 permissions:
@@ -23,9 +25,9 @@ jobs:
     # A hung run has no cutoff otherwise (GitHub's own default is 6 hours).
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
           cache: "pip"

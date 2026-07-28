@@ -55,12 +55,15 @@ from dotenv import load_dotenv
 
 # The backtest engine used to score every window.
 from src.backtest import run_backtest
-# Price data loading (Alpaca-first for crypto, Yahoo otherwise); also
-# the bars-per-year table for intraday intervals, reused so each
+# Price data loading (Alpaca-first for crypto, Yahoo otherwise);
+# periods_per_year() gives the bars-per-year count reused so each
 # window's Sharpe is annualized correctly.
-from src.data import PERIODS_PER_YEAR_24_7, get_price_data_smart
+from src.data import get_price_data_smart, periods_per_year
 # Technical indicator computation.
 from src.features import add_features
+# Tells crypto tickers apart from stocks/ETFs, so bars-per-year scales
+# correctly per ticker (crypto trades 24/7, stocks don't).
+from src.symbols import resolve_symbol
 # The shared "which strategy takes which parameters" dispatch, also used
 # by optimize.py - keeps the two scripts from each maintaining their own
 # copy of this mapping.
@@ -87,13 +90,17 @@ def make_windows(start: str, end: str, n_windows: int) -> list[tuple[str, str]]:
     return [(edges[i].date().isoformat(), edges[i + 1].date().isoformat()) for i in range(n_windows)]
 
 
-def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: str, params: dict, args, periods_per_year: float, model=None, threshold: float | None = None):
+def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: str, params: dict, args, model=None, threshold: float | None = None):
     """
     Runs one ticker's backtest over one window. Returns (BacktestResult,
     source) - source is "alpaca", "yahoo", or "synthetic" (see
     get_price_data_smart()'s docstring) - or None if this window should
     be skipped entirely (no real data, or too few bars to mean anything).
-    `model`/`threshold` are only used for --strategy ml_filtered.
+    `model`/`threshold` are only used for --strategy ml_filtered. Bars-
+    per-year is computed here (not passed in) so each ticker gets the
+    scaling that matches its own asset class - crypto trades 24/7,
+    stocks don't, and a single walk-forward run's --ticker list is
+    always one or the other in practice, but never assumed here.
     """
     raw, is_synthetic, source = get_price_data_smart(ticker, window_start, window_end, interval=args.interval)
     if is_synthetic:
@@ -108,7 +115,8 @@ def evaluate_window(ticker: str, window_start: str, window_end: str, strategy: s
         # that - too short a window to mean anything.
         return None
     position = position_for_params(strategy, df, params, model=model, threshold=threshold)
-    result = run_backtest(df["Close"], position, cost_bps=args.cost_bps, periods_per_year=periods_per_year)
+    ppy = periods_per_year(args.interval, is_crypto=resolve_symbol(ticker).is_crypto)
+    result = run_backtest(df["Close"], position, cost_bps=args.cost_bps, periods_per_year=ppy)
     return result, source
 
 
@@ -197,7 +205,6 @@ def main():
         model, threshold, meta = loaded
         params_desc += f" (model trained {meta.get('trained_at', '?')}, threshold={threshold:.3f})"
 
-    periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
     windows = make_windows(args.start, args.end, args.windows)
 
     print(f"Walk-forward: {args.windows} sequential windows across {args.start} -> {args.end}, "
@@ -217,7 +224,7 @@ def main():
         window_returns = []
         for w_start, w_end in windows:
             label = f"{w_start} -> {w_end}"
-            outcome = evaluate_window(ticker, w_start, w_end, args.strategy, params, args, periods_per_year, model=model, threshold=threshold)
+            outcome = evaluate_window(ticker, w_start, w_end, args.strategy, params, args, model=model, threshold=threshold)
             if outcome is None:
                 print(f"{label:<24}{'SKIPPED (no real data / window too short)':>39}")
                 all_rows.append({

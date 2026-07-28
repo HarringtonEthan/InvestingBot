@@ -1,0 +1,33 @@
+name: CI
+
+# Runs the test suite on every push and PR - previously this repo's only
+# workflows were operational trading/retrain/dashboard jobs, so a broken
+# test could reach main with nothing catching it. This is deliberately
+# scoped to just "does the test suite pass" for now (no lint/type-check/
+# dependency-audit yet) - those can be added later as their own
+# deliberate step, not bundled in here without first knowing what they'd
+# turn up on a codebase that's never been linted before.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # A hung run has no cutoff otherwise (GitHub's own default is 6 hours).
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v

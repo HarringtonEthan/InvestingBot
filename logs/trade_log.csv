@@ -1,7 +1,4 @@
 timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,position_qty_before,avg_entry_price_usd,unrealized_gain_pct,order_placed,notes
-2026-07-27T23:42:28+00:00,PAPER,stock,QQQ,ml_filtered,BUY,691.960022,11087.46,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
-2026-07-27T23:42:33+00:00,PAPER,stock,CAT,ml_filtered,BUY,894.539978,11087.46,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
-2026-07-27T23:42:37+00:00,PAPER,stock,DIS,ml_filtered,BUY,92.830002,11087.46,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-07-28T13:31:05+00:00,PAPER,stock,XOM,rule_based,BUY,154.789993,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-07-28T13:31:09+00:00,PAPER,stock,CAT,rule_based,BUY,873.059998,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-07-28T13:31:13+00:00,PAPER,stock,DIS,rule_based,BUY,96.639999,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."

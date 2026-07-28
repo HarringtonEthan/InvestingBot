@@ -60,11 +60,11 @@ from dotenv import load_dotenv
 
 # The backtest engine used to score every parameter combination.
 from src.backtest import run_backtest
-# Price data loading (Alpaca-first for crypto, Yahoo otherwise); also
-# the bars-per-year table for intraday intervals, reused so the Sharpe
+# Price data loading (Alpaca-first for crypto, Yahoo otherwise);
+# periods_per_year() gives the bars-per-year count reused so the Sharpe
 # column here is scaled correctly for --interval 5m and similar, not
 # silently assuming daily bars.
-from src.data import PERIODS_PER_YEAR_24_7, get_price_data_smart
+from src.data import get_price_data_smart, periods_per_year
 # Technical indicator computation.
 from src.features import add_features
 # The shared "which strategy takes which parameters" dispatch, also used
@@ -75,9 +75,13 @@ from src.strategies import position_for_params
 # ml_filtered - the exact model live_trade.py would use, not a fresh one
 # trained just for this search.
 from src.model_store import load_model
+# Tells crypto tickers apart from stocks/ETFs, so bars-per-year scales
+# correctly per ticker even if a run's --ticker list ever mixed the two
+# (in practice it never does, but the fix is the same either way).
+from src.symbols import resolve_symbol
 
 
-def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float, min_trades: float, periods_per_year: float, model=None, threshold: float | None = None):
+def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float, min_trades: float, interval: str, model=None, threshold: float | None = None):
     """
     Backtests one parameter combination (its shape depends on `strategy`
     - see _position_for()) against every ticker in test_dfs and averages
@@ -86,13 +90,16 @@ def evaluate_combo(strategy: str, test_dfs: dict, params: dict, cost_bps: float,
     docstring on why). Returns None if the combo trades too rarely
     across the whole set to be filtered out by --min-trades before it
     ever reaches the results table. `model`/`threshold` are only used
-    for --strategy ml_filtered - see position_for_params().
+    for --strategy ml_filtered - see position_for_params(). `interval`
+    is used to compute each ticker's own bars-per-year, since crypto and
+    stocks scale differently (see src.data.periods_per_year).
     """
     returns, sharpes, trades = [], [], []
-    for test_df in test_dfs.values():
+    for ticker, test_df in test_dfs.items():
         # Run this one parameter combination against every ticker's data.
         position = position_for_params(strategy, test_df, params, model=model, threshold=threshold)
-        result = run_backtest(test_df["Close"], position, cost_bps=cost_bps, periods_per_year=periods_per_year)
+        ppy = periods_per_year(interval, is_crypto=resolve_symbol(ticker).is_crypto)
+        result = run_backtest(test_df["Close"], position, cost_bps=cost_bps, periods_per_year=ppy)
         returns.append(result.total_return)
         if result.sharpe == result.sharpe:  # skip NaN (zero-trade combos)
             # A NaN never equals itself, so this comparison is a compact
@@ -209,12 +216,6 @@ def main():
         # Every single ticker failed to produce usable data - nothing to sweep.
         raise SystemExit("\nNo usable ticker data - this needs real network access to Yahoo Finance.")
 
-    # How many bars occur per year at this --interval, so the avg_sharpe
-    # column is annualized correctly - 252 for daily bars, or the 24/7
-    # bars-per-year figure for anything intraday (this script mostly runs
-    # against 5-minute crypto data, which is drastically different from 252).
-    periods_per_year = 252 if args.interval == "1d" else PERIODS_PER_YEAR_24_7.get(args.interval, 252)
-
     # Build the actual parameter grid - shape depends on --strategy, since
     # these three strategies don't all take the same parameters.
     model, threshold = None, None
@@ -272,7 +273,7 @@ def main():
     # both be tested for "is not None" and used in the list comprehension
     # without calling evaluate_combo twice.
     rows = [r for params in combos
-            if (r := evaluate_combo(args.strategy, test_dfs, params, args.cost_bps, args.min_trades, periods_per_year, model=model, threshold=threshold)) is not None]
+            if (r := evaluate_combo(args.strategy, test_dfs, params, args.cost_bps, args.min_trades, args.interval, model=model, threshold=threshold)) is not None]
 
     if not rows:
         raise SystemExit("No combination met --min-trades; lower it or widen the parameter ranges.")
