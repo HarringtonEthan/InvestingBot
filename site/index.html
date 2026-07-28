@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ethan's Market Casino — Live Trading Dashboard</title>
+<meta name="description" content="A tongue-in-cheek casino-themed dashboard for a real paper-trading bot - accurate numbers, ridiculous presentation.">
+<link rel="stylesheet" href="assets/styles.css">
+<link rel="stylesheet" href="assets/casino-fx.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B0%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- Purely decorative intro splash - dismisses itself, click to skip early. -->
+<div class="panda-intro" id="panda-intro" aria-hidden="true">
+  <span class="panda-emoji">🐼</span>
+  <span class="kiss-mark">💋</span>
+  <span class="skip-hint">(click to skip)</span>
+</div>
+
+<div class="sparkle-layer" aria-hidden="true"></div>
+
+<header class="marquee-frame">
+  <div class="marquee-lights" aria-hidden="true"></div>
+  <h1 class="neon-title">
+    <span class="neon-flicker">ETHAN'S</span> <span class="neon-flicker neon-gold">MARKET CASINO</span>
+  </h1>
+  <p class="tagline">🎲 A Real Paper-Trading Bot, Dressed Up Like Vegas 🎲</p>
+  <div class="marquee-lights marquee-lights-bottom" aria-hidden="true"></div>
+</header>
+
+<nav class="period-tabs" role="tablist" aria-label="Time period">
+  <button class="tab-btn active" data-period="today" role="tab" aria-selected="true">TODAY</button>
+  <button class="tab-btn" data-period="week" role="tab" aria-selected="false">THIS WEEK</button>
+  <button class="tab-btn" data-period="month" role="tab" aria-selected="false">THIS MONTH</button>
+  <button class="tab-btn" data-period="all_time" role="tab" aria-selected="false">ALL TIME</button>
+</nav>
+
+<main id="app">
+
+  <section class="slot-row" aria-label="Headline numbers">
+    <div class="slot-machine" data-slot="equity">
+      <div class="slot-label">💰 Account Value</div>
+      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    </div>
+    <div class="slot-machine" data-slot="period_pnl">
+      <div class="slot-label">📈 P&amp;L (period)</div>
+      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    </div>
+    <div class="slot-machine" data-slot="pct_return">
+      <div class="slot-label">🎯 % Return</div>
+      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    </div>
+    <div class="slot-machine" data-slot="win_rate">
+      <div class="slot-label">🍀 Win Rate</div>
+      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    </div>
+    <div class="slot-machine" data-slot="num_trades">
+      <div class="slot-label">🎰 Trades</div>
+      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    </div>
+    <div class="slot-machine" data-slot="unrealized">
+      <div class="slot-label">💎 Unrealized</div>
+      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    </div>
+  </section>
+
+  <p class="last-updated" id="last-updated">Last updated: —</p>
+  <p class="methodology-note" id="methodology-note"></p>
+
+  <section class="stats-table-wrap">
+    <h2 class="section-title">🃏 The House Ledger — <span id="period-label">Today</span></h2>
+    <div class="stats-grid" id="stats-grid" aria-live="polite"></div>
+  </section>
+
+  <section class="account-strip" id="account-strip" aria-label="Account cash and buying power">
+    <div class="chip-stat"><span class="chip-icon">💵</span><span class="chip-label">Cash</span><span class="chip-value" id="stat-cash">—</span></div>
+    <div class="chip-stat"><span class="chip-icon">🪙</span><span class="chip-label">Buying Power</span><span class="chip-value" id="stat-buying-power">—</span></div>
+    <div class="chip-stat"><span class="chip-icon">🏦</span><span class="chip-label">Equity</span><span class="chip-value" id="stat-equity">—</span></div>
+  </section>
+
+  <section class="blackjack-table" aria-label="Current open positions">
+    <h2 class="section-title">🎴 The Table — Open Positions</h2>
+    <div class="table-felt">
+      <div class="hand-group">
+        <h3 class="hand-label">Stocks</h3>
+        <div class="hand" id="hand-stocks"></div>
+      </div>
+      <div class="hand-group">
+        <h3 class="hand-label">Crypto</h3>
+        <div class="hand" id="hand-crypto"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="mob-scene" aria-hidden="true">
+    <h2 class="section-title">🎩 The Family — Back Room Lounge</h2>
+    <p class="mob-scene-note">100% decorative. No trading data lives here - the real positions are in the table above.</p>
+    <div id="mob-scene-root"></div>
+  </section>
+
+  <section class="charts-section" aria-label="Charts">
+    <h2 class="section-title">📊 The Odds Board</h2>
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>Equity Curve</h3>
+        <canvas id="chart-equity" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Daily P&amp;L</h3>
+        <canvas id="chart-daily-pnl" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Drawdown</h3>
+        <canvas id="chart-drawdown" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Stocks vs. Crypto (Realized P&amp;L)</h3>
+        <canvas id="chart-asset-class" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Strategy Comparison (Realized P&amp;L)</h3>
+        <canvas id="chart-strategy" height="220"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>Win / Loss Breakdown</h3>
+        <canvas id="chart-winloss" height="220"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <section class="ledger-section" aria-label="Recent trades">
+    <h2 class="section-title">🎡 Roulette Results Board — Recent Trades</h2>
+    <div class="ledger-legend">
+      <span class="badge badge-confirmed">Confirmed Fill</span>
+      <span class="badge badge-unconfirmed">Submitted, Unconfirmed</span>
+      <span class="badge badge-notplaced">Not Placed</span>
+    </div>
+    <div class="table-scroll">
+      <table class="ledger-table" id="ledger-table">
+        <thead>
+          <tr>
+            <th>Time (ET)</th><th>Class</th><th>Ticker</th><th>Strategy</th><th>Side</th>
+            <th>Price</th><th>Qty / Notional</th><th>Realized</th><th>Status</th><th>Notes</th>
+          </tr>
+        </thead>
+        <tbody id="ledger-body"></tbody>
+      </table>
+    </div>
+    <p class="empty-state" id="ledger-empty" hidden>No trades logged yet — the house is waiting.</p>
+  </section>
+
+  <footer class="site-footer">
+    <p>Paper trading only. Not investment advice. Every number on this page comes straight from
+      <code>logs/*.csv</code> and Alpaca's own API — see
+      <a href="https://github.com/HarringtonEthan/InvestingBot" target="_blank" rel="noopener">the source repo</a>
+      for exactly how.</p>
+  </footer>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="assets/dashboard.js"></script>
+<script src="assets/casino-fx.js"></script>
+</body>
+</html>

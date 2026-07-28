@@ -86,6 +86,15 @@ class Broker:
         account = self.client.get_account()
         return float(account.equity)
 
+    def get_buying_power(self) -> float:
+        # How much this account could still spend right now - can exceed
+        # get_cash() if margin is available, though this project never
+        # intentionally trades on margin. Read-only, informational only
+        # (site_data.py surfaces it on the dashboard); nothing in this
+        # project's own order sizing reads from it.
+        account = self.client.get_account()
+        return float(account.buying_power)
+
     def is_market_open(self) -> bool:
         """
         Whether the stock market is open RIGHT NOW, per Alpaca's own

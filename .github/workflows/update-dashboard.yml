@@ -6,24 +6,40 @@ on:
   # external scheduler (e.g. cron-job.org) at this workflow's
   # workflow_dispatch endpoint instead, the same way it's already wired
   # up for the trading/retrain workflows.
+  #
+  # Untouched since before the casino-dashboard website replaced the PNG
+  # dashboard this workflow used to generate: cron-job.org (or a manual
+  # "Run workflow" click) is what actually fires this, exactly as before -
+  # only what the job *does* changed, never what triggers it.
   schedule:
     - cron: "0 * * * *"
   workflow_dispatch: {}
 
 permissions:
-  contents: write
+  contents: read
+  # Needed for the deploy job's actions/deploy-pages step below - this
+  # workflow no longer commits anything to the branch at all (see the
+  # build job's comment on why), so contents: write is gone entirely.
+  pages: write
+  id-token: write
 
 concurrency:
-  group: update-dashboard
+  # A single shared concurrency group across both jobs (Pages deployments
+  # are already serialized by GitHub itself per-environment, but this
+  # keeps a slow build from overlapping a following one the same way the
+  # old PNG-committing version did).
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
     # A hung run has no cutoff otherwise (GitHub's own default is 6 hours).
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
@@ -32,52 +48,51 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Generate dashboard
-        # 99751.68 is the account's real value right after the SECOND
-        # 2026-07-28 manual reset (every open position sold outside the
-        # bot again, this time because the still-in-progress rolling-average
-        # rewrite documented in CHANGELOG.md meant the stock BUYs placed
-        # after the first reset were also built on a stale/incomplete
-        # indicator computation) - not the original $100k funding amount,
-        # and not either of the two earlier anchors (99787.08, 99747.83)
-        # from before this second incident. This is a deliberate choice to
-        # show "P&L since the reset," not "all-time P&L since funding" -
-        # see docs/AUTOMATION.md's baseline explanation for the difference
-        # and why this needs updating again whenever a fresh tracking period
-        # is what should be measured going forward.
-        # --baseline-since matches the exact same reset moment, so panel
-        # 1 only plots the timeline from the reset forward - without it,
-        # the chart would still show the whole day's earlier equity
-        # measured against a baseline that didn't apply to it yet, which
-        # reads as a real swing but isn't one.
-        # --live-positions pulls current open positions from Alpaca
-        # (read-only - never places an order) so the crypto/stock P&L
-        # panels show live unrealized gain/loss too, not just closed trades.
+      - name: Generate dashboard data (JSON)
+        # Replaces the old `python visualize_log.py --baseline ... --live-positions`
+        # PNG step - see CHANGELOG.md for the casino-dashboard-website
+        # rewrite. site_data.py reads the exact same logs/*.csv files
+        # visualize_log.py always did (one source of truth, not a second
+        # copy that could drift) and additionally pulls live positions/
+        # cash/equity/buying-power from Alpaca when --live-positions is
+        # given - read-only, never places an order, same as before.
+        # Unlike the old --baseline flag, nothing here is a hardcoded
+        # dollar amount: every period's starting value is derived from
+        # equity_log.csv itself (see site_data.py's module docstring).
         env:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           # Hardcoded to the paper endpoint (never live), matching the
-          # other workflows - this script only ever reads positions, but
-          # there's no reason to let a stray live-endpoint secret enable that.
+          # other workflows - this script only ever reads account state,
+          # but there's no reason to let a stray live-endpoint secret
+          # enable that.
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python visualize_log.py --baseline 99751.68 --baseline-since 2026-07-28T18:53:05+00:00 --live-positions
+        run: python site_data.py --live-positions --out-dir site/data
 
-      - name: Commit updated dashboard
-        run: |
-          git config user.name "investingbot"
-          git config user.email "investingbot@users.noreply.github.com"
-          [ -f results/trade_dashboard.png ] && git add results/trade_dashboard.png
-          git diff --cached --quiet && exit 0
-          git commit -m "Update trade dashboard $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          # See paper-trade-stocks.yml's "Commit trade log" step for why
-          # this retries instead of failing on the first conflict - a
-          # concurrent trading/retrain workflow commit can win the race
-          # to push first.
-          for i in 1 2 3 4 5; do
-            git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0
-            echo "Push attempt $i failed (likely a concurrent commit from another workflow) - retrying..."
-            git rebase --abort 2>/dev/null || true
-            sleep $((RANDOM % 5 + 1))
-          done
-          echo "::error::Failed to push the updated dashboard after 5 attempts."
-          exit 1
+      - name: Upload Pages artifact
+        # This is the "prevent workflow loops" mechanism the task asked
+        # for: the generated JSON lives only inside this build's
+        # artifact, never committed back to the branch - so this
+        # workflow can never trigger itself (or any push-triggered
+        # workflow) the way committing site/data/*.json every run would.
+        # site/ already holds the static index.html/assets/ checked into
+        # git; this step just adds this run's freshly-generated data/
+        # JSON on top before uploading the whole directory as one artifact.
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

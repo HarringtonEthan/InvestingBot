@@ -343,6 +343,17 @@ the 0.7.0 values - see `CHANGELOG.md` 0.8.0. Both archived files still
 work as `--trade-log` input to `visualize_log.py` if I ever want to look
 back at what a prior model actually did).
 
+**As of `CHANGELOG.md` 0.11.0, `update-dashboard.yml` no longer runs
+`visualize_log.py` automatically** - it runs `site_data.py` and deploys
+the [🎰 Casino Dashboard Website](../README.md#-casino-dashboard-website)
+instead, which is now the live, current source for all of this (data
+definitions, live-update mechanism, local preview, troubleshooting are
+all documented in that README section, not repeated here). Everything
+below this point describes `visualize_log.py`'s PNG output specifically -
+still accurate for anyone running it locally (it's unchanged, just no
+longer wired into automation), kept here as the mechanism's own
+documentation rather than deleted.
+
 **`python visualize_log.py`** turns both files into a five-panel PNG
 (`results/trade_dashboard.png` by default): net account gain/loss (one
 panel, the whole account, crypto and stocks combined - the single
@@ -443,15 +454,13 @@ fresh point on panel 1's timeline (`append_live_equity_point` in
 `visualize_log.py`), so every number on the dashboard describes the
 same instant.
 
-It also runs on a schedule: `.github/workflows/update-dashboard.yml`
-regenerates and commits `results/trade_dashboard.png` roughly hourly
-(via an external scheduler - GitHub's own `schedule:` trigger isn't
-reliable enough on its own here either, same as the trading workflows),
-so `results/trade_dashboard.png` on GitHub stays close to current
-without me needing to run anything locally - just open that file's page
-on github.com. This is deliberately a slower cadence than the 5-minute
-trading workflows: one image commit an hour is a small, bounded cost,
-where committing an image every 5 minutes forever would not be.
+**This used to also run on a schedule** - `update-dashboard.yml`
+regenerated and committed `results/trade_dashboard.png` roughly hourly.
+As of 0.11.0 that workflow runs `site_data.py` and deploys the website
+instead (see the notice above and the README's own section) -
+`results/trade_dashboard.png` is left in the repo as a frozen historical
+artifact and nothing updates it anymore. Running `visualize_log.py`
+locally still produces a fresh one, same as always.
 
 ## Stock automation: rule-based, 5-minute bars
 

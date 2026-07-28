@@ -73,3 +73,9 @@ def test_get_position_avg_entry_price_raises_on_real_error():
     broker.client.get_open_position.side_effect = make_server_error()
     with pytest.raises(Exception):
         broker.get_position_avg_entry_price("DOGE/USD")
+
+
+def test_get_buying_power_returns_account_field():
+    broker = _broker_with_mock_client()
+    broker.client.get_account.return_value = SimpleNamespace(buying_power="12345.67")
+    assert broker.get_buying_power() == 12345.67

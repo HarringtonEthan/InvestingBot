@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.10.1
+# InvestingBot — Version Richards 0.11.0
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 108 passing](https://img.shields.io/badge/tests-108%20passing-4c9a2a)](tests/)
+[![Tests: 140 passing](https://img.shields.io/badge/tests-140%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -34,6 +34,7 @@ paper (fake-money) brokerage account.
 
 - [Documentation](#documentation)
 - [Current live status](#current-live-status-as-of-this-writing)
+- [🎰 Casino Dashboard Website](#-casino-dashboard-website)
 - [Setup](#setup)
 - [Architecture](#architecture)
 - [Security: who can see what, and who can change what](#security-who-can-see-what-and-who-can-change-what)
@@ -69,10 +70,11 @@ architecture. Deeper material lives in `docs/`:
 
 I keep this section updated so I don't have to reverse engineer what's
 actually running from workflow files six months from now. This is a
-snapshot and will be stale by the time you read it - check
-`results/trade_dashboard.png` for the live number. **This section only
-covers what's true right now** - every bug, incident, and past decision
-that shaped this configuration is in `CHANGELOG.md`, not repeated here.
+snapshot and will be stale by the time you read it - check the
+[🎰 Casino Dashboard Website](#-casino-dashboard-website) for the live
+number. **This section only covers what's true right now** - every bug,
+incident, and past decision that shaped this configuration is in
+`CHANGELOG.md`, not repeated here.
 
 **Both crypto and stocks are currently RUNNING** (paper), triggered
 **only** by an external scheduler ([cron-job.org](https://cron-job.org))
@@ -115,14 +117,14 @@ neither one is missing information the other has:
 | **Daily loss circuit breaker** | 5% of that day's starting balance | 5% of that day's starting balance |
 | **Market-hours guard** | N/A - crypto trades 24/7 | Yes - refuses to submit a BUY/SELL unless Alpaca's own market clock confirms the market is open right now |
 | **Demonstrated edge?** | No - "meaningfully de-risked," not proven | No - best-of-8 walk-forward candidate, not proven |
-| **Current positions/trades** | See `results/trade_dashboard.png` | See `results/trade_dashboard.png` |
+| **Current positions/trades** | See the [Casino Dashboard Website](#-casino-dashboard-website) | See the [Casino Dashboard Website](#-casino-dashboard-website) |
 
 Both share: **real-money mode disabled** (2 independent locks - see
 `docs/RISK.md`), **stock model retraining off** (`ml_filtered` isn't
 live right now, so there's nothing to retrain for), and **CI running
 the test suite on every push/PR** (`.github/workflows/ci.yml`).
 
-**What "108 tests passing" (`pytest tests/`) actually means:** these are
+**What "140 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
@@ -168,26 +170,143 @@ the code isn't broken; it does not mean the strategy is good.
 
   <img src="results/param_sweep/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
 
-- **Dashboard: seven panels, regenerated hourly.** `results/trade_dashboard.png`
-  is committed automatically, viewable directly on github.com: one
-  whole-account net gain/loss panel, plus cumulative realized P&L and
-  win/loss-per-ticker each split into separate crypto/stock panels
-  rather than blended together - two very different strategies sharing
-  one chart said less than two side by side do. The two P&L panels also
-  show **live unrealized P&L** for currently-open positions (pulled
-  read-only from Alpaca), so it's clear at a glance whether crypto or
-  stocks is gaining or losing money right now - not just whether their
-  closed trades won historically - and the account-total panel is kept
-  reconciled to the same live snapshot, not a stale cron-logged one. Two
-  more panels show **current open positions per asset class** as a
-  table (symbol, price, qty, market value, unrealized P&L), the same
-  shape Alpaca's own account dashboard shows.
+- **Dashboard: a live website, regenerated hourly.** See
+  [🎰 Casino Dashboard Website](#-casino-dashboard-website) below - the
+  same real numbers a set of `results/trade_dashboard.png` panels used
+  to show (whole-account net gain/loss, realized P&L and win/loss split
+  by asset class, live unrealized P&L, current open positions), now a
+  deployed page with Today/This Week/This Month/All-Time views instead
+  of one static image. `results/trade_dashboard.png` is no longer
+  updated (see CHANGELOG.md 0.11.0) - `visualize_log.py` still exists
+  for anyone who wants that PNG output locally.
 
 **What's next:** no further changes are planned right now. Both
 configurations above are "meaningfully de-risked" candidates, not
 proven ones - the plan is to let them trade (paper money) and
 accumulate enough real closed trades to actually test that, not to tune
 further off a handful of days of live data.
+
+---
+
+## 🎰 Casino Dashboard Website
+
+A tongue-in-cheek casino theme wrapped around real numbers: slot-machine
+reels that land on the actual account value/P&L/win-rate, blackjack-style
+cards for open positions (glowing green/red/gold by unrealized P&L), a
+roulette-styled trade ledger, Chart.js charts, and (because it was
+requested and it was too fun not to build) an ambient "Back Room Lounge"
+of animal mobsters idling at a table, a waiter doing rounds, and a giant
+panda that kisses the screen when the page first loads. See
+`CHANGELOG.md` 0.11.0 for the full rewrite this replaced
+(`results/trade_dashboard.png`, generated by `visualize_log.py`, which is
+still in the repo and still runnable locally, just no longer part of the
+automated pipeline).
+
+**Website URL:** `https://harringtonethan.github.io/InvestingBot/` once
+GitHub Pages is enabled (one-time manual step, see below) - not something
+this repo can guarantee is live without that step having been done in
+this repository's own Settings.
+
+### How the live update works
+
+The exact same scheduled process that used to regenerate
+`results/trade_dashboard.png` now regenerates this site instead -
+**`update-dashboard.yml`'s trigger and schedule are completely
+unchanged** (still fired by cron-job.org hitting its `workflow_dispatch`
+endpoint hourly, still has the same best-effort native `schedule:` as a
+fallback). What changed is only what the job *does*:
+
+1. `site_data.py` reads `logs/*.csv` (the same files `visualize_log.py`
+   always read) and, read-only, pulls current positions/cash/equity/
+   buying power from Alpaca - writing four JSON files into `site/data/`.
+2. The whole `site/` directory (the static `index.html`/`assets/` checked
+   into git, plus this run's freshly-generated `data/*.json`) is uploaded
+   as a **GitHub Pages deployment artifact** and published.
+3. Nothing is ever committed back to the branch for this. That's the
+   deliberate loop-prevention mechanism: the old PNG version needed a
+   git-conflict-retry loop because it committed a file every run; this
+   version has nothing to commit at all, so it can't trigger itself (or
+   any other push-triggered workflow) no matter how often it runs.
+
+The website is a **static site with generated JSON data** - there is no
+server, no database, and no secrets anywhere in `site/`. The browser
+just fetches `data/dashboard.json` etc. directly.
+
+### One-time setup this repo needs (can't be done from a workflow file)
+
+In this repository's **Settings → Pages → Build and deployment**, set
+**Source** to **"GitHub Actions"** (not a branch). Until that's set, the
+`deploy` job in `update-dashboard.yml` will fail even though `build`
+succeeds - that's expected, not a bug, until this one manual toggle is
+flipped once.
+
+### Data definitions (what each period actually measures)
+
+- **Starting/Ending value**: the last known account equity at or before
+  the period's own calendar start, carried forward - *not* a fixed
+  dollar amount. If nothing was logged before that point (e.g. right
+  after an account reset), it falls back to the first value logged
+  *within* the period, and the page says so explicitly rather than
+  presenting it as a true start-of-period balance.
+- **All Time**: starts from the very first row ever logged in
+  `equity_log_crypto.csv`/`equity_log_stocks.csv` - there is no
+  hardcoded baseline anywhere in this pipeline anymore.
+- **Today / This Week / This Month**: calendar boundaries in **US
+  Eastern Time** (midnight ET for today/month, Monday midnight ET for
+  the week) - computed with real IANA timezone rules (`zoneinfo`), so
+  DST transitions are handled correctly, not approximated with a fixed
+  offset. All timestamps in the underlying data stay UTC; ET only
+  enters at the boundary-computation and display-formatting steps.
+- **Number of trades / win rate / best / worst trade**: count only
+  **confirmed-fill SELL executions** (a completed round trip). A
+  submitted-but-unconfirmed order or one that was never placed at all
+  (blocked by the circuit breaker, market-hours guard, etc.) is tracked
+  separately (`num_buys`/`num_unconfirmed`/`num_not_placed` in
+  `dashboard.json`) and never silently counted as a "trade."
+- **Realized P&L**: computed only from confirmed fills, for the same
+  reason - an unconfirmed order's logged price is a decision-time
+  estimate, not a real execution.
+- **Order status** (shown on every ledger row): exactly three
+  categories - `confirmed_fill`, `submitted_unconfirmed`, `not_placed` -
+  see `site_data.py`'s `classify_order_status()` docstring for why this
+  project's logging can't honestly support a richer set (e.g.
+  "canceled"/"rejected") today.
+
+### Local preview instructions
+
+```bash
+# 1. Generate real JSON from whatever's currently in logs/ (add
+#    --live-positions if you have ALPACA_API_KEY/ALPACA_SECRET_KEY set
+#    and want live positions/cash/equity too - read-only, never trades):
+python site_data.py --out-dir site/data
+
+# 2. Serve site/ over plain HTTP - opening index.html directly via
+#    file:// will NOT work, browsers block fetch() of local files under
+#    file:// for CORS reasons:
+python -m http.server 8000 --directory site
+
+# 3. Open http://localhost:8000/index.html
+```
+
+### Troubleshooting
+
+- **Page loads but says "the house data hasn't loaded yet"**: either
+  you skipped step 1 above locally, or (on the deployed site) the
+  workflow hasn't successfully run since Pages was enabled yet - check
+  the `update-dashboard` workflow's Actions history.
+- **Deploy job fails, build job succeeds**: GitHub Pages isn't enabled
+  for GitHub Actions deployment yet - see "One-time setup" above.
+- **Charts are blank but everything else renders fine**: Chart.js loads
+  from a CDN (`cdn.jsdelivr.net`) - an ad blocker, offline preview, or a
+  restrictive network can block it. The rest of the page (slot machines,
+  stats, positions, ledger) doesn't depend on it and will still work.
+- **A number looks stale**: check the "Last updated" line - the site
+  only refreshes when `update-dashboard.yml` actually runs (hourly at
+  best, entirely dependent on cron-job.org firing it - see
+  `docs/AUTOMATION.md` for that scheduler's own reliability notes).
+- **Positions/cash/buying power all show "unavailable"**: the workflow's
+  `--live-positions` Alpaca call failed that run (bad credentials, rate
+  limit, Alpaca outage) - `positions.json`'s `reason` field says why.
 
 ---
 
@@ -295,7 +414,16 @@ InvestingBot/
 ├── walk_forward.py               # Validates a parameter combo across multiple time periods, not just one
 ├── train_stock_model.py          # Trains and saves the stock ML dip-filter model
 ├── live_trade.py                 # Automated live (paper) trading entry point
-├── visualize_log.py              # Builds the trade dashboard PNG from the logs below
+├── site_data.py                  # Reads logs/*.csv (+ optional live Alpaca query) -> site/data/*.json for the website
+├── visualize_log.py              # Builds the (archived, no longer automated) trade dashboard PNG - still runnable locally
+├── site/                         # The casino dashboard website (GitHub Pages) - see README's own section on it
+│   ├── index.html
+│   ├── assets/
+│   │   ├── styles.css             #   real dashboard theme/layout
+│   │   ├── dashboard.js           #   real-data rendering (slots, stats, positions, ledger, charts)
+│   │   ├── casino-fx.css          #   purely decorative: fireworks, mobster lounge, panda intro
+│   │   └── casino-fx.js           #   ^ same - never reads any of the JSON below
+│   └── data/                      # Generated by site_data.py, gitignored - never committed (see update-dashboard.yml)
 ├── src/
 │   ├── data.py                   # Price data loading (Yahoo Finance + synthetic fallback; Alpaca-first for crypto validation)
 │   ├── alpaca_data.py            # Live crypto price data (Alpaca, used instead of Yahoo)
@@ -310,12 +438,12 @@ InvestingBot/
 │   ├── paper-trade-crypto.yml    # Runs live_trade.py for crypto every ~5min (workflow_dispatch only - no GitHub-side schedule)
 │   ├── paper-trade-stocks.yml    # Runs live_trade.py for stocks every ~5min in market hours (workflow_dispatch only - no GitHub-side schedule)
 │   ├── retrain-stock-model.yml   # Runs train_stock_model.py weekly
-│   └── update-dashboard.yml      # Runs visualize_log.py hourly
+│   └── update-dashboard.yml      # Runs site_data.py + deploys site/ to GitHub Pages hourly
 ├── tests/                        # pytest suite - run with `pytest tests/`
 ├── docs/                         # Beginner guide, automation setup, risk controls, research tools
 ├── logs/                         # Generated: trade_log_{crypto,stocks}.csv, equity_log_{crypto,stocks}.csv, retrain_log.csv
 ├── models/                       # Generated: the saved stock_model.pkl and its metadata
-├── results/                      # Generated: trade_dashboard.png (the one to check first), equity_curve.png
+├── results/                      # Generated: trade_dashboard.png (archived/frozen - see site/ for the live one), equity_curve.png
 │   ├── param_sweep/               #   all optimize.py grid-search output (CSVs + scatter charts)
 │   └── walk_forward/              #   all walk_forward.py validation output (CSVs + candidate charts)
 ├── CHANGELOG.md                  # Full version history

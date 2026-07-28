@@ -17,6 +17,116 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.11.0 - 2026-07-28
+
+Replaced the static `results/trade_dashboard.png` (`visualize_log.py`) with
+a real, deployed website - a tongue-in-cheek casino theme wrapped around
+the exact same real numbers, published via GitHub Pages.
+
+- **Added `site_data.py`** - the new script `update-dashboard.yml` runs
+  instead of `visualize_log.py`. Reads the identical `logs/*.csv` files
+  and (optionally, via `--live-positions`) the identical read-only Alpaca
+  account/position query `visualize_log.py` already used - one source of
+  truth, not a second copy that could drift - and writes four JSON files
+  (`dashboard.json`, `positions.json`, `trades.json`, `equity.json`)
+  instead of rendering a PNG.
+  - **Removed the hardcoded `--baseline`/`--baseline-since` dollar
+    amounts entirely.** Every period's starting value is now derived
+    straight from `equity_log.csv`: the last known equity at or before
+    that period's own calendar start (carried forward), falling back to
+    the first value actually logged within the period if nothing earlier
+    exists (e.g. right after an account reset) - flagged explicitly when
+    that fallback happens, never silently presented as a true
+    start-of-period balance. All-time starts from the very first row
+    ever logged. This is the reason update-dashboard.yml no longer needs
+    updating by hand every time the account resets.
+  - **Today/This Week/This Month boundaries are computed in US Eastern
+    Time** (`zoneinfo`, real IANA DST rules, not a fixed offset) and
+    converted to UTC for filtering - all timestamps in the JSON/logs
+    themselves stay UTC throughout.
+  - **`classify_order_status()`** replaces the old "was a fill
+    confirmed" ad-hoc check with three explicit, honestly-scoped
+    categories the trade log can actually support: `confirmed_fill`,
+    `submitted_unconfirmed`, `not_placed` - deliberately not a richer
+    "canceled"/"rejected" set the logging doesn't actually distinguish
+    today. Realized P&L, win/loss, and win-rate are computed only from
+    `confirmed_fill` SELLs; unconfirmed and not-placed rows are tracked
+    separately (`num_unconfirmed`/`num_not_placed`) and never silently
+    folded into a "trade."
+  - **`attribute_position_strategy()`** best-effort labels each open
+    position with whichever strategy's BUY most recently opened it (no
+    later SELL since) - Alpaca's own position data has no concept of
+    "strategy" at all; this is purely this project's own trade-log
+    bookkeeping, and returns `None` ("unknown") rather than guess when
+    the log doesn't clearly support a better answer.
+  - Added `Broker.get_buying_power()` (mirrors `get_cash()`/`get_equity()`)
+    - the dashboard's "buying power" field.
+- **Added `site/`** - the actual website: `index.html`, `assets/styles.css`,
+  `assets/dashboard.js`, loading the JSON above via `fetch()`. Casino
+  theme (neon marquee title, gold/velvet/purple styling, slot-machine
+  reels that land on real numbers, blackjack-style position cards glowing
+  green/red/gold by unrealized P&L, a roulette-styled trade ledger with
+  confirmed/unconfirmed/not-placed status badges) built entirely in
+  plain HTML/CSS/JS - no build step, no backend. Chart.js (CDN) renders
+  the equity curve, daily P&L, drawdown, stocks-vs-crypto, strategy
+  comparison, and win/loss charts. Respects `prefers-reduced-motion`
+  (every animation gated off). Every `fetch()` is wrapped so a missing,
+  empty, or malformed JSON file degrades to a clearly-labeled empty
+  state instead of a broken page - verified directly (real headless-
+  browser render, not just read through): with `dashboard.json` replaced
+  by invalid text and every other data file deleted outright, the page
+  still renders its header and a friendly "hasn't loaded yet" message,
+  zero console errors.
+- **`update-dashboard.yml` rewritten to deploy the website instead of
+  committing a PNG - trigger and schedule completely unchanged**
+  (`workflow_dispatch`/best-effort hourly `schedule:`, still fired the
+  same way by cron-job.org). Now two jobs: `build` (checkout, run
+  `site_data.py`, upload `site/` as a Pages artifact) and `deploy`
+  (`actions/deploy-pages`). The generated JSON is never committed to the
+  branch at all - it only ever exists inside that run's build artifact -
+  which is also the loop-prevention mechanism the old PNG-committing
+  version needed a git-conflict-retry loop for: there's nothing left to
+  commit, so there's nothing that can trigger anything. `contents: write`
+  dropped from this workflow's permissions entirely (replaced with
+  `pages: write`/`id-token: write`); the trading/retrain workflows are
+  untouched and still write their own logs exactly as before.
+  - **One manual, one-time step this change can't do by itself**: the
+    repository's Settings → Pages → Build and deployment → Source must
+    be set to "GitHub Actions" (not a branch) before this workflow's
+    first deploy will succeed - see README.md's "Local preview &
+    hosting setup" section.
+- **`visualize_log.py` archived, not deleted** - no longer called by
+  any workflow, but still present and runnable locally for anyone who
+  wants the old PNG output for a specific offline analysis.
+  `results/trade_dashboard.png` is left in the repo as a historical
+  artifact; nothing updates it anymore.
+- **Added `site/assets/casino-fx.{css,js}`** - purely decorative extras,
+  deliberately kept in their own files, separate from the real-data
+  rendering in `dashboard.js`/`styles.css`, so it's obvious at a glance
+  that none of it ever reads `dashboard.json`/`positions.json`/
+  `trades.json`/`equity.json` or touches a real number: a CSS firework
+  layer, an ambient "Back Room Lounge" scene (animal mobsters in fedoras
+  idling, sipping drinks, smoking, one occasionally storming off and
+  returning, a waiter doing rounds - all one looping CSS keyframe
+  animation per character, no JS timers), and a giant-panda kiss splash
+  on first load that dismisses itself (or on click). All of it is plain
+  CSS/HTML - no new dependencies - and all of it is covered by the same
+  `prefers-reduced-motion` override already in `styles.css`, verified
+  directly: with reduced motion simulated, the panda splash is skipped
+  entirely and the ambient scene sits frozen, confirmed via a real
+  headless-browser render.
+- New tests: `tests/test_site_data.py` (31 tests - order-status
+  classification, ET daily/weekly/monthly boundaries, dedup, percentage
+  return, realized-P&L-from-confirmed-fills-only, win/loss/best/worst,
+  stocks-vs-crypto and strategy aggregation, missing/empty/malformed
+  inputs, position-strategy attribution, missing-Alpaca-response
+  handling) and one for `Broker.get_buying_power()` - 140 total passing.
+  The website's own defensive-fetch behavior was verified with a real
+  headless-browser render (Playwright/Chromium) against fixture data
+  covering all three order statuses and both winning/losing/flat
+  positions, plus a deliberately broken/missing-data run - screenshots
+  reviewed directly, not just described.
+
 ## Version Richards 0.10.1 - 2026-07-28
 
 Full codebase bug sweep after 0.10.0, requested specifically because that

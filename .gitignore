@@ -16,3 +16,11 @@ logs/*
 !logs/equity_log_archive_pre_2026-07-28_split.csv
 !logs/trade_log_stocks_archive_pre_2026-07-28_reset.csv
 !logs/trade_log_stocks_archive_pre_2026-07-28_reset2.csv
+
+# Generated at deploy time by site_data.py (see update-dashboard.yml) -
+# never committed. The workflow uploads site/ (including this run's
+# freshly-generated data/) straight to a GitHub Pages artifact, so
+# there's nothing here to commit in the first place - keeping these
+# files out of git is what stops the deploy from ever triggering itself.
+# A local preview needs to generate its own copy first - see README.md.
+site/data/*.json

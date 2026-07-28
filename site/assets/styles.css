@@ -1,0 +1,447 @@
+/* ==========================================================================
+   Ethan's Market Casino - deliberately loud, tacky, Vegas-meets-arcade
+   theme for a genuinely accurate trading dashboard. All animation is
+   gated behind prefers-reduced-motion at the bottom of this file - the
+   casino bit is decoration, the numbers underneath are the real product.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Luckiest+Guy&family=Bungee&family=Oswald:wght@400;600&display=swap');
+
+:root {
+  --black: #0b0006;
+  --near-black: #150109;
+  --dark-red: #4a0000;
+  --red: #8a0000;
+  --gold: #ffd700;
+  --gold-dim: #b8860b;
+  --purple: #5b0ea3;
+  --neon-green: #39ff14;
+  --neon-pink: #ff2fb0;
+  --cream: #f3e6c8;
+  --win: #39ff14;
+  --loss: #ff3b3b;
+  --neutral: #ffd700;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--black);
+  color: var(--cream);
+  font-family: 'Oswald', 'Trebuchet MS', sans-serif;
+  overflow-x: hidden;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(90, 0, 20, 0.55), transparent 55%),
+    radial-gradient(ellipse at 80% 10%, rgba(75, 0, 130, 0.45), transparent 55%),
+    repeating-linear-gradient(45deg, rgba(139,0,0,0.10) 0 12px, rgba(0,0,0,0.10) 12px 24px),
+    linear-gradient(180deg, var(--near-black), var(--black) 40%, #1a0410 100%);
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><circle cx='16' cy='16' r='13' fill='%23b8003a' stroke='%23ffd700' stroke-width='3'/><circle cx='16' cy='16' r='7' fill='none' stroke='%23fff' stroke-width='2' stroke-dasharray='2 3'/></svg>") 16 16, auto;
+}
+
+a { color: var(--gold); }
+
+/* ---- sparkle layer (decorative, ignored by screen readers) ---- */
+.sparkle-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(2px 2px at 10% 20%, #fff 0%, transparent 60%),
+    radial-gradient(2px 2px at 80% 15%, #fff 0%, transparent 60%),
+    radial-gradient(1.5px 1.5px at 60% 70%, var(--gold) 0%, transparent 60%),
+    radial-gradient(1.5px 1.5px at 30% 85%, var(--neon-pink) 0%, transparent 60%),
+    radial-gradient(2px 2px at 92% 60%, var(--neon-green) 0%, transparent 60%);
+  background-size: 100% 100%;
+  animation: sparkle-twinkle 4s ease-in-out infinite alternate;
+  opacity: 0.5;
+}
+@keyframes sparkle-twinkle { from { opacity: 0.25; } to { opacity: 0.7; } }
+
+/* ==========================================================================
+   Marquee header
+   ========================================================================== */
+
+.marquee-frame {
+  position: relative;
+  z-index: 1;
+  text-align: center;
+  padding: 28px 16px 22px;
+  background: linear-gradient(180deg, var(--dark-red), var(--near-black));
+  border-bottom: 6px double var(--gold);
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.35) inset, 0 6px 24px rgba(0,0,0,0.6);
+}
+
+.marquee-lights,
+.marquee-lights-bottom {
+  height: 14px;
+  margin: 0 auto 14px;
+  max-width: 900px;
+  background-image: radial-gradient(circle, var(--gold) 40%, transparent 45%);
+  background-size: 26px 26px;
+  background-repeat: repeat-x;
+  animation: marquee-chase 1s steps(2) infinite;
+}
+.marquee-lights-bottom { margin: 14px auto 0; animation-direction: reverse; }
+@keyframes marquee-chase { from { background-position: 0 0; } to { background-position: 26px 0; } }
+
+.neon-title {
+  font-family: 'Luckiest Guy', 'Bungee', cursive;
+  font-size: clamp(2rem, 6vw, 4.2rem);
+  letter-spacing: 2px;
+  margin: 6px 0 10px;
+  text-shadow:
+    0 0 5px #fff, 0 0 10px #fff,
+    0 0 20px var(--gold), 0 0 40px var(--gold), 0 0 80px var(--gold-dim);
+}
+.neon-flicker { animation: neon-flicker 2.6s infinite; color: var(--neon-pink); }
+.neon-gold { color: var(--gold); }
+@keyframes neon-flicker {
+  0%, 18%, 22%, 25%, 53%, 57%, 100% { opacity: 1; }
+  20%, 24%, 55% { opacity: 0.45; }
+}
+
+.tagline {
+  font-family: 'Bungee', cursive;
+  font-size: 1rem;
+  color: var(--neon-green);
+  text-shadow: 0 0 8px var(--neon-green);
+  margin: 0;
+}
+
+/* ==========================================================================
+   Period tabs
+   ========================================================================== */
+
+.period-tabs {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 12px;
+}
+.tab-btn {
+  font-family: 'Bungee', cursive;
+  font-size: 0.85rem;
+  color: var(--cream);
+  background: linear-gradient(180deg, var(--purple), #2a0550);
+  border: 3px solid var(--gold);
+  border-radius: 999px;
+  padding: 10px 22px;
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(255,215,0,0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.tab-btn:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 0 20px rgba(255,215,0,0.55); }
+.tab-btn.active {
+  background: linear-gradient(180deg, var(--gold), var(--gold-dim));
+  color: var(--near-black);
+  box-shadow: 0 0 22px rgba(255,215,0,0.85);
+}
+
+main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; padding: 0 16px 60px; }
+
+.section-title {
+  font-family: 'Bungee', cursive;
+  font-size: 1.3rem;
+  color: var(--gold);
+  border-bottom: 3px solid var(--gold-dim);
+  padding-bottom: 8px;
+  margin: 40px 0 18px;
+  text-shadow: 0 0 8px rgba(255,215,0,0.5);
+}
+
+/* ==========================================================================
+   Slot machines
+   ========================================================================== */
+
+.slot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 14px;
+  margin-top: 24px;
+}
+.slot-machine {
+  background: linear-gradient(180deg, #3a0018, var(--near-black));
+  border: 4px solid var(--gold);
+  border-radius: 14px;
+  padding: 12px 10px 16px;
+  text-align: center;
+  box-shadow: 0 0 18px rgba(255,215,0,0.25), inset 0 0 20px rgba(0,0,0,0.6);
+}
+.slot-label { font-size: 0.78rem; letter-spacing: 0.5px; color: var(--gold); margin-bottom: 8px; text-transform: uppercase; }
+.slot-window {
+  background: #000;
+  border-radius: 8px;
+  border: 2px solid var(--gold-dim);
+  padding: 10px 4px;
+  overflow: hidden;
+  box-shadow: inset 0 0 14px rgba(0,0,0,0.9);
+}
+.slot-reel {
+  font-family: 'Oswald', monospace;
+  font-weight: 600;
+  font-size: clamp(0.85rem, 1.7vw, 1.25rem);
+  color: var(--neon-green);
+  text-shadow: 0 0 8px var(--neon-green);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
+}
+.slot-reel.spinning {
+  animation: reel-spin 0.08s linear infinite;
+  filter: blur(1.5px);
+}
+@keyframes reel-spin {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-6px); }
+}
+.slot-reel.positive { color: var(--win); text-shadow: 0 0 8px var(--win); }
+.slot-reel.negative { color: var(--loss); text-shadow: 0 0 8px var(--loss); }
+
+.last-updated { text-align: center; color: var(--cream); opacity: 0.75; margin: 18px 0 2px; font-size: 0.85rem; }
+.methodology-note { text-align: center; color: var(--gold-dim); font-size: 0.78rem; max-width: 760px; margin: 4px auto 0; }
+
+/* ==========================================================================
+   Stat grid ("house ledger")
+   ========================================================================== */
+
+.stats-table-wrap { margin-top: 8px; }
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+.stat-tile {
+  background: linear-gradient(160deg, rgba(90,0,20,0.55), rgba(10,0,10,0.85));
+  border: 2px solid var(--gold-dim);
+  border-radius: 10px;
+  padding: 12px 14px;
+  position: relative;
+}
+.stat-tile::before {
+  content: "♠ ♥ ♦ ♣";
+  position: absolute;
+  top: 4px; right: 8px;
+  font-size: 0.65rem;
+  opacity: 0.25;
+  letter-spacing: 2px;
+}
+.stat-tile .label { font-size: 0.72rem; text-transform: uppercase; color: var(--gold); opacity: 0.85; }
+.stat-tile .value { font-size: 1.3rem; font-weight: 600; margin-top: 4px; }
+.stat-tile .value.positive { color: var(--win); }
+.stat-tile .value.negative { color: var(--loss); }
+.stat-tile .sub { font-size: 0.72rem; opacity: 0.65; margin-top: 2px; }
+
+/* ---- account cash/buying-power/equity chip strip ---- */
+.account-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 22px;
+}
+.chip-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: radial-gradient(circle at 30% 30%, var(--red), var(--dark-red));
+  border: 3px dashed var(--gold);
+  border-radius: 999px;
+  padding: 10px 20px;
+  min-width: 200px;
+  box-shadow: 0 0 14px rgba(255,215,0,0.3);
+}
+.chip-icon { font-size: 1.3rem; }
+.chip-label { font-size: 0.72rem; text-transform: uppercase; color: var(--gold); opacity: 0.9; }
+.chip-value { margin-left: auto; font-weight: 600; font-size: 1.05rem; }
+
+/* ==========================================================================
+   Blackjack table / position cards
+   ========================================================================== */
+
+.blackjack-table { margin-top: 10px; }
+.table-felt {
+  background:
+    radial-gradient(ellipse at center, #0d3d1a 0%, #052008 70%, #01100a 100%);
+  border: 10px solid #3b1d06;
+  border-radius: 60px 60px 30px 30px;
+  padding: 26px 18px 34px;
+  box-shadow: 0 0 40px rgba(0,0,0,0.7) inset, 0 8px 30px rgba(0,0,0,0.6);
+}
+.hand-group { margin-bottom: 22px; }
+.hand-group:last-child { margin-bottom: 0; }
+.hand-label {
+  font-family: 'Bungee', cursive;
+  color: var(--gold);
+  font-size: 0.95rem;
+  margin: 0 0 10px;
+  text-shadow: 0 0 6px rgba(255,215,0,0.6);
+}
+.hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.playing-card {
+  width: 150px;
+  min-height: 200px;
+  background: linear-gradient(160deg, #fff8ee, #efe3c8);
+  border-radius: 12px;
+  border: 3px solid var(--gold);
+  color: #1a1a1a;
+  padding: 10px;
+  position: relative;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+  transition: transform 0.15s ease;
+}
+.playing-card:hover { transform: translateY(-6px) rotate(-1deg); }
+.playing-card.glow-win { box-shadow: 0 0 22px 4px var(--win), 0 6px 18px rgba(0,0,0,0.5); border-color: var(--win); }
+.playing-card.glow-loss { box-shadow: 0 0 22px 4px var(--loss), 0 6px 18px rgba(0,0,0,0.5); border-color: var(--loss); }
+.playing-card.glow-neutral { box-shadow: 0 0 16px 2px var(--gold), 0 6px 18px rgba(0,0,0,0.5); }
+.card-corner {
+  font-weight: 700;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.card-suit { font-size: 1.6rem; text-align: center; margin: 6px 0; }
+.card-ticker { font-family: 'Bungee', cursive; font-size: 1.15rem; text-align: center; margin-bottom: 4px; }
+.card-row { display: flex; justify-content: space-between; font-size: 0.68rem; margin-top: 3px; opacity: 0.85; }
+.card-pnl { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.95rem; }
+.card-pnl.positive { color: #0a7a2e; }
+.card-pnl.negative { color: #a10f0f; }
+.card-strategy {
+  position: absolute;
+  bottom: 6px; left: 0; right: 0;
+  text-align: center;
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  opacity: 0.65;
+}
+.empty-state {
+  color: var(--cream);
+  opacity: 0.7;
+  font-style: italic;
+  padding: 10px 0;
+}
+
+/* ==========================================================================
+   Charts
+   ========================================================================== */
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 18px;
+}
+.chart-card {
+  background: linear-gradient(160deg, rgba(75,0,130,0.25), rgba(10,0,10,0.85));
+  border: 2px solid var(--gold-dim);
+  border-radius: 12px;
+  padding: 14px 16px 6px;
+}
+.chart-card h3 {
+  font-size: 0.95rem;
+  color: var(--gold);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ==========================================================================
+   Ledger / roulette results board
+   ========================================================================== */
+
+.ledger-legend { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  font-weight: 600;
+}
+.badge-confirmed { background: var(--win); color: #06210b; }
+.badge-unconfirmed { background: var(--gold); color: #3a2a00; }
+.badge-notplaced { background: #555; color: #eee; }
+
+.table-scroll { overflow-x: auto; border-radius: 10px; border: 2px solid var(--gold-dim); }
+.ledger-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: rgba(10,0,10,0.85);
+  font-size: 0.85rem;
+  min-width: 820px;
+}
+.ledger-table th, .ledger-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255,215,0,0.15);
+  white-space: nowrap;
+}
+.ledger-table th {
+  background: linear-gradient(180deg, var(--dark-red), #2a0000);
+  color: var(--gold);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  position: sticky;
+  top: 0;
+}
+.ledger-table tbody tr:hover { background: rgba(255,215,0,0.06); }
+.ledger-table td.pnl-positive { color: var(--win); font-weight: 600; }
+.ledger-table td.pnl-negative { color: var(--loss); font-weight: 600; }
+
+/* ==========================================================================
+   Footer
+   ========================================================================== */
+
+.site-footer {
+  margin-top: 50px;
+  padding: 20px 10px 10px;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--cream);
+  opacity: 0.65;
+  border-top: 2px dashed var(--gold-dim);
+}
+.site-footer code { color: var(--gold); }
+
+/* ==========================================================================
+   Responsive
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  .neon-title { letter-spacing: 0.5px; }
+  .playing-card { width: 42%; min-width: 130px; }
+  .chip-stat { min-width: 45%; }
+  .ledger-table { font-size: 0.75rem; }
+}
+
+/* ==========================================================================
+   Accessibility: respect prefers-reduced-motion - decoration only, the
+   underlying content and layout never depends on any of this running.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .sparkle-layer { display: none; }
+  .marquee-lights, .marquee-lights-bottom { animation: none; }
+  .neon-flicker { animation: none; opacity: 1; }
+}
