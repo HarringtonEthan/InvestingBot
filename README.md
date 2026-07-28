@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.8
+# InvestingBot — Version Richards 0.9.9
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 79 passing](https://img.shields.io/badge/tests-79%20passing-4c9a2a)](tests/)
+[![Tests: 81 passing](https://img.shields.io/badge/tests-81%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -121,7 +121,7 @@ that has to happen on cron-job.org's side (pause or delete that job) -
 nothing in this repository can do that from here, since GitHub itself
 was never the thing calling it.
 
-**What "79 tests passing" (`pytest tests/`) actually means:** these are
+**What "81 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
@@ -424,7 +424,7 @@ InvestingBot/
 │   └── update-dashboard.yml      # Runs visualize_log.py hourly
 ├── tests/                        # pytest suite - run with `pytest tests/`
 ├── docs/                         # Beginner guide, automation setup, risk controls, research tools
-├── logs/                         # Generated: trade_log.csv, equity_log.csv, retrain_log.csv
+├── logs/                         # Generated: trade_log_{crypto,stocks}.csv, equity_log_{crypto,stocks}.csv, retrain_log.csv
 ├── models/                       # Generated: the saved stock_model.pkl and its metadata
 ├── results/                      # Generated: equity_curve.png, trade_dashboard.png, param_sweep.csv, walk_forward.csv, and their chart renders
 ├── CHANGELOG.md                  # Full version history

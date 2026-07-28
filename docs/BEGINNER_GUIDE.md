@@ -135,10 +135,13 @@ script for every settings combination.
    - If it's a BUY or SELL and `--execute` was passed, actually places
      that paper order through Alpaca's API (`src/broker.py`).
 5. If anything got bought or sold, that gets appended to
-   `logs/trade_log.csv`; if the account's current value differs from
-   what it was last time, that gets appended to `logs/equity_log.csv`.
-   An uneventful run (nothing traded, nothing changed) writes to
-   neither file.
+   `logs/trade_log_crypto.csv` (or `logs/trade_log_stocks.csv` for the
+   stock workflow); if the account's current value differs from what it
+   was last time, that gets appended to `logs/equity_log_crypto.csv` (or
+   `logs/equity_log_stocks.csv`). Crypto and stocks each have their own
+   pair of files so the two workflows never write to the same one. An
+   uneventful run (nothing traded, nothing changed) writes to neither
+   file.
 6. If either file changed, the workflow **commits** that change (saves a
    snapshot with a message) and **pushes** it back to this GitHub
    repository - that's why `git pull` on my own machine shows new

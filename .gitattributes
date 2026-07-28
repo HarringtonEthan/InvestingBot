@@ -1,14 +1,21 @@
-# logs/trade_log.csv and logs/equity_log.csv are append-only: every
-# scheduled run may add one new row at the end. Two workflows (crypto,
-# stocks) committing to the same file within moments of each other is
-# normal, not an error - but git's default merge treats two independent
-# appends at the same end-of-file position as a conflict, since it can't
-# tell they don't actually overlap. Confirmed live on 2026-07-28: this
-# produced a DETERMINISTIC rebase conflict that failed identically on
-# every retry (not a timing race - retrying the exact same rebase can
-# never resolve a real content conflict). `merge=union` tells git to
+# The trade/equity logs are append-only: every scheduled run may add
+# one new row at the end. Crypto and stocks now write to their own
+# separate files (logs/*_crypto.csv vs logs/*_stocks.csv - see
+# live_trade.py's --log-suffix), specifically so two different
+# workflows committing at nearly the same moment never touch the same
+# file at all. merge=union stays on all of them anyway, as a second
+# layer: two commits to the SAME file (e.g. two overlapping runs of one
+# workflow, or a manual local run using the same file) still hit the
+# same underlying git behavior - two independent appends at the same
+# end-of-file position look like a conflict to git's default merge,
+# even though they don't actually overlap. Confirmed live on 2026-07-28:
+# this produced a DETERMINISTIC rebase conflict that failed identically
+# on every retry (not a timing race - retrying the exact same rebase
+# can never resolve a real content conflict). `merge=union` tells git to
 # just keep both sides' added lines instead of flagging a conflict -
 # verified locally that this resolves the exact reproduced conflict
 # cleanly, preserving both rows in order.
-logs/trade_log.csv merge=union
-logs/equity_log.csv merge=union
+logs/trade_log_crypto.csv merge=union
+logs/trade_log_stocks.csv merge=union
+logs/equity_log_crypto.csv merge=union
+logs/equity_log_stocks.csv merge=union

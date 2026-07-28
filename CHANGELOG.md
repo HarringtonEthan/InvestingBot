@@ -17,6 +17,33 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.9 - 2026-07-28
+
+- **Split crypto and stock logs into separate files entirely** -
+  `logs/trade_log_crypto.csv`/`logs/equity_log_crypto.csv` and
+  `logs/trade_log_stocks.csv`/`logs/equity_log_stocks.csv`, instead of
+  one shared pair. This removes the shared-file class of git conflict
+  altogether, on top of the 0.9.8 `.gitattributes` fix (which still
+  covers any two processes that DO end up sharing a file, e.g. two
+  overlapping runs of the same workflow, or a manual local run).
+  `live_trade.py` gained `--log-suffix` (each workflow passes
+  `_crypto`/`_stocks`); `visualize_log.py`'s `--equity-log`/`--trade-log`
+  now accept multiple files and combine them into one timeline (default:
+  both asset classes' files) - the whole-account panel still needs one
+  combined view, since crypto and stocks share one real Alpaca account.
+  2 new tests (`tests/test_log_suffix.py`).
+- **Migrated existing log data**: `logs/trade_log.csv` (3 real stock
+  rows, all already correctly attributed) became
+  `logs/trade_log_stocks.csv` directly - no data lost. `logs/equity_log.csv`
+  (85 mixed rows, not cleanly attributable per-row to a specific
+  workflow after the fact) was archived whole to
+  `logs/equity_log_archive_pre_2026-07-28_split.csv`; both
+  `logs/equity_log_crypto.csv`/`logs/equity_log_stocks.csv` start fresh
+  from here - same "start clean, archive the old, never delete"
+  precedent as every prior log rebuild in this project.
+- Updated `docs/AUTOMATION.md`/`docs/BEGINNER_GUIDE.md`/README's file
+  tree for the new filenames.
+
 ## Version Richards 0.9.8 - 2026-07-28
 
 - **Found and fixed the real cause of the "Commit trade log" failures**

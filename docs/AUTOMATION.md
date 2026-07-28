@@ -104,11 +104,15 @@ above - no computer of mine needs to be on at all.
    You can click into any of them and hit **"Run workflow"** to trigger
    it manually right now, instead of waiting for the schedule, to
    confirm it works.
-5. Each run may append to `logs/equity_log.csv` (if the account's value
-   changed) and/or `logs/trade_log.csv` (if it actually bought or sold
-   something) - an uneventful run writes to neither. Whenever either
-   file does change, the workflow commits that update back to the repo,
-   so `git pull` locally will show new commits with a "Log ... trading
+5. Each run may append to `logs/equity_log_crypto.csv`/`logs/equity_log_stocks.csv`
+   (if the account's value changed) and/or `logs/trade_log_crypto.csv`/
+   `logs/trade_log_stocks.csv` (if it actually bought or sold
+   something) - an uneventful run writes to neither. Crypto and stocks
+   each write to their own pair of files (via `live_trade.py`'s
+   `--log-suffix`), specifically so the two workflows never commit to
+   the same file at nearly the same moment. Whenever a file does
+   change, the workflow commits that update back to the repo, so
+   `git pull` locally will show new commits with a "Log ... trading
    run" message over time. That's the automated bot committing its own
    log, not me.
    See "Logs and the trade dashboard" below for what's in each file.
@@ -273,17 +277,28 @@ change what it does.
 ## Logs and the trade dashboard
 
 Every `live_trade.py` run writes to two separate CSVs, both git-tracked so
-`git pull` shows the bot's own history over time:
+`git pull` shows the bot's own history over time. Crypto and stocks each
+write to their own pair of files (`--log-suffix _crypto` /
+`--log-suffix _stocks`) rather than sharing one - two workflows
+committing to the exact same file at nearly the same moment was a real,
+reproduced source of failed pushes (see `CHANGELOG.md` 0.9.7/0.9.8), so
+each asset class gets its own:
 
-- **`logs/equity_log.csv`** - `timestamp_utc`, `mode`,
-  `portfolio_value_usd`, `cash_usd`, at most one row per run (not per
-  ticker) - and only when the account value actually differs from the
-  last logged row. Most runs change nothing (no trade, no open position
-  whose price moved), so most runs write nothing here at all; a real
-  change, even a small one, still gets logged immediately. This keeps the
-  file a clean time series of "what was the account worth, and when did
-  that change" without a row for every unchanged 5-minute check-in.
-- **`logs/trade_log.csv`** - one row **per actual BUY/SELL decision**
+- **`logs/equity_log_crypto.csv` / `logs/equity_log_stocks.csv`** -
+  `timestamp_utc`, `mode`, `portfolio_value_usd`, `cash_usd`, at most one
+  row per run (not per ticker) - and only when the account value
+  actually differs from the last logged row. Most runs change nothing
+  (no trade, no open position whose price moved), so most runs write
+  nothing here at all; a real change, even a small one, still gets
+  logged immediately. This keeps each file a clean time series of "what
+  was the account worth, and when did that change" without a row for
+  every unchanged 5-minute check-in. Both files describe the same one
+  account's total value (crypto and stocks share a single Alpaca paper
+  account) - `visualize_log.py` reads both and merges them into one
+  combined timeline for the whole-account panel; the split is only
+  about which workflow happened to write a given sample, not two
+  separate account balances.
+- **`logs/trade_log_crypto.csv` / `logs/trade_log_stocks.csv`** - one row **per actual BUY/SELL decision**
   (dry-run or executed): `timestamp_utc`, `mode`, `asset_class`, `ticker`,
   `strategy`, `action`, `price_usd`, `notional_usd`,
   `position_qty_before`, `avg_entry_price_usd`, `unrealized_gain_pct`
@@ -350,7 +365,7 @@ Trust the top panel for the account total; use the P&L panels only for
 profitable."
 
 **The account-total panel's baseline matters and is easy to misread.**
-By default it's equity minus the *first* row of `logs/equity_log.csv` -
+By default it's equity minus the *first* row across both equity logs -
 i.e. "gain/loss since equity logging happened to start," which isn't the
 same as "since I funded the account," especially if trades were already
 open before logging began. Pass `--baseline 100000` (or whatever your
@@ -443,5 +458,5 @@ python train_stock_model.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --lookb
 
 Every retrain also appends a row to `logs/retrain_log.csv` (tickers
 used, training window, row count, calibrated threshold) so I can see
-the model's history over time, the same way `logs/trade_log.csv` tracks
-trade history.
+the model's history over time, the same way the trade logs track trade
+history.

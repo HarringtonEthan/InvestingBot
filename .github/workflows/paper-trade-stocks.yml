@@ -58,33 +58,38 @@ jobs:
           --strategy rule_based --interval 5m
           --dip-threshold -0.015 --exit-threshold 0.02
           --max-notional 2000 --daily-loss-limit 0.05
+          --log-suffix _stocks
           --execute
 
       - name: Commit trade log
         run: |
           git config user.name "investingbot"
           git config user.email "investingbot@users.noreply.github.com"
-          [ -f logs/trade_log.csv ] && git add logs/trade_log.csv
-          [ -f logs/equity_log.csv ] && git add logs/equity_log.csv
+          # --log-suffix _stocks above means these are the only 2 files
+          # this workflow ever writes to - paper-trade-crypto.yml has its
+          # own separate pair, so the two workflows never touch the same
+          # file at all anymore.
+          [ -f logs/trade_log_stocks.csv ] && git add logs/trade_log_stocks.csv
+          [ -f logs/equity_log_stocks.csv ] && git add logs/equity_log_stocks.csv
           git diff --cached --quiet && exit 0
           git commit -m "Log stock trading run $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          # Retries pull+rebase+push a few times before giving up - this
-          # workflow's own runs are serialized by the concurrency group
-          # above, but paper-trade-crypto.yml/update-dashboard.yml can
-          # still race it to push at nearly the same moment (all commit
-          # to logs/equity_log.csv). The main fix for that is
-          # .gitattributes (merge=union on the log CSVs): confirmed live
-          # this was a DETERMINISTIC content conflict, not a timing race
-          # - two independent appends to the same file's last line failed
-          # identically on every one of 5 retries before that fix existed
-          # (real failure, 2026-07-28). merge=union makes that not a
-          # conflict at all anymore, verified by reproducing the exact
-          # failure locally. This retry loop is a second layer for the
-          # residual case that genuinely is a timing race: a plain
-          # non-fast-forward push rejection with no content conflict,
-          # because someone else's commit landed between our fetch and
-          # our push. git rebase --abort clears any half-finished rebase
-          # from a failed attempt so the next retry starts clean.
+          # Retries pull+rebase+push a few times before giving up. This
+          # workflow's own overlapping runs are the only thing that can
+          # still race to push the exact same file now that crypto and
+          # stocks each have their own log pair. .gitattributes
+          # (merge=union) covers any content conflict that still
+          # produces: confirmed live this WAS a DETERMINISTIC content
+          # conflict when crypto and stocks shared one file, not a timing
+          # race - two independent appends to the same file's last line
+          # failed identically on every one of 5 retries before that fix
+          # existed (real failure, 2026-07-28). This retry loop is a
+          # second layer for the residual case that genuinely is a timing
+          # race: a plain non-fast-forward push rejection with no content
+          # conflict, because someone else's commit (dashboard/retrain,
+          # or another overlapping run of this workflow) landed between
+          # our fetch and our push. git rebase --abort clears any
+          # half-finished rebase from a failed attempt so the next retry
+          # starts clean.
           for i in 1 2 3 4 5; do
             git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0
             echo "Push attempt $i failed (likely a concurrent commit from another workflow) - retrying..."
