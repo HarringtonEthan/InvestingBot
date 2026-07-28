@@ -386,6 +386,22 @@ Both are valid, they just answer different questions - a baseline
 chosen for one purpose will look "wrong" if read as the other, even
 though the number itself is correct for what it was actually measuring.
 
+**The two P&L panels can also show live unrealized P&L, not just closed
+trades.** A position that's still open (never sold) has no realized
+P&L to plot, but it's very much not "nothing happening" - a held stock
+or coin can be up or down real money right now. Pass `--live-positions`
+(needs `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` in the environment) to have
+`visualize_log.py` pull every currently-open position straight from
+Alpaca (`Broker.get_all_positions()`), split it into crypto vs stock by
+Alpaca's own `asset_class` field, sum each side's `unrealized_pl`, and
+annotate that total directly on the crypto/stock P&L panels alongside
+whatever realized-trade history is already there. This is read-only -
+it's the only thing in `visualize_log.py` that ever talks to Alpaca,
+and it never places an order. `update-dashboard.yml` passes this flag
+on every scheduled run, so `results/trade_dashboard.png` always shows
+"is crypto or stocks winning right now," not just "did their closed
+trades win."
+
 It also runs on a schedule: `.github/workflows/update-dashboard.yml`
 regenerates and commits `results/trade_dashboard.png` roughly hourly
 (via an external scheduler - GitHub's own `schedule:` trigger isn't

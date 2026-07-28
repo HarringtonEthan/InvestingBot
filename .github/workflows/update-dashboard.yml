@@ -40,7 +40,14 @@ jobs:
         # docs/AUTOMATION.md's baseline explanation for the difference
         # and why this needs updating again whenever a fresh "day" or
         # tracking period is what should be measured going forward.
-        run: python visualize_log.py --baseline 99787.08
+        # --live-positions pulls current open positions from Alpaca
+        # (read-only - never places an order) so the crypto/stock P&L
+        # panels show live unrealized gain/loss too, not just closed trades.
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+        run: python visualize_log.py --baseline 99787.08 --live-positions
 
       - name: Commit updated dashboard
         run: |

@@ -17,6 +17,29 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.13 - 2026-07-28
+
+- **Added live unrealized P&L per asset class to the dashboard.** The
+  crypto/stock P&L panels previously only showed *realized* P&L from
+  closed (SELL) trades - an open position that's never been sold showed
+  as "nothing happening" even while it was actively up or down real
+  money. Added `Broker.get_all_positions()` (`src/broker.py`), which
+  pulls every currently-open position from Alpaca and classifies each
+  one crypto vs. stock using Alpaca's own `Position.asset_class` field
+  (not re-derived from the symbol string - Alpaca's positions endpoint
+  returns crypto symbols without a "/", e.g. "BTCUSD", which this
+  project's own `resolve_symbol()` would not recognize as crypto).
+  `visualize_log.py` gained a new `--live-positions` flag (needs
+  `ALPACA_API_KEY`/`ALPACA_SECRET_KEY`) that sums each asset class's
+  `unrealized_pl` and annotates the total directly on that class's P&L
+  panel, alongside whatever realized-trade history is already there -
+  read-only, never places an order. `update-dashboard.yml` now passes
+  this flag on every scheduled run, so the dashboard always shows
+  whether crypto or stocks is winning *right now*, not just whether
+  their closed trades won historically. New tests in
+  `tests/test_live_positions.py` cover the crypto/stock split logic
+  directly (no live Alpaca connection needed).
+
 ## Version Richards 0.9.12 - 2026-07-28
 
 - **Changed the dashboard's baseline from the original $100,000 funding

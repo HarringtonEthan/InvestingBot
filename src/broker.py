@@ -19,9 +19,11 @@ import os
 from alpaca.common.exceptions import APIError
 # The actual client class that talks to Alpaca's REST API.
 from alpaca.trading.client import TradingClient
-# Enums for order side (buy/sell), order status filters, and how long an
-# order should remain active before it's cancelled automatically.
-from alpaca.trading.enums import OrderSide, QueryOrderStatus, TimeInForce
+# Enums for order side (buy/sell), order status filters, how long an
+# order should remain active before it's cancelled automatically, and
+# (AssetClass) telling a crypto position apart from a stock one using
+# Alpaca's own classification rather than re-deriving it from the symbol.
+from alpaca.trading.enums import AssetClass, OrderSide, QueryOrderStatus, TimeInForce
 # Request payload builders: one for listing orders with filters, one for
 # submitting a new market order.
 from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
@@ -183,3 +185,33 @@ class Broker:
         # uses the slash-stripped form, same reasoning as the position
         # lookups above.
         return self.client.close_position(self._position_symbol(symbol))
+
+    def get_all_positions(self) -> list[dict]:
+        """
+        Every currently open position across the whole account, crypto
+        and stocks together - used by visualize_log.py's optional
+        --live-positions to show current unrealized P&L per asset class,
+        not just closed-trade history. Returns plain dicts (not the raw
+        SDK objects) so callers don't need alpaca-py imports just to read
+        a position's numbers. asset_class comes straight from Alpaca's
+        own Position.asset_class field (AssetClass.CRYPTO or
+        AssetClass.US_EQUITY) rather than re-deriving it from the symbol
+        string - Alpaca's positions endpoint returns crypto symbols
+        without the "/" (e.g. "BTCUSD"), which src.symbols.resolve_symbol
+        would NOT recognize as crypto, so trusting Alpaca's own
+        classification here avoids that mismatch entirely.
+        """
+        positions = self.client.get_all_positions()
+        return [
+            {
+                "symbol": p.symbol,
+                "is_crypto": p.asset_class == AssetClass.CRYPTO,
+                "qty": float(p.qty),
+                "avg_entry_price": float(p.avg_entry_price),
+                "current_price": float(p.current_price),
+                "market_value": float(p.market_value),
+                "unrealized_pl": float(p.unrealized_pl),
+                "unrealized_plpc": float(p.unrealized_plpc),
+            }
+            for p in positions
+        ]

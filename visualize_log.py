@@ -40,7 +40,17 @@ Five panels:
 Reads whatever data exists; a strategy that trades rarely (or an asset
 class with zero closed trades yet - e.g. right after archiving the log
 for a strategy change) will produce a sparse or empty panel, not an
-error. Doesn't hit the network or place any orders - safe to run anytime.
+error. By default, doesn't hit the network or place any orders - safe to
+run anytime.
+
+Optional: pass --live-positions (needs ALPACA_API_KEY/ALPACA_SECRET_KEY
+in the environment) to also show CURRENT unrealized P&L per asset class
+on panels 2/3, alongside the realized-trades history - a position that's
+never been sold has no realized P&L to plot, but it's very much not
+"nothing happening," and the whole-account panel alone doesn't say
+whether that's coming from crypto or stocks specifically. This is the
+only thing in this script that ever talks to Alpaca; it's a read-only
+account/position query, never an order.
 """
 
 # Lets type hints work without issue in this Python version.
@@ -91,15 +101,45 @@ def load_csv(paths: list[str]) -> pd.DataFrame | None:
     return combined.sort_values("timestamp_utc")
 
 
-def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str):
+def aggregate_unrealized_pnl(positions: list[dict]) -> tuple[float, float]:
+    """Sums unrealized_pl across open positions, split into (crypto, stock)
+    totals by each position's is_crypto flag - pulled out as its own
+    function so the split can be unit-tested without a real Broker/Alpaca
+    connection (see tests/fake_broker.py's set_unrealized_pl)."""
+    crypto_total = sum(p["unrealized_pl"] for p in positions if p["is_crypto"])
+    stock_total = sum(p["unrealized_pl"] for p in positions if not p["is_crypto"])
+    return crypto_total, stock_total
+
+
+def _unrealized_note(unrealized_pnl: float | None) -> str:
+    # Shared wording for the live-unrealized annotation, used whether or
+    # not this asset class has any realized (closed-trade) history yet -
+    # a position that's never been sold still has a real, live number
+    # worth showing, just not a "cumulative realized" one.
+    if unrealized_pnl is None:
+        return ""
+    color_word = "gain" if unrealized_pnl >= 0 else "loss"
+    return f"Live unrealized {color_word} right now (open positions): {unrealized_pnl:+,.2f}"
+
+
+def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str, unrealized_pnl: float | None = None):
     """
     Cumulative realized P&L panel for one asset class - called once for
     crypto, once for stocks, so the two never get blended into one
-    number the way a single shared panel used to.
+    number the way a single shared panel used to. `unrealized_pnl`, if
+    given (from --live-positions), is the CURRENT combined unrealized
+    P&L of every open position in this asset class right now - shown
+    alongside the realized-trades history, never replacing it, since a
+    position that's never been sold has no realized P&L to plot but is
+    very much not "nothing happening."
     """
     if sells.empty:
         ax.set_title(f"{label}: cumulative realized P&L (no closed trades yet)")
         ax.text(0.5, 0.5, f"No executed {label} SELL trades yet", ha="center", va="center")
+        note = _unrealized_note(unrealized_pnl)
+        if note:
+            color = "tab:green" if unrealized_pnl >= 0 else "tab:red"
+            ax.text(0.5, 0.35, note, ha="center", va="center", color=color, fontweight="bold")
         return
 
     # Running total of realized P&L, in chronological trade order.
@@ -139,6 +179,11 @@ def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str):
     ax.axhline(0, color="gray", linewidth=0.8)
     ax.set_title(f"{label}: cumulative realized P&L (trades in this log only)")
     ax.set_ylabel("Realized P&L ($)")
+    note = _unrealized_note(unrealized_pnl)
+    if note:
+        note_color = "tab:green" if unrealized_pnl >= 0 else "tab:red"
+        ax.text(0.02, 0.02, note, transform=ax.transAxes, ha="left", va="bottom",
+                color=note_color, fontweight="bold", fontsize=9)
     if len(cum_pnl) == 1:
         # A single data point gives matplotlib's date auto-scaling nothing
         # to infer a sensible range from - it can default to spanning
@@ -218,10 +263,26 @@ def main():
                               "wherever equity logging started, not necessarily when the account "
                               "was funded, so it can understate gains or losses that happened "
                               "before logging began.")
+    parser.add_argument("--live-positions", action="store_true",
+                         help="pull current open positions from Alpaca (needs ALPACA_API_KEY/"
+                              "ALPACA_SECRET_KEY) and show live unrealized P&L per asset class "
+                              "on panels 2/3, alongside the realized-trades history. Read-only - "
+                              "never places an order.")
     args = parser.parse_args()
 
     equity_df = load_csv(args.equity_log)
     trade_df = load_csv(args.trade_log)
+
+    crypto_unrealized = None
+    stock_unrealized = None
+    if args.live_positions:
+        # Imported here, not at module level, so running this script
+        # without --live-positions never requires alpaca-py to be
+        # importable or ALPACA_* env vars to be set at all.
+        from src.broker import Broker
+        broker = Broker(allow_live=True)  # read-only query - this script never places orders
+        positions = broker.get_all_positions()
+        crypto_unrealized, stock_unrealized = aggregate_unrealized_pnl(positions)
 
     sells = pd.DataFrame()
     if trade_df is not None:
@@ -305,8 +366,8 @@ def main():
         ax.text(0.5, 0.5, "No equity log data found", ha="center", va="center")
 
     # ---- Panels 2/3: cumulative realized P&L, crypto and stocks separately ----
-    plot_cumulative_pnl(axes["crypto_pnl"], crypto_sells, "Crypto")
-    plot_cumulative_pnl(axes["stock_pnl"], stock_sells, "Stocks")
+    plot_cumulative_pnl(axes["crypto_pnl"], crypto_sells, "Crypto", unrealized_pnl=crypto_unrealized)
+    plot_cumulative_pnl(axes["stock_pnl"], stock_sells, "Stocks", unrealized_pnl=stock_unrealized)
 
     # ---- Panels 4/5: win/loss per ticker, crypto and stocks separately ----
     plot_win_loss(axes["crypto_winloss"], crypto_sells, "Crypto")

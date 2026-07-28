@@ -60,6 +60,42 @@ class FakeBroker:
         # once) rather than persisted, so a test can inject exactly one
         # failure and let subsequent calls succeed normally.
         self.inject_error: dict[str, APIError] = {}
+        # symbol -> (is_crypto, unrealized_pl), only used by
+        # get_all_positions() - this fake has no live market price feed,
+        # so unlike qty/avg_entry_price (derived from real buy/sell
+        # calls above), unrealized P&L has to be set directly by a test
+        # that wants to exercise the live-positions aggregation logic.
+        self._unrealized: dict[str, tuple[bool, float]] = {}
+
+    def set_unrealized_pl(self, symbol: str, is_crypto: bool, unrealized_pl: float):
+        """Test helper: record what get_all_positions() should report for
+        this symbol's asset class and unrealized P&L. The symbol must
+        already have an open position (via buy_notional) for it to show
+        up - this only fills in the numbers a real market price feed
+        would otherwise provide."""
+        self._unrealized[symbol] = (is_crypto, unrealized_pl)
+
+    def get_all_positions(self) -> list[dict]:
+        # Mirrors Broker.get_all_positions()'s return shape. current_price
+        # and market_value are derived crudely (entry price plus the
+        # injected unrealized P&L) since this fake has no real price feed -
+        # good enough for testing the per-asset-class aggregation, not a
+        # claim of real market pricing.
+        result = []
+        for symbol, (qty, avg_entry_price) in self._positions.items():
+            is_crypto, unrealized_pl = self._unrealized.get(symbol, (False, 0.0))
+            market_value = qty * avg_entry_price + unrealized_pl
+            result.append({
+                "symbol": symbol,
+                "is_crypto": is_crypto,
+                "qty": qty,
+                "avg_entry_price": avg_entry_price,
+                "current_price": market_value / qty if qty else avg_entry_price,
+                "market_value": market_value,
+                "unrealized_pl": unrealized_pl,
+                "unrealized_plpc": unrealized_pl / (qty * avg_entry_price) if qty and avg_entry_price else 0.0,
+            })
+        return result
 
     def get_cash(self) -> float:
         # Mirrors Broker.get_cash() - just returns the current balance.

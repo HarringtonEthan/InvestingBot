@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.12
+# InvestingBot — Version Richards 0.9.13
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 81 passing](https://img.shields.io/badge/tests-81%20passing-4c9a2a)](tests/)
+[![Tests: 85 passing](https://img.shields.io/badge/tests-85%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -156,7 +156,11 @@ the code isn't broken; it does not mean the strategy is good.
   whole-account net gain/loss panel, plus cumulative realized P&L and
   win/loss-per-ticker each split into separate crypto/stock panels
   rather than blended together - two very different strategies sharing
-  one chart said less than two side by side do.
+  one chart said less than two side by side do. The two P&L panels also
+  show **live unrealized P&L** for currently-open positions (pulled
+  read-only from Alpaca), so it's clear at a glance whether crypto or
+  stocks is gaining or losing money right now - not just whether their
+  closed trades won historically.
 
 ---
 
