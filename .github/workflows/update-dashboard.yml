@@ -46,7 +46,10 @@ jobs:
         env:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
-          ALPACA_BASE_URL: ${{ secrets.ALPACA_BASE_URL }}
+          # Hardcoded to the paper endpoint (never live), matching the
+          # other workflows - this script only ever reads positions, but
+          # there's no reason to let a stray live-endpoint secret enable that.
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
         run: python visualize_log.py --baseline 99787.08 --live-positions
 
       - name: Commit updated dashboard
