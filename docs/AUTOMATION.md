@@ -396,6 +396,17 @@ Both are valid, they just answer different questions - a baseline
 chosen for one purpose will look "wrong" if read as the other, even
 though the number itself is correct for what it was actually measuring.
 
+**When the baseline corresponds to a specific moment (a reset, not just
+"today"), pass `--baseline-since` too.** Without it, panel 1 still
+plots every row in the equity log - including everything from before
+the baseline value even existed - measured against a number that didn't
+apply to it yet. That reads as a real gain/loss swing right where the
+old data meets the new baseline, when it's really just old equity held
+up against the wrong reference point. `--baseline-since 2026-07-28T18:15:51+00:00`
+(paired with `--baseline 99747.83`) tells the chart to only plot from
+the reset moment forward, so the line only ever measures what it's
+actually supposed to.
+
 **The two P&L panels can also show live unrealized P&L, not just closed
 trades - and two more panels show current holdings directly.** A
 position that's still open (never sold) has no realized P&L to plot,

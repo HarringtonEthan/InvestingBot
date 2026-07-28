@@ -13,7 +13,12 @@ Seven panels:
      balance. Note the baseline is whenever equity logging started, not
      necessarily when the account was funded - trades placed before that
      point (or before this log format existed) aren't reflected in the
-     baseline, only in what happens after it.
+     baseline, only in what happens after it. Pass --baseline-since
+     alongside --baseline whenever the baseline value corresponds to a
+     specific moment (e.g. an account reset) - without it, this panel
+     still plots every row in --equity-log, including ones from before
+     that baseline existed, which looks like a real swing but is really
+     just old equity measured against a number that didn't apply yet.
   2/3. Cumulative realized P&L from executed SELL trades, crypto and
      stocks shown SEPARATELY (not summed) - one strategy's mean-reversion
      rule looks nothing like the other's day-trading rule, so blending
@@ -120,6 +125,23 @@ def aggregate_unrealized_pnl(positions: list[dict]) -> tuple[float, float]:
     crypto_total = sum(p["unrealized_pl"] for p in positions if p["is_crypto"])
     stock_total = sum(p["unrealized_pl"] for p in positions if not p["is_crypto"])
     return crypto_total, stock_total
+
+
+def filter_equity_since(equity_df: pd.DataFrame | None, since: str) -> pd.DataFrame | None:
+    """
+    Drops every row older than `since` (an ISO 8601 timestamp string) -
+    used by --baseline-since so panel 1 only plots the timeline from a
+    specific moment forward (e.g. an account reset), rather than every
+    row --equity-log happens to have, most of which predate whatever
+    the paired --baseline value is even measuring. Returns None if
+    every row predates the cutoff, the same "genuinely nothing to plot"
+    signal load_csv() already uses for a missing/empty file.
+    """
+    if equity_df is None:
+        return None
+    cutoff = pd.Timestamp(since)
+    filtered = equity_df[equity_df["timestamp_utc"] >= cutoff]
+    return filtered if not filtered.empty else None
 
 
 def append_live_equity_point(equity_df: pd.DataFrame | None, live_equity: float) -> pd.DataFrame:
@@ -344,9 +366,20 @@ def main():
                               "ALPACA_SECRET_KEY) and show live unrealized P&L per asset class "
                               "on panels 2/3, alongside the realized-trades history. Read-only - "
                               "never places an order.")
+    parser.add_argument("--baseline-since", default=None,
+                         help="only plot panel 1's timeline from this timestamp onward (ISO 8601, "
+                              "e.g. 2026-07-28T18:15:51+00:00). Use together with --baseline "
+                              "whenever that value corresponds to a specific moment (an account "
+                              "reset, a fresh tracking period) - without this, panel 1 still plots "
+                              "every row in --equity-log, including ones from before that baseline "
+                              "value existed, which reads as a real gain/loss swing but is really "
+                              "just old equity measured against a baseline that didn't apply to it "
+                              "yet.")
     args = parser.parse_args()
 
     equity_df = load_csv(args.equity_log)
+    if args.baseline_since is not None:
+        equity_df = filter_equity_since(equity_df, args.baseline_since)
     trade_df = load_csv(args.trade_log)
 
     crypto_unrealized = None

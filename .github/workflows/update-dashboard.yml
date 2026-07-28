@@ -42,6 +42,11 @@ jobs:
         # funding" - see docs/AUTOMATION.md's baseline explanation for
         # the difference and why this needs updating again whenever a
         # fresh tracking period is what should be measured going forward.
+        # --baseline-since matches the exact same reset moment, so panel
+        # 1 only plots the timeline from the reset forward - without it,
+        # the chart would still show the whole day's earlier equity
+        # measured against a baseline that didn't apply to it yet, which
+        # reads as a real swing but isn't one.
         # --live-positions pulls current open positions from Alpaca
         # (read-only - never places an order) so the crypto/stock P&L
         # panels show live unrealized gain/loss too, not just closed trades.
@@ -52,7 +57,7 @@ jobs:
           # other workflows - this script only ever reads positions, but
           # there's no reason to let a stray live-endpoint secret enable that.
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python visualize_log.py --baseline 99747.83 --live-positions
+        run: python visualize_log.py --baseline 99747.83 --baseline-since 2026-07-28T18:15:51+00:00 --live-positions
 
       - name: Commit updated dashboard
         run: |

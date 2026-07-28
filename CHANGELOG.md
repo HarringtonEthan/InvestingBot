@@ -17,6 +17,35 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.20 - 2026-07-28
+
+- **Fixed the dashboard's net-gain/loss panel showing pre-reset history
+  measured against the post-reset baseline.** After the 2026-07-28
+  account reset, panel 1 still plotted the whole day's equity log -
+  including everything from before $99,747.83 became the baseline -
+  which read as a real multi-hour swing but was really just old equity
+  held up against a number that didn't apply to it yet. Added
+  `--baseline-since` (`visualize_log.py`'s new `filter_equity_since()`)
+  to drop every row older than a given timestamp before plotting;
+  `update-dashboard.yml` now passes `--baseline-since 2026-07-28T18:15:51+00:00`
+  alongside `--baseline 99747.83`, so the chart only ever measures from
+  the reset moment forward. New tests in `tests/test_baseline_since.py`
+  - 106 total passing.
+- **Flagged an unresolved gap in the 0.9.18 price-accuracy fix.**
+  `apply_live_price_override()` only overwrites the bars series' last
+  Close value - it does not touch that row's timestamp, and the "as of"
+  timestamp logged by live trading runs is still the underlying bars
+  fetch's own last index, which has continued showing 2026-07-27
+  (Monday) in every run checked so far, both before and after the fix.
+  That means the 20-period rolling average (`pct_below_sma20`, what the
+  dip/exit decision is actually compared against) is very likely still
+  being computed from 19 stale Monday bars plus the one corrected live
+  price - not a genuine trailing 100 minutes of today's trading. The
+  live *price* half of each decision is now confirmed accurate (see
+  0.9.19's fill-price cross-check); the *rolling average it's compared
+  against* has not been fixed and its correctness has not been verified.
+  Not yet changed - under investigation.
+
 ## Version Richards 0.9.19 - 2026-07-28
 
 - **Verified the 0.9.18 price-accuracy fix live, then re-enabled both
