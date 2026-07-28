@@ -27,6 +27,7 @@ import pandas as pd
 # generator's drift/volatility to whatever bar size was requested.
 PERIODS_PER_YEAR_24_7 = {
     "1d": 365,
+    "4h": 365 * 24 // 4,
     "1h": 365 * 24,
     "30m": 365 * 24 * 2,
     "15m": 365 * 24 * 4,

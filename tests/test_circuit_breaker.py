@@ -70,3 +70,27 @@ def test_uses_first_row_of_today_not_yesterday(temp_equity_log):
     # unrelated 50k value - must trip using the right baseline.
     broker = FakeBroker(cash=94_000.0)
     assert live_trade.daily_loss_exceeded(broker, threshold_pct=0.05) is True
+
+
+def test_uses_earliest_row_across_both_asset_class_logs(tmp_path):
+    # Regression test: crypto and stocks each write to their own equity
+    # log file (--log-suffix). If this run's own EQUITY_LOG_PATH is
+    # (say) equity_log_stocks.csv but the crypto workflow already logged
+    # an earlier "today" row a few minutes before stocks first ran, the
+    # breaker must use crypto's earlier value as the true start-of-day
+    # baseline - not stocks' own later, already-lower one, which would
+    # silently understate the day's real drawdown.
+    today = dt.datetime.now(dt.timezone.utc).date().isoformat()
+    crypto_log = tmp_path / "equity_log_crypto.csv"
+    stocks_log = tmp_path / "equity_log_stocks.csv"
+    _write_equity_rows(crypto_log, [
+        {"timestamp_utc": f"{today}T00:00:00+00:00", "mode": "PAPER", "portfolio_value_usd": "100000.00", "cash_usd": "100000.00"},
+    ])
+    _write_equity_rows(stocks_log, [
+        {"timestamp_utc": f"{today}T00:05:00+00:00", "mode": "PAPER", "portfolio_value_usd": "99000.00", "cash_usd": "99000.00"},
+    ])
+    # Down 6% from the true 100k start-of-day (crypto's earlier row), not
+    # from stocks' own later 99000 value (which would only show ~5%).
+    broker = FakeBroker(cash=94_000.0)
+    assert live_trade.daily_loss_exceeded(broker, threshold_pct=0.055, equity_log_paths=[crypto_log, stocks_log]) is True
+    assert live_trade.daily_loss_exceeded(broker, threshold_pct=0.07, equity_log_paths=[crypto_log, stocks_log]) is False

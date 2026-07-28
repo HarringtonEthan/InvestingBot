@@ -182,29 +182,58 @@ def log_equity(row: dict):
     _append_row(EQUITY_LOG_PATH, EQUITY_LOG_FIELDS, row)
 
 
-def _first_equity_today(now: dt.datetime) -> float | None:
+def _first_equity_today(now: dt.datetime, equity_log_paths: list[Path] | None = None) -> float | None:
     """
     Returns the first portfolio_value_usd logged today (UTC calendar
-    day), or None if nothing's been logged yet today - e.g. the very
-    first run of the day, or a completely flat day where log_equity()
-    never wrote a row. None means "no baseline to compare against yet,"
-    not "no loss" - callers should treat that as "can't check, allow
-    trading" rather than blocking on missing data.
+    day) across one or more equity logs, or None if nothing's been
+    logged yet today in any of them - e.g. the very first run of the
+    day, or a completely flat day where log_equity() never wrote a row.
+    None means "no baseline to compare against yet," not "no loss" -
+    callers should treat that as "can't check, allow trading" rather
+    than blocking on missing data.
+
+    Defaults to just [EQUITY_LOG_PATH] - the single file this process
+    itself writes to - which is what every existing caller/test expects.
+    main() passes every known equity log explicitly instead (see
+    daily_loss_exceeded below): since crypto and stocks each write to
+    their own file now (--log-suffix), but both record the SAME
+    whole-account equity value, reading only the currently-running
+    workflow's own file could miss an earlier "today" row logged by the
+    other asset class's workflow a few minutes before this one first
+    ran today - silently using a slightly-late baseline for the
+    breaker instead of the account's true start of day.
     """
-    if not EQUITY_LOG_PATH.exists():
-        return None
-    with EQUITY_LOG_PATH.open(newline="") as f:
-        rows = list(csv.DictReader(f))
+    paths = equity_log_paths if equity_log_paths is not None else [EQUITY_LOG_PATH]
     today = now.date().isoformat()
-    for row in rows:
-        # timestamp_utc looks like "2026-07-27T00:01:00+00:00" - the
-        # date portion is always the first 10 characters.
-        if row["timestamp_utc"][:10] == today:
-            return float(row["portfolio_value_usd"])
-    return None
+    # (timestamp, value) pairs from every row dated today, across every
+    # path given - collected before picking the earliest, since rows in
+    # one file aren't necessarily already ordered relative to another's.
+    todays_rows: list[tuple[str, float]] = []
+    for path in paths:
+        if not path.exists():
+            continue
+        with path.open(newline="") as f:
+            rows = list(csv.DictReader(f))
+        for row in rows:
+            # timestamp_utc looks like "2026-07-27T00:01:00+00:00" - the
+            # date portion is always the first 10 characters.
+            if row["timestamp_utc"][:10] == today:
+                todays_rows.append((row["timestamp_utc"], float(row["portfolio_value_usd"])))
+    if not todays_rows:
+        return None
+    todays_rows.sort(key=lambda pair: pair[0])
+    return todays_rows[0][1]
 
 
-def daily_loss_exceeded(broker: Broker, threshold_pct: float) -> bool:
+# The complete set of equity logs that could hold "today's" real
+# whole-account starting value, regardless of which one this process's
+# own --log-suffix happens to write to - see _first_equity_today's
+# docstring above for why checking only EQUITY_LOG_PATH would risk a
+# late baseline for whichever asset class's workflow runs second.
+ALL_EQUITY_LOG_PATHS = [Path("logs/equity_log_crypto.csv"), Path("logs/equity_log_stocks.csv")]
+
+
+def daily_loss_exceeded(broker: Broker, threshold_pct: float, equity_log_paths: list[Path] | None = None) -> bool:
     """
     True if the account is currently down threshold_pct or more from
     today's first logged equity value - a simple circuit breaker so a
@@ -214,7 +243,7 @@ def daily_loss_exceeded(broker: Broker, threshold_pct: float) -> bool:
     normally, since cutting a loss is exactly what should keep
     happening even on a day this breaker has tripped.
     """
-    day_start_equity = _first_equity_today(dt.datetime.now(dt.timezone.utc))
+    day_start_equity = _first_equity_today(dt.datetime.now(dt.timezone.utc), equity_log_paths)
     if day_start_equity is None or day_start_equity <= 0:
         # No baseline yet today - nothing to compare against, so don't
         # block trading over missing data.
@@ -484,7 +513,7 @@ def main():
         # never blocked by this, since letting an existing position ride
         # out a bad day unmanaged would be the opposite of what a
         # circuit breaker is for.
-        breaker_tripped = args.execute and daily_loss_exceeded(broker, args.daily_loss_limit)
+        breaker_tripped = args.execute and daily_loss_exceeded(broker, args.daily_loss_limit, ALL_EQUITY_LOG_PATHS)
         if breaker_tripped:
             print(f"[circuit breaker] Account is down {args.daily_loss_limit:.0%}+ from today's starting equity - "
                   f"blocking new BUYs for the rest of the run. SELLs are unaffected.")

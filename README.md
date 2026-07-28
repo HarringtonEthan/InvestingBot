@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.14
+# InvestingBot — Version Richards 0.9.15
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 89 passing](https://img.shields.io/badge/tests-89%20passing-4c9a2a)](tests/)
+[![Tests: 91 passing](https://img.shields.io/badge/tests-91%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -105,7 +105,7 @@ Both share: **real-money mode disabled** (2 independent locks - see
 live right now, so there's nothing to retrain for), and **CI running
 the test suite on every push/PR** (`.github/workflows/ci.yml`).
 
-**What "81 tests passing" (`pytest tests/`) actually means:** these are
+**What "91 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
@@ -165,6 +165,12 @@ the code isn't broken; it does not mean the strategy is good.
   more panels show **current open positions per asset class** as a
   table (symbol, price, qty, market value, unrealized P&L), the same
   shape Alpaca's own account dashboard shows.
+
+**What's next:** no further strategy changes are planned right now.
+Both configurations above are "meaningfully de-risked" candidates, not
+proven ones - the current phase is just letting them keep trading
+(paper money) and accumulate enough real closed trades to actually test
+that, rather than tuning further off a handful of days of live data.
 
 ---
 

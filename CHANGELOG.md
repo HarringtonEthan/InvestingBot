@@ -17,6 +17,42 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.15 - 2026-07-28
+
+- **Full codebase bug sweep.** Found and fixed two real, if narrow-scope,
+  correctness bugs:
+  - The daily-loss circuit breaker (`live_trade.py`'s
+    `daily_loss_exceeded`/`_first_equity_today`) read only the currently-
+    running workflow's own equity log to find "today's starting balance" -
+    a side effect of splitting crypto/stocks into separate log files in
+    0.9.9. Since both files record the SAME whole-account equity, this
+    could miss an earlier "today" row logged by the other asset class's
+    workflow a few minutes before this one first ran today, silently
+    using a slightly-late (and already-lower) baseline instead of the
+    account's true start of day. Fixed by threading an explicit
+    `equity_log_paths` list through both functions; `main()` now passes
+    every known equity log (`ALL_EQUITY_LOG_PATHS`), so the breaker
+    always finds the true earliest "today" row across both files,
+    regardless of which one this process itself writes to.
+  - `src/data.py`'s `PERIODS_PER_YEAR_24_7` table was missing a `"4h"`
+    entry, even though 4-hour bars are a real, documented crypto interval
+    (`live_trade.py`/`src/alpaca_data.py`). A 4h crypto backtest via
+    `periods_per_year()` silently fell through to the 252 stock-calendar
+    fallback instead of a 24/7 count, understating how many bars occur in
+    a year and skewing annualized return/vol/Sharpe for that interval
+    only - total return and drawdown were unaffected. Added the missing
+    entry (`365 * 24 // 4`).
+  - Reviewed every other source file, all 5 workflow YAMLs, `.gitattributes`,
+    and `requirements.txt` against actual imports - no further issues found.
+  New tests: `tests/test_circuit_breaker.py::test_uses_earliest_row_across_both_asset_class_logs`,
+  `tests/test_data.py::test_periods_per_year_4h_crypto_uses_24_7_calendar`.
+- **README polish.** Fixed a stale "81 tests passing" reference (actually
+  91 by now), added a short "What's next" note at the end of "Current
+  live status" making explicit that this phase is about letting both
+  configurations accumulate real closed trades, not further tuning -
+  and verified every image/CSV link in the README actually resolves on
+  disk.
+
 ## Version Richards 0.9.14 - 2026-07-28
 
 - **Fixed the dashboard's account-total panel not reconciling with the

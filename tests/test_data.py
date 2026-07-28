@@ -107,3 +107,13 @@ def test_periods_per_year_daily_is_252_regardless_of_asset_class():
 def test_periods_per_year_unknown_interval_falls_back_to_252():
     assert periods_per_year("1w", is_crypto=False) == 252
     assert periods_per_year("1w", is_crypto=True) == 252
+
+
+def test_periods_per_year_4h_crypto_uses_24_7_calendar():
+    # "4h" is a real, supported live-trading interval for crypto (see
+    # live_trade.py/src/alpaca_data.py) but was missing from
+    # PERIODS_PER_YEAR_24_7 - a 4h crypto backtest silently fell through
+    # to the 252 stock-calendar fallback instead of a 24/7 count, wrongly
+    # scaling its annualized return/vol/Sharpe.
+    assert periods_per_year("4h", is_crypto=True) == 365 * 24 // 4
+    assert periods_per_year("4h", is_crypto=True) != 252
