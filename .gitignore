@@ -14,3 +14,4 @@ logs/*
 !logs/trade_log_archive_pre_2026-07-27.csv
 !logs/trade_log_archive_pre_2026-07-28.csv
 !logs/equity_log_archive_pre_2026-07-28_split.csv
+!logs/trade_log_stocks_archive_pre_2026-07-28_reset.csv

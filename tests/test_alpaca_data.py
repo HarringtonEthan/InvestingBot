@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from src.alpaca_data import get_crypto_bars, get_crypto_bars_range, get_stock_bars_range
+from src.alpaca_data import get_crypto_bars, get_crypto_bars_range, get_stock_bars_range, get_stock_latest_price
 
 
 def _fake_client(df: pd.DataFrame | None, method_name: str):
@@ -132,5 +132,26 @@ def test_get_stock_bars_range_requests_iex_feed(monkeypatch):
     get_stock_bars_range("AAPL", "5m", "2025-01-01", "2025-01-02")
 
     request = client_instance.get_stock_bars.call_args.args[0]
+    from alpaca.data.enums import DataFeed
+    assert request.feed == DataFeed.IEX
+
+
+def test_get_stock_latest_price_returns_the_trade_price(monkeypatch):
+    client_instance = MagicMock()
+    client_instance.get_stock_latest_trade.return_value = {"AAPL": SimpleNamespace(price=336.93)}
+    monkeypatch.setattr("src.alpaca_data.StockHistoricalDataClient", MagicMock(return_value=client_instance))
+
+    price = get_stock_latest_price("AAPL")
+    assert price == 336.93
+
+
+def test_get_stock_latest_price_requests_iex_feed(monkeypatch):
+    client_instance = MagicMock()
+    client_instance.get_stock_latest_trade.return_value = {"AAPL": SimpleNamespace(price=336.93)}
+    monkeypatch.setattr("src.alpaca_data.StockHistoricalDataClient", MagicMock(return_value=client_instance))
+
+    get_stock_latest_price("AAPL")
+
+    request = client_instance.get_stock_latest_trade.call_args.args[0]
     from alpaca.data.enums import DataFeed
     assert request.feed == DataFeed.IEX

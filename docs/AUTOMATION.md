@@ -382,13 +382,15 @@ looking at is never ambiguous. Two common choices:
 - **Original funding amount** (e.g. `--baseline 100000`) - gives
   all-time P&L since the account was funded, matching Alpaca's own
   total account P&L.
-- **Today's starting value** (e.g. `--baseline 99787.08`, whatever the
-  real equity was right before today's trading began) - gives *today's*
-  P&L specifically, ignoring everything before today. This is what
+- **A specific reset/tracking-period start** (e.g. `--baseline 99747.83`,
+  the account's real equity right after the 2026-07-28 manual reset -
+  every open position sold outside the bot, following the stale-price
+  incident documented in `CHANGELOG.md`) - gives P&L *since that point*
+  specifically, ignoring everything before it. This is what
   `update-dashboard.yml` currently uses - it needs to be updated to a
-  fresh anchor value whenever "today" moves forward, or the panel keeps
-  reporting P&L against an increasingly stale reference point instead
-  of the current day.
+  fresh anchor value whenever a new tracking period (a reset, or just
+  "today") is what should be measured going forward, or the panel keeps
+  reporting P&L against an increasingly stale reference point.
 
 Both are valid, they just answer different questions - a baseline
 chosen for one purpose will look "wrong" if read as the other, even
@@ -442,9 +444,10 @@ where committing an image every 5 minutes forever would not be.
 
 ## Stock automation: rule-based, 5-minute bars
 
-**Currently running** (see "Current live status" in the main README for
-the up-to-date picture - this section can go stale between edits, that
-one is kept current). `paper-trade-stocks.yml` has **no `schedule:`
+**See "Current live status" in the main README for whether this is
+running or paused right now** - that section is kept current; this one
+describes the mechanics and can go stale between edits.
+`paper-trade-stocks.yml` has **no `schedule:`
 trigger of its own** - only `workflow_dispatch: {}` - so GitHub itself
 never fires it on its own; it only runs when cron-job.org (or a manual
 "Run workflow" click) calls its dispatch endpoint. That's a deliberate,

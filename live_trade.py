@@ -34,13 +34,19 @@ from pathlib import Path
 # .env file into the environment, so they don't need to be exported by hand.
 from dotenv import load_dotenv
 
+# Only used by apply_live_price_override() below, to patch a single cell
+# in the already-fetched bars DataFrame.
+import pandas as pd
+
 # The status value that means an order has actually been executed - used
 # to distinguish a confirmed fill from a merely-submitted order.
 from alpaca.trading.enums import OrderStatus
 
 # Alpaca-sourced crypto price bars (used instead of Yahoo for crypto - see
-# module docstring in src/alpaca_data.py).
-from src.alpaca_data import get_crypto_bars
+# module docstring in src/alpaca_data.py); get_stock_latest_price is a
+# genuinely live single-trade price for stocks, used to correct the most
+# recent point of an otherwise slightly-lagged bars series - see decide().
+from src.alpaca_data import get_crypto_bars, get_stock_latest_price
 # The Alpaca account/order wrapper.
 from src.broker import Broker
 # Alpaca-first (falling back to Yahoo Finance, then synthetic) price data,
@@ -306,6 +312,20 @@ def poll_for_fill(broker: Broker, order, attempts: int = 3, delay_seconds: float
     return False, None, None
 
 
+def apply_live_price_override(raw: pd.DataFrame, live_price: float) -> pd.DataFrame:
+    """
+    Overwrites just the last row's Close with a fresh live price, leaving
+    every earlier bar untouched - see decide()'s comment on why this
+    combination (a slightly-lagged bars series for rolling-indicator
+    context, plus a genuinely live price for "right now") is worth
+    doing at all. Returns a copy; never mutates the caller's DataFrame,
+    since `raw` may still be referenced elsewhere before this returns.
+    """
+    raw = raw.copy()
+    raw.iloc[-1, raw.columns.get_loc("Close")] = live_price
+    return raw
+
+
 def decide(ticker: str, args, broker: Broker):
     """Returns a dict describing the decision for one ticker, or None if data was unusable."""
     # Figures out both the Yahoo-format and Alpaca-format symbol strings,
@@ -352,6 +372,28 @@ def decide(ticker: str, args, broker: Broker):
             print(f"[{ticker}] SKIPPED: only synthetic fallback data was available "
                   f"(no real network access to Alpaca or Yahoo Finance from here).")
             return None
+
+        # Even Alpaca's own free IEX historical-bars feed above can sit
+        # several percent away from Alpaca's real-time pricing at the
+        # exact same moment - confirmed live on 2026-07-28 (see
+        # CHANGELOG.md): a 5-minute bar's close only reflects whenever
+        # that bar's window happened to end, not literally "right now,"
+        # and IEX alone (a single exchange) doesn't always track the
+        # true market closely. Rolling indicators (SMA/RSI, computed
+        # below by add_features) tolerate a few minutes of lag fine -
+        # that's what "rolling" means - but the actual dip/exit
+        # comparison shouldn't be made against a stale final point.
+        # Overwriting just the series' last Close with a genuinely live
+        # trade price, before add_features() runs, keeps the rolling
+        # context from the (possibly lagged) bars while making sure
+        # "where is price right now" uses a live number. Best-effort:
+        # if this extra call fails, still trade off the bars series
+        # alone rather than skip the ticker over one failed API call.
+        try:
+            raw = apply_live_price_override(raw, get_stock_latest_price(symbol.alpaca))
+        except Exception as e:
+            print(f"[{ticker}] Could not fetch a live quote to refine the latest bar "
+                  f"({type(e).__name__}: {e}) - using the historical bar's own close instead.")
 
     # Compute technical indicators on whatever price data was fetched.
     df = add_features(raw)

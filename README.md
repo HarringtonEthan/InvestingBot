@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.9.17
+# InvestingBot — Version Richards 0.9.18
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 97 passing](https://img.shields.io/badge/tests-97%20passing-4c9a2a)](tests/)
+[![Tests: 102 passing](https://img.shields.io/badge/tests-102%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -74,11 +74,18 @@ snapshot and will be stale by the time you read it - check
 covers what's true right now** - every bug, incident, and past decision
 that shaped this configuration is in `CHANGELOG.md`, not repeated here.
 
-**Both crypto and stocks are currently RUNNING** (paper), triggered
-**only** by an external scheduler ([cron-job.org](https://cron-job.org))
-calling GitHub's `workflow_dispatch` API every 5 minutes for each.
-Neither workflow has a GitHub-side `schedule:` trigger - GitHub itself
-never fires either one on its own.
+**Both crypto and stocks are currently PAUSED** (paper) - the external
+scheduler ([cron-job.org](https://cron-job.org)) that would otherwise
+call each workflow's `workflow_dispatch` endpoint every 5 minutes has
+been turned off for both, following a real live bug found and fixed on
+2026-07-28 (see `CHANGELOG.md`): stock decisions were being made from a
+price that could sit several percent away from Alpaca's own real-time
+pricing. Every open stock position was manually sold and the paper
+account was reset ($99,747.83 is the new tracking baseline) while that
+was fixed. Neither workflow has a GitHub-side `schedule:` trigger
+either way - GitHub itself never fires either one on its own; only the
+external scheduler (when re-enabled) or a manual "Run workflow" click
+can.
 
 Crypto and stocks are otherwise completely independent - different
 tickers, different strategy code, different thresholds, separate
@@ -88,12 +95,12 @@ neither one is missing information the other has:
 
 | | Crypto | Stocks |
 |---|---|---|
-| **Running right now?** | Yes | Yes |
-| **Triggered by** | cron-job.org only, every 5 min | cron-job.org only, every 5 min |
+| **Running right now?** | No - paused | No - paused |
+| **Triggered by** | cron-job.org, every 5 min when re-enabled | cron-job.org, every 5 min when re-enabled |
 | **Strategy** | `day_trading` (rule-based, no ML) | `rule_based` (rule-based, no ML) |
 | **Tickers** | BTC, ETH, SOL, DOGE, LTC, AVAX, LINK, XRP, DOT | SPY, AAPL, QQQ, JPM, XOM, JNJ, KO, CAT, DIS |
 | **Bar size** | 5-minute | 5-minute |
-| **Price data source** | Alpaca's own live feed, always | Alpaca first, falls back to Yahoo Finance only if Alpaca doesn't have enough |
+| **Price data source** | Alpaca's own live feed, always | Alpaca first (bars for rolling indicators, plus a live trade price patched onto the latest point - see `CHANGELOG.md` 2026-07-28), Yahoo only as a last resort |
 | **Buy signal** | price ≥4.0% below its 20-bar average | price ≥1.5% below its 20-bar average |
 | **Sell signal** | +1.0% profit **or** -5.0% stop-loss from entry | back within 2.0% of the average (no stop-loss) |
 | **Max $ per trade** (`--max-notional`) | $2,000 | $2,000 |
@@ -107,7 +114,7 @@ Both share: **real-money mode disabled** (2 independent locks - see
 live right now, so there's nothing to retrain for), and **CI running
 the test suite on every push/PR** (`.github/workflows/ci.yml`).
 
-**What "97 tests passing" (`pytest tests/`) actually means:** these are
+**What "102 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
@@ -168,11 +175,13 @@ the code isn't broken; it does not mean the strategy is good.
   table (symbol, price, qty, market value, unrealized P&L), the same
   shape Alpaca's own account dashboard shows.
 
-**What's next:** no further strategy changes are planned right now.
-Both configurations above are "meaningfully de-risked" candidates, not
-proven ones - the current phase is just letting them keep trading
-(paper money) and accumulate enough real closed trades to actually test
-that, rather than tuning further off a handful of days of live data.
+**What's next:** re-enable the cron-job.org schedulers once satisfied
+the stock price-source fix (see `CHANGELOG.md`) is holding up. No
+strategy changes are planned - both configurations above are
+"meaningfully de-risked" candidates, not proven ones, and the plan
+remains to let them trade (paper money) and accumulate enough real
+closed trades to actually test that, not to tune further off a handful
+of days of live data.
 
 ---
 

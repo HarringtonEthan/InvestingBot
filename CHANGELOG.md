@@ -17,6 +17,57 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.18 - 2026-07-28
+
+- **Fixed the actual root cause of the stock price-accuracy problem,
+  and paused live trading while it was found.** 0.9.17's fix (switching
+  stocks from Yahoo Finance to Alpaca's historical-bars feed) turned
+  out to be insufficient on its own: within minutes of deploying it, a
+  real QQQ BUY was placed at $679, while Alpaca's own live position
+  pricing showed the true price around $679 but CAT's decision-time
+  price ($873.14) differed from Alpaca's real-time position price
+  ($838.50) by about 4% in the same 60-second window - confirmed by
+  directly comparing a live trading run's console output against
+  `results/trade_dashboard.png`'s position table, generated one second
+  apart. Root cause: Alpaca's *free IEX historical-bars feed* (a single
+  exchange, not the consolidated tape) can itself diverge meaningfully
+  from Alpaca's own real-time pricing - a 5-minute bar's close only
+  reflects whenever that bar's window happened to end, not literally
+  "right now." Fixed by adding `get_stock_latest_price()`
+  (`src/alpaca_data.py`, wraps Alpaca's latest-trade endpoint) and a new
+  `apply_live_price_override()` (`live_trade.py`): the historical bars
+  series is still used for rolling indicators (SMA/RSI tolerate a few
+  minutes of lag fine - that's what "rolling" means), but the series'
+  own last Close is now overwritten with a genuinely live trade price
+  before those indicators are computed, so the actual dip/exit
+  comparison is made against a live number. Crypto was unaffected
+  throughout - its live path already had an explicit staleness check
+  (rejects any bar older than 15 minutes) and isn't sourced from a
+  single thin exchange the way stocks' free feed is; directly confirmed
+  via production logs that crypto's decisions used bars only 5 minutes
+  old throughout.
+  - This does **not** invalidate the existing walk-forward validation:
+    `optimize.py`/`walk_forward.py` already used this same Alpaca-first
+    data source (`get_price_data_smart()`) for all intraday validation,
+    crypto and stocks, before today - this fix only made *live* trading
+    match what *research* already used, it didn't change the research
+    itself. The newly-confirmed several-percent IEX divergence is a
+    real reason to treat the stock walk-forward numbers' precision with
+    more caution than before, since backtests assume a fill at the
+    bars series' own price - but nothing about today's fix changed
+    those numbers.
+  - **Every open stock position was manually sold and the paper account
+    was reset while this was being fixed.** New tracking baseline:
+    **$99,747.83** (`update-dashboard.yml`'s `--baseline`, updated from
+    99787.08). `logs/trade_log_stocks.csv` was archived to
+    `logs/trade_log_stocks_archive_pre_2026-07-28_reset.csv` and
+    restarted empty; both equity logs got a fresh anchor row at the
+    reset value. Both crypto and stocks' cron-job.org schedulers were
+    paused - re-enable manually once satisfied this fix is holding up.
+  - New tests: `tests/test_alpaca_data.py` (`get_stock_latest_price`),
+    `tests/test_live_price_override.py` (`apply_live_price_override`) -
+    102 total passing.
+
 ## Version Richards 0.9.17 - 2026-07-28
 
 - **Fixed live stock trading silently running on stale, day-old price

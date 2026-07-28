@@ -44,8 +44,9 @@ from alpaca.data.historical.stock import StockHistoricalDataClient
 # full-market SIP feed needs a separate paid subscription this project
 # doesn't have) - not used for crypto, which has no feed distinction.
 from alpaca.data.enums import DataFeed
-# The request payload builders for asking for a range of historical bars.
-from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
+# The request payload builders for asking for a range of historical bars,
+# plus a single symbol's most recent individual trade (get_stock_latest_price).
+from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest, StockLatestTradeRequest
 # Bar size is expressed as an (amount, unit) pair, e.g. 5 Minute bars.
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
@@ -200,3 +201,34 @@ def get_stock_bars_range(symbol: str, interval: str, start: str, end: str) -> pd
         df = df.xs(symbol, level=0)
 
     return df.rename(columns={"close": "Close"})[["Close"]]
+
+
+def get_stock_latest_price(symbol: str) -> float:
+    """
+    The single most recent individual trade price for a stock, straight
+    from Alpaca's live trade feed - not a historical bar's close.
+
+    Added because live trading found that even Alpaca's own free IEX
+    historical-bars feed (get_stock_bars_range above, what
+    live_trade.py's decision logic reads) can sit several percent away
+    from Alpaca's own real-time pricing at the exact same moment -
+    confirmed live on 2026-07-28 (see CHANGELOG.md): a 5-minute bar's
+    close only reflects whenever that bar's window happened to end, not
+    literally "right now," and IEX alone (a single exchange, not the
+    consolidated tape) doesn't always agree closely with the true
+    market. This is meant to correct just the single most recent data
+    point of a bars series live_trade.py already fetched for its rolling
+    indicators (SMA/RSI tolerate a few minutes of lag fine - that's what
+    "rolling" means) - see live_trade.py's decide() for where the two
+    get combined. Raises if Alpaca has no trade on record for this
+    symbol at all (e.g. a bad ticker) - callers should treat that the
+    same as any other per-ticker data failure, not something to guess a
+    price for.
+    """
+    client = StockHistoricalDataClient(
+        api_key=os.environ.get("ALPACA_API_KEY"),
+        secret_key=os.environ.get("ALPACA_SECRET_KEY"),
+    )
+    request = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
+    trades = client.get_stock_latest_trade(request)
+    return float(trades[symbol].price)

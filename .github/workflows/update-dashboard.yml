@@ -33,13 +33,15 @@ jobs:
       - run: pip install -r requirements.txt
 
       - name: Generate dashboard
-        # 99787.08 is the account's real value at the start of today
-        # (2026-07-28, before any of today's trades) - not the original
-        # $100k funding amount. This is a deliberate choice to show
-        # "today's P&L," not "all-time P&L since funding" - see
-        # docs/AUTOMATION.md's baseline explanation for the difference
-        # and why this needs updating again whenever a fresh "day" or
-        # tracking period is what should be measured going forward.
+        # 99747.83 is the account's real value right after the
+        # 2026-07-28 manual reset (every open position sold outside the
+        # bot, after the stale-price incident documented in CHANGELOG.md)
+        # - not the original $100k funding amount, and not the earlier
+        # 99787.08 anchor from before that incident. This is a deliberate
+        # choice to show "P&L since the reset," not "all-time P&L since
+        # funding" - see docs/AUTOMATION.md's baseline explanation for
+        # the difference and why this needs updating again whenever a
+        # fresh tracking period is what should be measured going forward.
         # --live-positions pulls current open positions from Alpaca
         # (read-only - never places an order) so the crypto/stock P&L
         # panels show live unrealized gain/loss too, not just closed trades.
@@ -50,7 +52,7 @@ jobs:
           # other workflows - this script only ever reads positions, but
           # there's no reason to let a stray live-endpoint secret enable that.
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python visualize_log.py --baseline 99787.08 --live-positions
+        run: python visualize_log.py --baseline 99747.83 --live-positions
 
       - name: Commit updated dashboard
         run: |
