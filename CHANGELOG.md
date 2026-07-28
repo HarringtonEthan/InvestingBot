@@ -17,6 +17,20 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.9.12 - 2026-07-28
+
+- **Changed the dashboard's baseline from the original $100,000 funding
+  amount to $99,787.08** (the account's real value at the start of
+  today, 2026-07-28, before any of today's trades) - `update-dashboard.yml`
+  now runs `visualize_log.py --baseline 99787.08`, so the "Net account
+  gain/loss" panel reads as **today's P&L specifically**, not all-time
+  P&L since funding. Both are valid readings of the same data; this is a
+  deliberate choice of which one the dashboard shows by default now.
+  Documented in `docs/AUTOMATION.md`, including that this baseline value
+  needs to be updated again whenever "today" moves forward - otherwise
+  the panel keeps measuring against an increasingly stale reference
+  point instead of the current day.
+
 ## Version Richards 0.9.11 - 2026-07-28
 
 - **Reorganized `results/` into `results/param_sweep/` and

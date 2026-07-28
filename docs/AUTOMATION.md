@@ -366,27 +366,35 @@ profitable."
 
 **The account-total panel's baseline matters and is easy to misread.**
 By default it's equity minus the *first* row across both equity logs -
-i.e. "gain/loss since equity logging happened to start," which isn't the
-same as "since I funded the account," especially if trades were already
-open before logging began. Pass `--baseline 100000` (or whatever your
-actual starting cash was) to measure from your real starting point
-instead - the title changes to make clear which one you're looking at.
-Both are valid, they just answer different questions - but showing only
-the "since tracking began" one risks looking like it disagrees with what
-Alpaca's own dashboard says, when both numbers are actually correct,
-just measuring from different starting points. Use `--baseline` whenever
-you want the number that matches Alpaca's own total account P&L.
+i.e. "gain/loss since equity logging happened to start," which isn't
+necessarily the number you actually want. Pass `--baseline <value>` to
+measure from whatever starting point is meaningful instead - the title
+always shows the exact dollar baseline used, so which one you're
+looking at is never ambiguous. Two common choices:
+- **Original funding amount** (e.g. `--baseline 100000`) - gives
+  all-time P&L since the account was funded, matching Alpaca's own
+  total account P&L.
+- **Today's starting value** (e.g. `--baseline 99787.08`, whatever the
+  real equity was right before today's trading began) - gives *today's*
+  P&L specifically, ignoring everything before today. This is what
+  `update-dashboard.yml` currently uses - it needs to be updated to a
+  fresh anchor value whenever "today" moves forward, or the panel keeps
+  reporting P&L against an increasingly stale reference point instead
+  of the current day.
+
+Both are valid, they just answer different questions - a baseline
+chosen for one purpose will look "wrong" if read as the other, even
+though the number itself is correct for what it was actually measuring.
 
 It also runs on a schedule: `.github/workflows/update-dashboard.yml`
 regenerates and commits `results/trade_dashboard.png` roughly hourly
-(with `--baseline 100000`, via an external scheduler - GitHub's own
-`schedule:` trigger isn't reliable enough on its own here either, same
-as the trading workflows), so `results/trade_dashboard.png` on GitHub
-stays close to current without me needing to run anything locally - just
-open that file's page on github.com. This is deliberately a slower
-cadence than the 5-minute trading workflows: one image commit an hour is
-a small, bounded cost, where committing an image every 5 minutes forever
-would not be.
+(via an external scheduler - GitHub's own `schedule:` trigger isn't
+reliable enough on its own here either, same as the trading workflows),
+so `results/trade_dashboard.png` on GitHub stays close to current
+without me needing to run anything locally - just open that file's page
+on github.com. This is deliberately a slower cadence than the 5-minute
+trading workflows: one image commit an hour is a small, bounded cost,
+where committing an image every 5 minutes forever would not be.
 
 ## Stock automation: rule-based, 5-minute bars
 
