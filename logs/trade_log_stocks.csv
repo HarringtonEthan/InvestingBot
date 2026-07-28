@@ -2,3 +2,4 @@ timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,pos
 2026-07-28T13:31:05+00:00,PAPER,stock,XOM,rule_based,BUY,154.789993,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-07-28T13:31:09+00:00,PAPER,stock,CAT,rule_based,BUY,873.059998,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-07-28T13:31:13+00:00,PAPER,stock,DIS,rule_based,BUY,96.639999,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
+2026-07-28T16:01:05+00:00,PAPER,stock,QQQ,rule_based,BUY,679.000000,2000.00,0.0,,,True,
