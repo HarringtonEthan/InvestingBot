@@ -16,10 +16,17 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
-  # Needed for the deploy job's actions/deploy-pages step below - this
-  # workflow no longer commits anything to the branch at all (see the
-  # build job's comment on why), so contents: write is gone entirely.
+  # The build job commits results/trade_dashboard.png back to the branch
+  # (the PNG dashboard this workflow generated before the casino website
+  # existed, kept running alongside it on request) - contents: write is
+  # for that. Doing so here is safe against workflow loops specifically
+  # because this workflow is schedule/workflow_dispatch-triggered, never
+  # push-triggered - a commit landing on the branch can't cause this
+  # workflow (or itself) to fire again the way an on:push trigger would.
+  # site/data/*.json still never gets committed (see the build job's
+  # comment) - that half of the loop-prevention design is unchanged.
+  contents: write
+  # Needed for the deploy job's actions/deploy-pages step below.
   pages: write
   id-token: write
 
@@ -68,6 +75,37 @@ jobs:
           # enable that.
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
         run: python site_data.py --live-positions --out-dir site/data
+
+      - name: Generate dashboard PNG (results/trade_dashboard.png)
+        # Restores the original PNG dashboard alongside the website - on
+        # request, both get kept up to date by the same cron rather than
+        # the PNG being dropped when the site replaced it as the primary
+        # view. Same read-only --live-positions pull as above, same
+        # logs/*.csv source of truth, no hardcoded --baseline.
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_BASE_URL: https://paper-api.alpaca.markets
+        run: python visualize_log.py --live-positions
+
+      - name: Commit dashboard PNG
+        run: |
+          git config user.name "investingbot"
+          git config user.email "investingbot@users.noreply.github.com"
+          [ -f results/trade_dashboard.png ] && git add results/trade_dashboard.png
+          git diff --cached --quiet && exit 0
+          git commit -m "Update trade dashboard PNG $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # Same retry pattern as paper-trade-stocks.yml/paper-trade-crypto.yml -
+          # this workflow's own overlapping runs (or a trading-log commit
+          # landing between fetch and push) are the only realistic race here.
+          for i in 1 2 3 4 5; do
+            git pull --rebase origin "${{ github.ref_name }}" && git push origin "HEAD:${{ github.ref_name }}" && exit 0
+            echo "Push attempt $i failed (likely a concurrent commit from another workflow) - retrying..."
+            git rebase --abort 2>/dev/null || true
+            sleep $((RANDOM % 5 + 1))
+          done
+          echo "::error::Failed to push the dashboard PNG after 5 attempts."
+          exit 1
 
       - name: Upload Pages artifact
         # This is the "prevent workflow loops" mechanism the task asked

@@ -18,9 +18,7 @@
   let dashboard = null;
   let positions = null;
   let trades = null;
-  let equity = null;
-  let currentPeriod = "today";
-  let charts = {};
+  let currentPeriod = "today";  // controls the slot machines + stats grid (top pill-tabs)
 
   // ---------------------------------------------------------------------
   // Safe fetch: never throws, never lets one bad file break the others.
@@ -173,6 +171,18 @@
 
     document.getElementById("methodology-note").innerHTML =
       `📜 <strong>How this is calculated:</strong> ${dashboard.methodology.baseline}. ${dashboard.methodology.num_trades}`;
+
+    const resetNote = document.getElementById("reset-note");
+    if (resetNote) {
+      // Trade logs get archived and restarted fresh on a same-day
+      // relaunch, but the equity log never resets - so a period's
+      // Starting/Ending Value can straddle the relaunch while Realized
+      // P&L only counts trades since it. When that happens, Dollar P&L
+      // legitimately won't match Realized + Unrealized - it's not a bug,
+      // it's two numbers describing different eras of the account. See
+      // site_data.py's summarize_period() for the exact detection logic.
+      resetNote.hidden = !p.trade_log_reset_during_period;
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -197,8 +207,13 @@
     const pnl = p.unrealized_pl;
     const glow = pnl > 0 ? "glow-win" : pnl < 0 ? "glow-loss" : "glow-neutral";
     const suit = SUITS[p.is_crypto ? "crypto" : "stock"];
+    const strategyLabel = p.strategy || "unknown";
+    // Strategy used to render as a "card-strategy" strip pinned to the
+    // bottom of the card, which overlapped the dollar amount above it and
+    // made it unreadable. It's still available on hover via title -
+    // just not painted on top of the numbers anymore.
     return `
-      <div class="playing-card ${glow}">
+      <div class="playing-card ${glow}" title="Strategy: ${strategyLabel}">
         <div class="card-corner">${p.symbol}</div>
         <div class="card-suit">${suit}</div>
         <div class="card-ticker">${p.symbol}</div>
@@ -207,7 +222,7 @@
         <div class="card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
         <div class="card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
         <div class="card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPct(p.unrealized_plpc)})</div>
-        <div class="card-strategy">${p.strategy || "strategy: unknown"}</div>
+        <div class="card-strategy-tag">${strategyLabel}</div>
       </div>`;
   }
 
@@ -227,7 +242,11 @@
   }
 
   // ---------------------------------------------------------------------
-  // Ledger (recent trades), filtered to the selected period's window
+  // Ledger (past trades) - deliberately NOT filtered by the top pill-tabs
+  // period control (or by the charts page's own period dropdown, which
+  // lives entirely on charts.html now): this section is meant to always
+  // show the most recent real history regardless of whatever period the
+  // rest of the page is currently scoped to.
   // ---------------------------------------------------------------------
   const STATUS_LABEL = {
     confirmed_fill: "Confirmed Fill",
@@ -240,27 +259,16 @@
     not_placed: "badge-notplaced",
   };
 
-  function renderLedger(period) {
+  function renderLedger() {
     const body = document.getElementById("ledger-body");
     const empty = document.getElementById("ledger-empty");
     if (!trades || !trades.available || !trades.trades.length) {
       body.innerHTML = "";
       empty.hidden = false;
+      empty.textContent = "No trades logged yet — the house is waiting.";
       return;
     }
-    const p = dashboard.periods[period];
-    const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
-    const endMs = p.end_utc ? new Date(p.end_utc).getTime() : Infinity;
-    const rows = trades.trades.filter((t) => {
-      const ts = new Date(t.timestamp_utc).getTime();
-      return ts >= startMs && ts <= endMs;
-    });
-    if (!rows.length) {
-      body.innerHTML = "";
-      empty.hidden = false;
-      empty.textContent = `No trades logged for ${p.label.toLowerCase()} yet.`;
-      return;
-    }
+    const rows = trades.trades; // already newest-first, capped server-side (site_data.py's MAX_TRADES_PUBLISHED)
     empty.hidden = true;
     body.innerHTML = rows.map((t) => {
       const pnlCls = t.realized_pnl_usd === null ? "" : (t.realized_pnl_usd >= 0 ? "pnl-positive" : "pnl-negative");
@@ -281,209 +289,12 @@
   }
 
   // ---------------------------------------------------------------------
-  // Charts
-  // ---------------------------------------------------------------------
-  const CASINO_COLORS = {
-    gold: "#ffd700",
-    green: "#39ff14",
-    red: "#ff3b3b",
-    purple: "#a259ff",
-    pink: "#ff2fb0",
-    cream: "#f3e6c8",
-  };
-
-  function destroyChart(key) {
-    if (charts[key]) {
-      charts[key].destroy();
-      delete charts[key];
-    }
-  }
-
-  function baseChartOptions(extra) {
-    return Object.assign({
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { labels: { color: CASINO_COLORS.cream } },
-      },
-      scales: {
-        x: { ticks: { color: CASINO_COLORS.cream }, grid: { color: "rgba(255,215,0,0.08)" } },
-        y: { ticks: { color: CASINO_COLORS.cream }, grid: { color: "rgba(255,215,0,0.08)" } },
-      },
-      animation: REDUCED_MOTION ? false : undefined,
-    }, extra || {});
-  }
-
-  function renderEquityChart(period) {
-    const canvas = document.getElementById("chart-equity");
-    if (typeof Chart === "undefined" || !equity || !equity.available || !equity.points.length) {
-      return;
-    }
-    const p = dashboard.periods[period];
-    const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
-    const points = equity.points.filter((pt) => new Date(pt.timestamp_utc).getTime() >= startMs);
-    const labels = points.map((pt) => fmtEt(pt.timestamp_utc));
-    const values = points.map((pt) => pt.portfolio_value_usd);
-
-    destroyChart("equity");
-    charts.equity = new Chart(canvas, {
-      type: "line",
-      data: {
-        labels,
-        datasets: [{
-          label: "Account Value ($)",
-          data: values,
-          borderColor: CASINO_COLORS.gold,
-          backgroundColor: "rgba(255,215,0,0.15)",
-          fill: true,
-          tension: 0.25,
-          pointRadius: 0,
-        }],
-      },
-      options: baseChartOptions(),
-    });
-  }
-
-  function renderDailyPnlChart(period) {
-    const canvas = document.getElementById("chart-daily-pnl");
-    if (typeof Chart === "undefined" || !equity || !equity.available || equity.points.length < 2) return;
-    const p = dashboard.periods[period];
-    const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
-    const points = equity.points.filter((pt) => new Date(pt.timestamp_utc).getTime() >= startMs);
-    // Bucket equity points by ET calendar day, using each day's last
-    // known value, then diff day-over-day - a simple, honest reading of
-    // "how much did the account gain or lose that day."
-    const byDay = new Map();
-    points.forEach((pt) => {
-      const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(pt.timestamp_utc));
-      byDay.set(dayKey, pt.portfolio_value_usd);
-    });
-    const days = Array.from(byDay.keys()).sort();
-    const dailyPnl = [];
-    for (let i = 1; i < days.length; i++) {
-      dailyPnl.push({ day: days[i], pnl: byDay.get(days[i]) - byDay.get(days[i - 1]) });
-    }
-    destroyChart("dailyPnl");
-    if (!dailyPnl.length) return;
-    charts.dailyPnl = new Chart(canvas, {
-      type: "bar",
-      data: {
-        labels: dailyPnl.map((d) => d.day),
-        datasets: [{
-          label: "Daily P&L ($)",
-          data: dailyPnl.map((d) => d.pnl),
-          backgroundColor: dailyPnl.map((d) => (d.pnl >= 0 ? CASINO_COLORS.green : CASINO_COLORS.red)),
-        }],
-      },
-      options: baseChartOptions(),
-    });
-  }
-
-  function renderDrawdownChart(period) {
-    const canvas = document.getElementById("chart-drawdown");
-    if (typeof Chart === "undefined" || !equity || !equity.available || equity.points.length < 2) return;
-    const p = dashboard.periods[period];
-    const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
-    const points = equity.points.filter((pt) => new Date(pt.timestamp_utc).getTime() >= startMs);
-    if (points.length < 2) { destroyChart("drawdown"); return; }
-    let peak = points[0].portfolio_value_usd;
-    const drawdowns = points.map((pt) => {
-      peak = Math.max(peak, pt.portfolio_value_usd);
-      return peak > 0 ? (pt.portfolio_value_usd - peak) / peak : 0;
-    });
-    destroyChart("drawdown");
-    charts.drawdown = new Chart(canvas, {
-      type: "line",
-      data: {
-        labels: points.map((pt) => fmtEt(pt.timestamp_utc)),
-        datasets: [{
-          label: "Drawdown (%)",
-          data: drawdowns.map((d) => d * 100),
-          borderColor: CASINO_COLORS.red,
-          backgroundColor: "rgba(255,59,59,0.15)",
-          fill: true,
-          tension: 0.2,
-          pointRadius: 0,
-        }],
-      },
-      options: baseChartOptions(),
-    });
-  }
-
-  function renderAssetClassChart(period) {
-    const canvas = document.getElementById("chart-asset-class");
-    if (typeof Chart === "undefined") return;
-    const p = dashboard.periods[period];
-    const stock = (p.stocks_vs_crypto.stock || {}).realized_pnl_usd || 0;
-    const crypto = (p.stocks_vs_crypto.crypto || {}).realized_pnl_usd || 0;
-    destroyChart("assetClass");
-    charts.assetClass = new Chart(canvas, {
-      type: "bar",
-      data: {
-        labels: ["Stocks", "Crypto"],
-        datasets: [{
-          label: "Realized P&L ($)",
-          data: [stock, crypto],
-          backgroundColor: [CASINO_COLORS.purple, CASINO_COLORS.pink],
-        }],
-      },
-      options: baseChartOptions(),
-    });
-  }
-
-  function renderStrategyChart(period) {
-    const canvas = document.getElementById("chart-strategy");
-    if (typeof Chart === "undefined") return;
-    const p = dashboard.periods[period];
-    const entries = Object.entries(p.by_strategy || {});
-    destroyChart("strategy");
-    if (!entries.length) return;
-    charts.strategy = new Chart(canvas, {
-      type: "bar",
-      data: {
-        labels: entries.map(([k]) => k),
-        datasets: [{
-          label: "Realized P&L ($)",
-          data: entries.map(([, v]) => v.realized_pnl_usd),
-          backgroundColor: CASINO_COLORS.gold,
-        }],
-      },
-      options: baseChartOptions(),
-    });
-  }
-
-  function renderWinLossChart(period) {
-    const canvas = document.getElementById("chart-winloss");
-    if (typeof Chart === "undefined") return;
-    const p = dashboard.periods[period];
-    destroyChart("winLoss");
-    if (!p.num_trades) return;
-    charts.winLoss = new Chart(canvas, {
-      type: "doughnut",
-      data: {
-        labels: ["Wins", "Losses"],
-        datasets: [{
-          data: [p.num_wins, p.num_losses],
-          backgroundColor: [CASINO_COLORS.green, CASINO_COLORS.red],
-          borderColor: CASINO_COLORS.gold,
-        }],
-      },
-      options: baseChartOptions({ scales: undefined }),
-    });
-  }
-
-  function renderCharts(period) {
-    renderEquityChart(period);
-    renderDailyPnlChart(period);
-    renderDrawdownChart(period);
-    renderAssetClassChart(period);
-    renderStrategyChart(period);
-    renderWinLossChart(period);
-  }
-
-  // ---------------------------------------------------------------------
   // Period switch + boot
   // ---------------------------------------------------------------------
+  // Controls the slot machines + stats grid only. The charts now live on
+  // their own page (charts.html / assets/charts.js) - splitting them out
+  // keeps Chart.js and eight canvases off the main dashboard entirely,
+  // which was a real source of page lag.
   function renderPeriod(period) {
     currentPeriod = period;
     document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -493,16 +304,13 @@
     });
     renderSlots(period);
     renderStatsGrid(period);
-    renderLedger(period);
-    renderCharts(period);
   }
 
   async function boot() {
-    [dashboard, positions, trades, equity] = await Promise.all([
+    [dashboard, positions, trades] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
       loadJson("trades.json", { available: false, trades: [] }),
-      loadJson("equity.json", { available: false, points: [] }),
     ]);
 
     if (!dashboard) {
@@ -515,6 +323,7 @@
 
     renderAccountStrip();
     renderPositions();
+    renderLedger();
 
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => renderPeriod(btn.dataset.period));

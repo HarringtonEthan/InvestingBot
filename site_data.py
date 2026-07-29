@@ -256,6 +256,7 @@ def summarize_period(
         "max_drawdown": None,
         "has_equity_data": False,
         "starting_value_is_first_available": False,
+        "trade_log_reset_during_period": False,
     }
 
     # ---- Equity-based figures: starting/ending value, $ P&L, % return, drawdown ----
@@ -343,6 +344,26 @@ def summarize_period(
             for strategy in sorted(confirmed_sells["strategy"].dropna().unique()):
                 subset = confirmed_sells[confirmed_sells["strategy"] == strategy]
                 result["by_strategy"][strategy] = _bucket_summary(subset)
+
+    # ---- Reset/relaunch caveat ----
+    # trade_log_*.csv gets archived and restarted fresh on a relaunch
+    # (see logs/*_archive_pre_*_reset*.csv), but equity_log_*.csv is
+    # never reset - it keeps logging continuously. That means a period's
+    # equity-based "starting value" can be carried forward from *before*
+    # a same-day relaunch, while realized_pnl_usd only reflects trades
+    # since the relaunch - two numbers describing different eras of the
+    # account. This can't be "fixed" without guessing where the true
+    # reset boundary was, which would violate the no-hardcoded-baseline
+    # principle just as badly as what it'd replace - so instead of
+    # silently producing a P&L number that doesn't add up, flag it
+    # honestly whenever the earliest trade currently on record is newer
+    # than this period's own starting reference (a sign some trade
+    # history in this window was archived away).
+    if trades_df is not None and not trades_df.empty and result["has_equity_data"] and not result["starting_value_is_first_available"]:
+        earliest_trade_ts = pd.Timestamp(trades_df["timestamp_utc"].min())
+        period_start_ref = pd.Timestamp(start_utc) if start_utc is not None else pd.Timestamp(equity_df.iloc[0]["timestamp_utc"])
+        if earliest_trade_ts > period_start_ref:
+            result["trade_log_reset_during_period"] = True
 
     return result
 

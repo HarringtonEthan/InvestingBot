@@ -17,6 +17,67 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.11.1 - 2026-07-29
+
+Follow-up fixes to the casino dashboard website (0.11.0), all from real
+feedback after using it: the charts were unusably long and the page was
+laggy, one card was unreadable, positions weren't visually grouped by
+asset class, and the PNG dashboard had quietly stopped updating.
+
+- **Fixed a real Chart.js sizing bug that made every chart grow
+  unboundedly tall.** `maintainAspectRatio: false` inside a card `<div>`
+  with no CSS-defined height let the canvas grow to fill whatever space
+  was available - measured one chart rendering at 389x2320px in testing.
+  Every canvas is now wrapped in `.chart-canvas-wrap`, a container with
+  an explicit bounded height (`site/assets/styles.css`), which is what
+  Chart.js's own docs call for with `maintainAspectRatio: false`. This
+  was very likely the main cause of both "the charts are too long" and
+  "the site is laggy" - a multi-thousand-pixel canvas is expensive to
+  paint.
+- **Moved the charts to their own page** (`site/charts.html` +
+  `site/assets/charts.js`), reachable from a "View the Odds Board" link
+  on the main dashboard. The main page no longer loads Chart.js or
+  renders eight canvases at all - it only has the slot machines, open
+  positions, and past trades now, which is both faster and matches the
+  "condensed" main page that was asked for.
+- **Removed the animated mobster/waiter lounge scene** added earlier in
+  0.11.0 (`casino-fx.js`/`casino-fx.css`) - continuous CSS animations on
+  a dozen-plus elements were a real contributor to the lag, and it was
+  asked to be removed outright, not tuned down. Fireworks and the panda
+  intro splash are unchanged (and fireworks are now 4 elements instead
+  of 7, since a box-shadow burst animation is more expensive to repaint
+  than a plain transform/opacity one).
+- **Fixed the strategy label overlapping the dollar amount on stock
+  position cards.** `.card-strategy` was absolutely positioned over the
+  bottom of the card; it's now `.card-strategy-tag`, in normal document
+  flow below the P&L line, plus available on hover via a `title`
+  attribute.
+- **Sectioned every part of the site by stocks vs. crypto**, using one
+  consistent colour language everywhere (crypto = pink, stocks =
+  purple): the open-positions table on the main page, and all three
+  chart groupings on the new charts page ("Whole Account" / "Crypto" /
+  "Stocks").
+- **Restored `results/trade_dashboard.png` generation and commit-back**
+  in `update-dashboard.yml`, alongside the website - `visualize_log.py`
+  runs and the PNG gets committed the same way `paper-trade-*.yml`
+  commit their logs, on request to keep both views updated rather than
+  dropping the PNG when the website replaced it as the primary view.
+  Safe against workflow loops for the same reason as always: this
+  workflow is schedule/`workflow_dispatch`-triggered, never
+  push-triggered, so a commit landing on the branch can't cause it to
+  fire again.
+- **Added a `trade_log_reset_during_period` flag** to `site_data.py`'s
+  per-period summaries, surfaced as a caveat banner on the dashboard.
+  `trade_log_*.csv` gets archived and restarted fresh on a same-day
+  relaunch, but `equity_log_*.csv` never resets - so a period's
+  equity-based Dollar P&L can straddle a relaunch while Realized P&L
+  only counts trades since it, making the two numbers legitimately not
+  add up. Rather than guess at the true reset boundary (which would
+  reintroduce the same hardcoded-baseline problem 0.11.0 removed), this
+  detects the mismatch honestly - whenever the earliest trade currently
+  on record is newer than a period's own starting reference - and says
+  so in the UI instead of presenting an unexplained gap.
+
 ## Version Richards 0.11.0 - 2026-07-28
 
 Replaced the static `results/trade_dashboard.png` (`visualize_log.py`) with

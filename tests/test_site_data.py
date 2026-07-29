@@ -276,6 +276,45 @@ def test_starting_value_falls_back_to_first_available_when_no_prior_row():
     assert result["starting_value_is_first_available"] is True
 
 
+def test_trade_log_reset_flag_set_when_earliest_trade_is_after_carried_forward_starting_equity():
+    # equity_log.csv is never reset, but trade_log.csv gets archived and
+    # restarted fresh on a same-day relaunch - if the carried-forward
+    # "starting" equity reaches back before the earliest trade currently
+    # on record, some trade history in this window was archived away, so
+    # Dollar P&L (equity-based) and Realized/Unrealized P&L (trade-log-
+    # based) are describing different eras of the account.
+    equity_df = _equity_df([
+        ("2026-07-28T04:00:00+00:00", 99787.08),  # true start-of-day, all cash
+        ("2026-07-28T19:00:00+00:00", 99780.29),
+    ])
+    trades = _trades_df([{"action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-28T19:12:52+00:00")}])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = None
+
+    start = dt.datetime(2026, 7, 28, 4, 0, tzinfo=dt.timezone.utc)
+    end = dt.datetime(2026, 7, 28, 20, 0, tzinfo=dt.timezone.utc)
+    result = summarize_period("Today", start, end, equity_df, trades, None, None)
+    assert result["starting_value_is_first_available"] is False
+    assert result["trade_log_reset_during_period"] is True
+
+
+def test_trade_log_reset_flag_not_set_when_trades_predate_period_start():
+    equity_df = _equity_df([
+        ("2026-07-28T04:00:00+00:00", 99787.08),
+        ("2026-07-28T19:00:00+00:00", 99780.29),
+    ])
+    trades = _trades_df([{"action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-27T10:00:00+00:00")}])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = None
+
+    start = dt.datetime(2026, 7, 28, 4, 0, tzinfo=dt.timezone.utc)
+    end = dt.datetime(2026, 7, 28, 20, 0, tzinfo=dt.timezone.utc)
+    result = summarize_period("Today", start, end, equity_df, trades, None, None)
+    assert result["trade_log_reset_during_period"] is False
+
+
 # ---- attribute_position_strategy ----
 
 def test_attributes_the_most_recent_buy_with_no_later_sell():

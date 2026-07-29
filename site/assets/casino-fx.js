@@ -1,8 +1,8 @@
 /*
- * Pure decoration: fireworks, the ambient "Family" blackjack lounge, and
- * the panda-kiss intro splash. Deliberately its own file, separate from
- * dashboard.js - nothing in here ever reads dashboard.json/positions.json/
- * trades.json/equity.json or touches any real number on the page.
+ * Pure decoration: fireworks and the panda-kiss intro splash.
+ * Deliberately its own file, separate from dashboard.js - nothing in
+ * here ever reads dashboard.json/positions.json/trades.json/equity.json
+ * or touches any real number on the page.
  */
 
 (function () {
@@ -10,20 +10,17 @@
 
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const FIREWORK_COLORS = ["#ffd700", "#39ff14", "#ff2fb0", "#a259ff", "#ff3b3b", "#00e5ff"];
-  const MOBSTERS = [
-    { face: "🐻", drink: "🥃" },
-    { face: "🦁", drink: "🍸" },
-    { face: "🐯", drink: "🥃" },
-    { face: "🐺", drink: "🍷" },
-    { face: "🦊", drink: "🍹" },
-  ];
 
   function buildFireworks() {
     if (REDUCED_MOTION) return; // layer is display:none via CSS anyway
     const layer = document.createElement("div");
     layer.className = "fireworks-layer";
     layer.setAttribute("aria-hidden", "true");
-    const count = 7;
+    // Kept deliberately small (4, was 7) - each one animates a
+    // box-shadow burst, which is noticeably more expensive to repaint
+    // than a transform/opacity-only animation; a handful is plenty for
+    // the effect without adding up to real page jank.
+    const count = 4;
     for (let i = 0; i < count; i++) {
       const fw = document.createElement("div");
       fw.className = "firework";
@@ -34,31 +31,6 @@
       layer.appendChild(fw);
     }
     document.body.prepend(layer);
-  }
-
-  function buildMobScene() {
-    const container = document.getElementById("mob-scene-root");
-    if (!container) return;
-    const strip = document.createElement("div");
-    strip.className = "mob-table-strip";
-    MOBSTERS.forEach((m) => {
-      const el = document.createElement("div");
-      el.className = "mobster";
-      el.innerHTML = `
-        <div class="mobster-hat">🎩</div>
-        <div class="mobster-face">${m.face}</div>
-        <div class="mobster-suit"></div>
-        <div class="mobster-props">
-          <span class="mobster-drink">${m.drink}</span>
-          <span class="mobster-cigar">🚬<span class="smoke"></span><span class="smoke"></span><span class="smoke"></span></span>
-        </div>`;
-      strip.appendChild(el);
-    });
-    const waiter = document.createElement("div");
-    waiter.className = "waiter";
-    waiter.innerHTML = "🤵<span class=\"tray\">🍸</span>";
-    container.appendChild(strip);
-    container.appendChild(waiter);
   }
 
   function initPandaIntro() {
@@ -80,7 +52,6 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     buildFireworks();
-    buildMobScene();
     initPandaIntro();
   });
 })();

@@ -211,6 +211,17 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
 
 .last-updated { text-align: center; color: var(--cream); opacity: 0.75; margin: 18px 0 2px; font-size: 0.85rem; }
 .methodology-note { text-align: center; color: var(--gold-dim); font-size: 0.78rem; max-width: 760px; margin: 4px auto 0; }
+.reset-note {
+  text-align: center;
+  color: var(--gold);
+  background: rgba(255,215,0,0.08);
+  border: 1px solid var(--gold-dim);
+  border-radius: 10px;
+  font-size: 0.78rem;
+  max-width: 760px;
+  margin: 10px auto 0;
+  padding: 8px 14px;
+}
 
 /* ==========================================================================
    Stat grid ("house ledger")
@@ -279,7 +290,11 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
   padding: 26px 18px 34px;
   box-shadow: 0 0 40px rgba(0,0,0,0.7) inset, 0 8px 30px rgba(0,0,0,0.6);
 }
-.hand-group { margin-bottom: 22px; }
+.hand-group {
+  margin-bottom: 22px;
+  border-left: 4px solid var(--gold);
+  padding-left: 14px;
+}
 .hand-group:last-child { margin-bottom: 0; }
 .hand-label {
   font-family: 'Bungee', cursive;
@@ -288,6 +303,13 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
   margin: 0 0 10px;
   text-shadow: 0 0 6px rgba(255,215,0,0.6);
 }
+/* Stocks-vs-crypto colour language, kept consistent with the charts
+   page (crypto = pink, stocks = purple) so the same asset class always
+   reads the same colour everywhere on the site. */
+.hand-group-stocks { border-left-color: #a259ff; }
+.hand-group-stocks .hand-label { color: #a259ff; text-shadow: 0 0 6px rgba(162,89,255,0.6); }
+.hand-group-crypto { border-left-color: #ff2fb0; }
+.hand-group-crypto .hand-label { color: #ff2fb0; text-shadow: 0 0 6px rgba(255,47,176,0.6); }
 .hand {
   display: flex;
   flex-wrap: wrap;
@@ -320,14 +342,16 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
 .card-pnl { text-align: center; font-weight: 700; margin-top: 8px; font-size: 0.95rem; }
 .card-pnl.positive { color: #0a7a2e; }
 .card-pnl.negative { color: #a10f0f; }
-.card-strategy {
-  position: absolute;
-  bottom: 6px; left: 0; right: 0;
+.card-strategy-tag {
+  /* Sits in normal flow below the P&L line - it used to be absolutely
+     positioned over the bottom of the card, which overlapped and
+     obscured the dollar amount above it. */
   text-align: center;
-  font-size: 0.6rem;
+  font-size: 0.58rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  opacity: 0.65;
+  opacity: 0.55;
+  margin-top: 4px;
 }
 .empty-state {
   color: var(--cream);
@@ -340,10 +364,46 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
    Charts
    ========================================================================== */
 
+.charts-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.charts-header .section-title { margin: 40px 0 0; border-bottom: none; padding-bottom: 0; }
+.chart-period-picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--gold);
+  margin-bottom: 12px;
+}
+.chart-period-picker select {
+  appearance: none;
+  -webkit-appearance: none;
+  background:
+    linear-gradient(180deg, var(--purple), #2a0550)
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='9'><path d='M1 1l6 6 6-6' fill='none' stroke='%23ffd700' stroke-width='2'/></svg>")
+    no-repeat right 12px center;
+  color: var(--cream);
+  border: 2px solid var(--gold);
+  border-radius: 999px;
+  padding: 8px 32px 8px 16px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(255,215,0,0.2);
+}
+.chart-period-picker select:hover { box-shadow: 0 0 16px rgba(255,215,0,0.45); }
+.chart-period-picker select:focus { outline: 2px solid var(--gold); outline-offset: 2px; }
+
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: 18px;
+  margin-top: 18px;
 }
 .chart-card {
   background: linear-gradient(160deg, rgba(75,0,130,0.25), rgba(10,0,10,0.85));
@@ -351,6 +411,7 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
   border-radius: 12px;
   padding: 14px 16px 6px;
 }
+.chart-card-wide { grid-column: 1 / -1; }
 .chart-card h3 {
   font-size: 0.95rem;
   color: var(--gold);
@@ -358,11 +419,71 @@ main { position: relative; z-index: 1; max-width: 1200px; margin: 0 auto; paddin
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
+/* Chart.js with maintainAspectRatio:false grows its canvas to fill
+   whatever space its parent gives it - with no bounded-height parent
+   that meant canvases rendering thousands of pixels tall (measured one
+   at 389x2320px), which made the page both absurdly long and slow to
+   paint. This wrapper is the fix: a fixed, bounded height Chart.js can
+   actually fill. */
+.chart-canvas-wrap {
+  position: relative;
+  height: 240px;
+  padding-bottom: 8px;
+}
+.chart-card-wide .chart-canvas-wrap { height: 280px; }
+
+/* ---- dedicated charts page (charts.html) ---- */
+.marquee-frame-compact { padding: 18px 16px 16px; }
+.neon-title-small { font-size: clamp(1.5rem, 4.5vw, 2.6rem); margin: 4px 0 8px; }
+.back-link {
+  display: inline-block;
+  color: var(--gold);
+  font-family: 'Bungee', cursive;
+  font-size: 0.78rem;
+  text-decoration: none;
+  margin-bottom: 10px;
+  opacity: 0.85;
+}
+.back-link:hover { opacity: 1; text-decoration: underline; }
+
+.chart-section-group { margin-top: 10px; }
+.chart-section-group .section-title { margin: 34px 0 4px; }
+/* Same crypto = pink / stocks = purple colour language as the position
+   cards on the main page, so an asset class always reads the same
+   colour everywhere on the site. */
+.chart-section-crypto .section-title { color: #ff2fb0; border-bottom-color: #ff2fb0; text-shadow: 0 0 8px rgba(255,47,176,0.5); }
+.chart-section-crypto .chart-card { border-color: #ff2fb0; }
+.chart-section-stocks .section-title { color: #a259ff; border-bottom-color: #a259ff; text-shadow: 0 0 8px rgba(162,89,255,0.5); }
+.chart-section-stocks .chart-card { border-color: #a259ff; }
+
+/* ---- "go look at the charts" link on the main dashboard page ---- */
+.charts-link-section {
+  margin-top: 40px;
+  text-align: center;
+  padding: 22px 16px;
+  border: 2px dashed var(--gold-dim);
+  border-radius: 14px;
+}
+.charts-link-button {
+  display: inline-block;
+  font-family: 'Bungee', cursive;
+  font-size: 1rem;
+  color: var(--near-black);
+  background: linear-gradient(180deg, var(--gold), var(--gold-dim));
+  border-radius: 999px;
+  padding: 14px 28px;
+  text-decoration: none;
+  box-shadow: 0 0 20px rgba(255,215,0,0.5);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.charts-link-button:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 0 28px rgba(255,215,0,0.8); }
+.charts-link-note { font-size: 0.8rem; color: var(--cream); opacity: 0.75; max-width: 640px; margin: 12px auto 0; }
 
 /* ==========================================================================
    Ledger / roulette results board
    ========================================================================== */
 
+.ledger-note { font-size: 0.78rem; color: var(--gold-dim); font-style: italic; margin: -6px 0 12px; }
 .ledger-legend { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .badge {
   display: inline-block;

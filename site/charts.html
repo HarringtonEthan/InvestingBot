@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Odds Board — Ethan's Market Casino</title>
+<meta name="description" content="Live trading charts for a real paper-trading bot - net gain/loss, cumulative realized P&L, win/loss per ticker, drawdown.">
+<link rel="stylesheet" href="assets/styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B0%3C/text%3E%3C/svg%3E">
+</head>
+<body class="charts-page">
+
+<header class="marquee-frame marquee-frame-compact">
+  <a class="back-link" href="index.html">← Back to the Casino</a>
+  <h1 class="neon-title neon-title-small">📊 THE ODDS BOARD</h1>
+  <p class="tagline">Every graph below is built from the same real numbers as the main dashboard.</p>
+</header>
+
+<main id="charts-app">
+
+  <div class="charts-header">
+    <label class="chart-period-picker">
+      <span>Graphs show:</span>
+      <select id="chart-period-select" aria-label="Time period for the graphs below">
+        <option value="today">Today</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+      </select>
+    </label>
+    <p class="last-updated" id="last-updated">Last updated: —</p>
+  </div>
+
+  <section class="chart-section-group" aria-label="Whole account">
+    <h2 class="section-title">🏦 Whole Account</h2>
+    <div class="chart-grid">
+      <div class="chart-card chart-card-wide">
+        <h3>Net Account Gain/Loss</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-net-gain-loss"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Daily P&amp;L</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-daily-pnl"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Drawdown</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-drawdown"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Strategy Comparison (Realized P&amp;L)</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-strategy"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chart-section-group chart-section-crypto" aria-label="Crypto">
+    <h2 class="section-title">🪙 Crypto</h2>
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>Cumulative Realized P&amp;L</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-crypto-cum-pnl"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Win/Loss per Ticker</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-crypto-winloss"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="chart-section-group chart-section-stocks" aria-label="Stocks">
+    <h2 class="section-title">📈 Stocks</h2>
+    <div class="chart-grid">
+      <div class="chart-card">
+        <h3>Cumulative Realized P&amp;L</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-stock-cum-pnl"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <h3>Win/Loss per Ticker</h3>
+        <div class="chart-canvas-wrap"><canvas id="chart-stock-winloss"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <p>Paper trading only. Not investment advice. See
+      <a href="https://github.com/HarringtonEthan/InvestingBot" target="_blank" rel="noopener">the source repo</a>
+      for exactly how these numbers are computed.</p>
+  </footer>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="assets/charts.js"></script>
+</body>
+</html>
