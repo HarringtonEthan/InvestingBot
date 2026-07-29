@@ -193,6 +193,13 @@
     const iso = (meta.stamps || [])[idx] || null;
     let html = "";
 
+    // For a timeseries with a signed "value" (gain/loss vs. a baseline),
+    // the swatch/border should reflect *this exact point's* sign, not a
+    // fixed series color - otherwise a chart whose line changes color as
+    // it crosses $0 would still show a swatch/border that never changes,
+    // which is exactly what looked "always green" regardless of whether
+    // the hovered point was actually up or down.
+    let pointColor = null;
     if (meta.kind === "timeseries") {
       html += `<div class="tt-title">${meta.title || "Value"}</div>`;
       html += `<div class="tt-time">${iso ? fmtDateTimeET(iso) : "—"}</div>`;
@@ -200,7 +207,9 @@
       (meta.series || []).forEach((s, di) => {
         if (!ctx.chart.isDatasetVisible(di)) return;
         const rec = s.records[idx];
-        html += `<div class="tt-series"><div class="tt-name"><span class="tt-swatch" style="background:${s.color}"></span>${s.label}</div>`;
+        const swatchColor = rec && isNum(rec.value) ? (rec.value >= 0 ? COLORS.green : COLORS.red) : s.color;
+        if (pointColor === null && rec && isNum(rec.value)) pointColor = swatchColor;
+        html += `<div class="tt-series"><div class="tt-name"><span class="tt-swatch" style="background:${swatchColor}"></span>${s.label}</div>`;
         if (!rec || !isNum(rec.value)) {
           html += `<div class="tt-row"><span class="tt-label">Value</span><span class="tt-val muted">No recorded value</span></div>`;
         } else {
@@ -235,6 +244,10 @@
       html += `<div class="tt-hint">${tooltipLocked ? "Tap elsewhere to dismiss" : "Tap a point to keep this open"}</div>`;
     }
     el.innerHTML = html;
+    // Border matches the hovered point's own color - empty string falls
+    // back to the CSS default (a neutral green) for charts with no
+    // signed value at this point (e.g. a win/loss bar chart).
+    el.style.borderColor = pointColor || "";
     el.setAttribute("aria-hidden", "false");
     el.classList.add("is-visible");
 
@@ -409,6 +422,12 @@
           label: meta.series[0].label,
           data: records.map((r) => r.value),
           borderColor: trendColor,
+          // Legend swatch reads backgroundColor, not borderColor, for its
+          // fill - set explicitly (fill:false below means it's otherwise
+          // unused) so the legend always shows one clear, deterministic
+          // color matching the account's current direction, never a
+          // library default unrelated to up/down.
+          backgroundColor: trendColor,
           segment: { borderColor: segmentColor },
           // Line color only - no shaded area under the curve, it makes
           // the chart harder to read at a glance.

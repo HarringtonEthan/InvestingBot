@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 60" role="img" aria-label="InvestingBot logo: a robot head with an ascending price chart">
+  <g fill="none" stroke="#34d372" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <!-- ascending candlesticks rising into an uptrend arrow, standing in for hair/antenna -->
+    <rect x="3" y="21" width="4" height="6" rx="1" fill="#34d372" stroke="none"/>
+    <rect x="10" y="16" width="4" height="11" rx="1" fill="#34d372" stroke="none" opacity="0.85"/>
+    <rect x="17" y="10" width="4" height="17" rx="1" fill="#34d372" stroke="none" opacity="0.7"/>
+    <rect x="24" y="4" width="4" height="23" rx="1" fill="#34d372" stroke="none" opacity="0.55"/>
+    <path d="M5 22 L33 5"/>
+    <path d="M25 5 L33 5 L33 13"/>
+    <!-- head -->
+    <rect x="6" y="26" width="32" height="30" rx="10"/>
+    <!-- jaw seam -->
+    <path d="M13 47 L31 47" stroke-width="1.6" opacity="0.6"/>
+  </g>
+  <g fill="#34d372">
+    <circle cx="17" cy="38" r="2.8"/>
+    <circle cx="27" cy="38" r="2.8"/>
+    <circle cx="14.5" cy="52" r="1.5"/>
+    <circle cx="29.5" cy="52" r="1.5"/>
+  </g>
+</svg>

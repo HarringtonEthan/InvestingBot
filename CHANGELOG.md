@@ -17,6 +17,24 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.2 - 2026-07-29
+
+More equity-chart coloring follow-ups, plus a new logo.
+
+- **Tooltip border and swatch now match the hovered point's own sign,**
+  not a fixed color. The custom tooltip's border was a hardcoded green
+  (`var(--accent-dim)`) regardless of whether the point under the cursor
+  was above or below the baseline; it now reads red or green from that
+  exact point, same as the line/marker do.
+- **Fixed the legend swatch not reliably tracking the account's
+  direction.** The dataset had no explicit `backgroundColor` (only
+  `borderColor` for the line's own stroke), so Chart.js's legend swatch
+  fell back to its own default fill color instead of the green/red the
+  rest of the chart uses. Set explicitly now.
+- **New logo**: a robot head with an ascending price-chart antenna,
+  replacing the plain accent-colored square in the header and the
+  generic upward-arrow favicon (`site/assets/logo.svg`).
+
 ## Version Richards 0.13.1 - 2026-07-29
 
 Follow-up fix to 0.13.0's equity-chart coloring, from real usage: the
