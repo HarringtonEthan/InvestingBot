@@ -48,6 +48,7 @@
     crypto: "#f0a63c",
     green: "#34d372",
     red: "#f0554a",
+    gray: "#6b7280",
     text: "#9aa5a0",
     grid: "rgba(255,255,255,0.06)",
   };
@@ -613,26 +614,27 @@
       setSummary(chartId, `No confirmed ${nice} sells recorded for ${label.toLowerCase()}, so there is no win/loss split to plot.`);
       return;
     }
-    // Only a sell with a known P&L can be classified win/loss at all -
-    // JS's `null <= 0` is true, so without this filter an unknown-P&L
-    // sell (missing cost basis) would silently be counted as a loss.
-    const known = sells.filter((t) => isNum(t.realized_pnl_usd));
-    const unknownCount = sells.length - known.length;
-    if (!known.length) {
-      setEmpty(chartId, `<p>${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"} recorded for ${label.toLowerCase()}, but none has a recorded cost basis, so win/loss can't be classified yet.</p>${unrealizedNote(assetClass)}`);
-      setSummary(chartId, `${label}: ${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"}, but cost basis wasn't recorded for any of them, so win/loss can't be classified.`);
-      return;
-    }
     setEmpty(chartId, null);
-    const tickers = Array.from(new Set(known.map((t) => t.ticker))).sort();
-    const wins = tickers.map((tk) => known.filter((t) => t.ticker === tk && t.realized_pnl_usd > 0).length);
-    const losses = tickers.map((tk) => known.filter((t) => t.ticker === tk && t.realized_pnl_usd <= 0).length);
+    // A confirmed sell can still have no computable P&L if its cost
+    // basis was never recorded (see CHANGELOG). Rather than miscounting
+    // it as a loss (JS's `null <= 0` is true) or dropping it from the
+    // chart entirely, it gets its own gray "Unknown P&L" bar per ticker -
+    // still a real, visible bar, just honestly labeled as unknown.
+    const tickers = Array.from(new Set(sells.map((t) => t.ticker))).sort();
+    const wins = tickers.map((tk) => sells.filter((t) => t.ticker === tk && isNum(t.realized_pnl_usd) && t.realized_pnl_usd > 0).length);
+    const losses = tickers.map((tk) => sells.filter((t) => t.ticker === tk && isNum(t.realized_pnl_usd) && t.realized_pnl_usd <= 0).length);
+    const unknown = tickers.map((tk) => sells.filter((t) => t.ticker === tk && !isNum(t.realized_pnl_usd)).length);
+    const unknownCount = unknown.reduce((a, b) => a + b, 0);
+    const datasets = [
+      { label: "Wins", data: wins, backgroundColor: COLORS.green, borderRadius: 3 },
+      { label: "Losses", data: losses, backgroundColor: COLORS.red, borderRadius: 3 },
+    ];
+    if (unknownCount) {
+      datasets.push({ label: "Unknown P&L (no cost basis)", data: unknown, backgroundColor: COLORS.gray, borderRadius: 3 });
+    }
     charts[chartKey] = new Chart(canvas, {
       type: "bar",
-      data: { labels: tickers, datasets: [
-        { label: "Wins", data: wins, backgroundColor: COLORS.green, borderRadius: 3 },
-        { label: "Losses", data: losses, backgroundColor: COLORS.red, borderRadius: 3 },
-      ] },
+      data: { labels: tickers, datasets },
       options: baseOptions({ forceLegend: true }, {
         scales: {
           x: { stacked: true, ticks: { color: COLORS.text, font: { size: 10 }, maxRotation: 0 }, grid: { display: false }, border: { display: false } },
@@ -644,7 +646,7 @@
     charts[chartKey].$ibMeta = { kind: "bar", title: `${assetClass === "stock" ? "Stocks" : "Crypto"} win/loss`, valueFormatter: (v) => `${v} trade${v === 1 ? "" : "s"}` };
     const totalW = wins.reduce((a, b) => a + b, 0), totalL = losses.reduce((a, b) => a + b, 0);
     setSummary(chartId, `${label}: ${totalW} winning and ${totalL} losing confirmed ${nice} sells across ${tickers.length} ticker${tickers.length === 1 ? "" : "s"} (${tickers.join(", ")})` +
-      (unknownCount ? ` - ${unknownCount} more sell${unknownCount === 1 ? "" : "s"} excluded (no recorded cost basis)` : "") + `.`);
+      (unknownCount ? ` - ${unknownCount} more sell${unknownCount === 1 ? "" : "s"} with unknown P&L (no recorded cost basis)` : "") + `.`);
   }
 
   // ---------------------------------------------------------------------

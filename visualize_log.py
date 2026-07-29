@@ -192,10 +192,30 @@ def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str, unrealized_pnl: flo
             ax.text(0.5, 0.35, note, ha="center", va="center", color=color, fontweight="bold")
         return
 
+    # A confirmed sell can still have no computable P&L if its cost
+    # basis was never recorded (see CHANGELOG) - cumsum() over a NaN
+    # value produces nothing plottable, which used to leave this panel
+    # blank with an arbitrary, uninformative axis range instead of
+    # explaining why. Excluded from the running total here, called out
+    # explicitly rather than silently dropped.
+    known = sells[sells["realized_pnl_usd"].notna()]
+    unknown_count = len(sells) - len(known)
+    if known.empty:
+        ax.set_title(f"{label}: cumulative realized P&L (trades in this log only)")
+        ax.text(0.5, 0.6,
+                f"{len(sells)} confirmed {label} sell{'s' if len(sells) != 1 else ''} recorded,\n"
+                "but none has a recorded cost basis - P&L unknown",
+                ha="center", va="center")
+        note = _unrealized_note(unrealized_pnl)
+        if note:
+            color = "tab:green" if unrealized_pnl >= 0 else "tab:red"
+            ax.text(0.5, 0.3, note, ha="center", va="center", color=color, fontweight="bold")
+        return
+
     # Running total of realized P&L, in chronological trade order.
-    cum_pnl = sells.set_index("timestamp_utc")["realized_pnl_usd"].cumsum()
+    cum_pnl = known.set_index("timestamp_utc")["realized_pnl_usd"].cumsum()
     color = "tab:green" if cum_pnl.iloc[-1] >= 0 else "tab:red"
-    has_flagged = sells["flagged"].any()
+    has_flagged = known["flagged"].any()
     # marker="o" so a single trade (a single point - nothing to "step"
     # between yet) still shows up as something visible rather than an
     # empty-looking plot.
@@ -212,7 +232,7 @@ def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str, unrealized_pnl: flo
         # A second line showing cumulative P&L with flagged
         # (unrepresentative) trades excluded entirely - plotted
         # alongside, never replacing, the full "all trades" line above.
-        clean = sells[~sells["flagged"]]
+        clean = known[~known["flagged"]]
         if not clean.empty:
             cum_clean = clean.set_index("timestamp_utc")["realized_pnl_usd"].cumsum()
             clean_color = "tab:blue"
@@ -234,6 +254,9 @@ def plot_cumulative_pnl(ax, sells: pd.DataFrame, label: str, unrealized_pnl: flo
         note_color = "tab:green" if unrealized_pnl >= 0 else "tab:red"
         ax.text(0.02, 0.02, note, transform=ax.transAxes, ha="left", va="bottom",
                 color=note_color, fontweight="bold", fontsize=9)
+    if unknown_count:
+        ax.text(0.02, 0.98, f"{unknown_count} more sell{'s' if unknown_count != 1 else ''} excluded (no recorded cost basis)",
+                transform=ax.transAxes, ha="left", va="top", fontsize=8, color="gray")
     if len(cum_pnl) == 1:
         # A single data point gives matplotlib's date auto-scaling nothing
         # to infer a sensible range from - it can default to spanning
@@ -254,7 +277,15 @@ def plot_win_loss(ax, sells: pd.DataFrame, label: str):
         ax.text(0.5, 0.5, f"No executed {label} SELL trades yet", ha="center", va="center")
         return
 
-    is_win = sells["realized_pnl_usd"] > 0
+    # A confirmed sell can still have no computable P&L if its cost
+    # basis was never recorded (see CHANGELOG) - `realized_pnl_usd >
+    # 0` is False for NaN, so without a separate bucket for this, an
+    # unknown-P&L trade would be silently miscounted as a loss instead
+    # of correctly showing up as "unknown."
+    has_known_pnl = sells["realized_pnl_usd"].notna()
+    is_win = has_known_pnl & (sells["realized_pnl_usd"] > 0)
+    is_loss = has_known_pnl & (sells["realized_pnl_usd"] <= 0)
+    is_unknown = ~has_known_pnl
     tickers = sorted(sells["ticker"].unique())
 
     def counts(mask):
@@ -263,13 +294,15 @@ def plot_win_loss(ax, sells: pd.DataFrame, label: str):
         # no trades in this category) instead of just being omitted.
         return sells[mask].groupby("ticker").size().reindex(tickers, fill_value=0)
 
-    # Split every trade into 4 buckets: win/loss crossed with
+    # Split every trade into 6 buckets: win/loss/unknown crossed with
     # flagged/not-flagged, so the stacked bar chart below can render
     # flagged trades with a distinct hatch pattern.
     wins_clean = counts(is_win & ~sells["flagged"])
     wins_flagged = counts(is_win & sells["flagged"])
-    losses_clean = counts(~is_win & ~sells["flagged"])
-    losses_flagged = counts(~is_win & sells["flagged"])
+    losses_clean = counts(is_loss & ~sells["flagged"])
+    losses_flagged = counts(is_loss & sells["flagged"])
+    unknown_clean = counts(is_unknown & ~sells["flagged"])
+    unknown_flagged = counts(is_unknown & sells["flagged"])
 
     x = range(len(tickers))
     # Build the stacked bars one segment at a time, tracking `bottom`
@@ -286,6 +319,13 @@ def plot_win_loss(ax, sells: pd.DataFrame, label: str):
     if losses_flagged.sum() > 0:
         ax.bar(x, losses_flagged.values, bottom=bottom, label="Loss (flagged - see notes)",
                color="tab:red", hatch="//", edgecolor="black")
+        bottom = bottom + losses_flagged.values
+    if unknown_clean.sum() > 0 or unknown_flagged.sum() > 0:
+        ax.bar(x, unknown_clean.values, bottom=bottom, label="Unknown P&L (no cost basis)", color="tab:gray")
+        bottom = bottom + unknown_clean.values
+        if unknown_flagged.sum() > 0:
+            ax.bar(x, unknown_flagged.values, bottom=bottom, label="Unknown P&L (flagged - see notes)",
+                   color="tab:gray", hatch="//", edgecolor="black")
 
     ax.set_xticks(list(x))
     ax.set_xticklabels(tickers, rotation=45, ha="right")

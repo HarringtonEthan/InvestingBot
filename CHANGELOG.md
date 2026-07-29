@@ -17,6 +17,35 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.6 - 2026-07-29
+
+Found via a user screenshot of the PNG dashboard: `visualize_log.py` had
+the same missing-cost-basis gap as 0.13.3/0.13.4, but worse - it was
+actively miscounting, not just hiding.
+
+- **Fixed `plot_win_loss` silently counting an unknown-P&L sell as a
+  loss.** `is_win = sells["realized_pnl_usd"] > 0` is `False` for `NaN`
+  the same as any other comparison, so `~is_win` (everything not a win)
+  quietly included every sell with no recorded cost basis too - both of
+  today's stock sells (XOM, a real winner; DIS, a real loser) rendered
+  as "2 losses, 0 wins." Unknown-P&L sells now get their own gray
+  "Unknown P&L (no cost basis)" bar per ticker instead - still a real,
+  visible bar, just honestly labeled.
+- **Fixed `plot_cumulative_pnl` rendering a blank, oddly-scaled panel**
+  when every sell in range had an unknown P&L (`cumsum()` over an
+  all-`NaN` column plots nothing, leaving matplotlib's default
+  arbitrary axis range with no explanation). Now shows the same "N
+  confirmed sells recorded, but no cost basis" text the website
+  already had, and still plots the running total for sells that DO have
+  one, calling out how many were excluded.
+- **charts.js's win/loss chart gets the same gray "Unknown" bar bucket**
+  instead of falling back to text-only when every sell in range lacks a
+  cost basis - the website's win/loss panel now looks like the PNG's
+  again (real bars), rather than a wall of text where a chart used to be.
+- Added `tests/test_visualize_log_win_loss.py` covering both fixes with
+  a real matplotlib Axes (not just the plotting call not crashing) -
+  checks actual bar heights and line data, not just "did it run."
+
 ## Version Richards 0.13.5 - 2026-07-29
 
 - **Added cache-busting `?v=` query strings** to every stylesheet/script
