@@ -395,17 +395,25 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
    is the fix: a fixed height Chart.js can actually fill. */
 .chart-canvas-wrap {
   position: relative;
-  height: 240px;
-  padding-bottom: 8px;
+  height: 260px;
+  padding-bottom: 4px;
 }
-.chart-card-wide .chart-canvas-wrap { height: 280px; }
+/* The main equity chart gets noticeably more room than the small
+   supporting charts - it's the one people actually read closely. */
+.chart-card-wide .chart-canvas-wrap { height: 420px; }
+@media (max-width: 640px) {
+  .chart-card-wide .chart-canvas-wrap { height: 300px; }
+}
 
 /* Shown instead of the canvas whenever a chart genuinely has nothing to
    plot yet (no closed trades this period) - explains why, and still
    surfaces the live unrealized number so the card isn't empty space
    with no information in it. */
 .chart-empty-state {
-  min-height: 240px;
+  /* Matches .chart-canvas-wrap's height so a card showing an empty
+     state lines up with a sibling card that has a real chart, instead
+     of leaving the grid row visibly ragged. */
+  min-height: 260px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -416,11 +424,129 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   color: var(--text-dim);
   font-size: 0.85rem;
 }
-.chart-card-wide .chart-empty-state { min-height: 280px; }
+/* CRITICAL: `display:flex` above beats the user-agent's
+   `[hidden] { display: none }` rule (class selector wins on
+   specificity), so without this every *hidden* empty-state div still
+   reserved its min-height inside the card - which is exactly the large
+   blank area that appeared under charts that DID have data. Both this
+   and the canvas wrapper need an explicit hidden rule. */
+.chart-empty-state[hidden],
+.chart-canvas-wrap[hidden] { display: none !important; }
+.chart-card-wide .chart-empty-state { min-height: 260px; }
 .chart-empty-state p { margin: 0; }
 .chart-empty-note { font-weight: 700; font-size: 0.95rem; }
 .chart-empty-note.positive { color: var(--win); }
 .chart-empty-note.negative { color: var(--loss); }
+
+/* ---- accessible per-chart text summary ---- */
+.chart-summary {
+  margin: 4px 0 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.chart-summary:empty { display: none; }
+
+/* ---- segmented range / category controls ---- */
+.chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin: 4px 0 26px;
+}
+.control-group { display: flex; align-items: center; gap: 10px; }
+.control-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.segmented button {
+  font-family: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  /* Deliberately generous hit area - these are primary controls and
+     must stay comfortably tappable on a phone. */
+  padding: 9px 16px;
+  min-height: 40px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.segmented button:hover { color: var(--text); }
+.segmented button.active { background: var(--accent); color: var(--bg); }
+.segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.ghost-btn {
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 9px 16px;
+  min-height: 40px;
+  cursor: pointer;
+}
+.ghost-btn:hover { color: var(--text); border-color: var(--accent-dim); }
+.ghost-btn[hidden] { display: none; }
+
+.range-caption { font-size: 0.8rem; color: var(--text-faint); }
+
+/* ---- custom chart tooltip (Chart.js external handler renders here) ---- */
+#chart-tooltip {
+  position: fixed;
+  z-index: 60;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  background: #050706;
+  border: 1px solid var(--accent-dim);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-width: 210px;
+  max-width: min(300px, calc(100vw - 24px));
+  box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+#chart-tooltip.is-visible { opacity: 1; }
+#chart-tooltip .tt-title { font-weight: 700; color: #fff; font-size: 0.85rem; }
+#chart-tooltip .tt-time { color: var(--text-faint); font-size: 0.74rem; margin-top: 1px; }
+#chart-tooltip .tt-rows { margin-top: 8px; display: flex; flex-direction: column; gap: 5px; }
+#chart-tooltip .tt-series { margin-top: 8px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,0.09); }
+#chart-tooltip .tt-series:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+#chart-tooltip .tt-name {
+  display: flex; align-items: center; gap: 6px;
+  font-weight: 600; color: #fff; font-size: 0.78rem; margin-bottom: 4px;
+}
+#chart-tooltip .tt-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+#chart-tooltip .tt-row { display: flex; justify-content: space-between; gap: 18px; }
+#chart-tooltip .tt-label { color: var(--text-dim); }
+#chart-tooltip .tt-val { color: #fff; font-variant-numeric: tabular-nums; font-weight: 600; }
+#chart-tooltip .tt-val.positive { color: var(--win); }
+#chart-tooltip .tt-val.negative { color: var(--loss); }
+#chart-tooltip .tt-val.muted { color: var(--text-faint); font-weight: 500; }
+#chart-tooltip .tt-hint { margin-top: 7px; font-size: 0.7rem; color: var(--text-faint); }
+
+.chart-canvas-wrap canvas { touch-action: pan-y; }
 
 /* ==========================================================================
    Trade history table

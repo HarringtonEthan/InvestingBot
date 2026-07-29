@@ -17,6 +17,67 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.12.1 - 2026-07-29
+
+Made the charts genuinely interactive, and fixed a layout bug plus
+several accuracy/labelling problems found while doing it.
+
+- **Fixed the large empty area inside every chart card.** `.chart-empty-state`
+  set `display: flex`, which beats the browser's own
+  `[hidden] { display: none }` rule on specificity - so every *hidden*
+  empty-state div still reserved its full min-height inside the card.
+  That was the blank space below charts that had data. Hidden canvas
+  wrappers had the same latent problem; both now have explicit hidden
+  rules.
+- **Custom interactive tooltips** on every chart, rendered through
+  Chart.js's `external` handler into a styled element (near-black
+  background, thin green border, white values, muted gray timestamp,
+  green/red by sign) rather than Chart.js's default styling. Shows the
+  date, exact ET time, portfolio value, gain/loss, period return and
+  change from the previous recorded point, per series, with a colour
+  swatch and name for each.
+- **Vertical crosshair** snapped to the nearest real sample, larger
+  hover point, and legend-aware tooltips (a series toggled off in the
+  legend is excluded).
+- **Range controls (Today / 7 Days / 30 Days / All Time)** and a
+  **Combined / Stocks / Crypto** selector. Both re-drive the data,
+  legend, tooltips, percentages and the accessible summary. 7 Days and
+  30 Days are true rolling windows, not calendar week/month.
+- **Drag-to-zoom with a reset button** on the main chart (desktop),
+  implemented without adding any external plugin dependency. Zooming is
+  entirely optional - the default view is correctly scaled on its own.
+- **Mobile: tap-to-lock tooltips.** Fixed a real bug where the lock was
+  applied on `click`; the synthetic click a browser fires after a tap
+  arrived *after* Chart.js had already dispatched a hide, so tapping a
+  point appeared to do nothing. Locking now happens on `touchstart`.
+  Tooltips are clamped inside the viewport and all controls are >=40px.
+- **Accessible text summary under every chart**, naming the range, the
+  number of recorded samples, the first/last real timestamps and the
+  values - each series' first/last value is index-paired with its *own*
+  timestamp so a value can never be attributed to another series' time.
+- **Accuracy work.** Series are aligned on a shared list of real sample
+  timestamps; a series with no sample at a timestamp gets `null` (a real
+  gap) and the tooltip reads "No recorded value" - never zero-filled,
+  never interpolated. The client-side baseline now mirrors
+  `site_data.py`'s reset/relaunch anchoring exactly (verified: both
+  produce $99,751.68). Percentages smaller than a hundredth of a percent
+  render with extra precision instead of a misleading "+0.00%".
+- **Honest per-class labelling.** `equity_log_stocks.csv` and
+  `equity_log_crypto.csv` both record the *whole account's* value (two
+  workflows, one Alpaca account - verified against the logs), so a
+  historical portfolio value split by asset class does not exist. It is
+  not estimated: the per-class series show cumulative realized P&L from
+  confirmed sell fills, which genuinely is per-class and timestamped,
+  and its percentage is labelled "% of account baseline" rather than a
+  "return". A footnote on the page states this.
+- **Axis/label fixes.** The drawdown chart's crowded timestamps are
+  capped at 4 ticks; axis labels switch between time-only (intraday) and
+  date-only (multi-day); ticks drop cents while tooltips keep full
+  precision; the main chart is much taller.
+- Empty states now say *when* the most recent recorded sample was, so
+  "Today" just after ET midnight (legitimately zero samples) points at
+  real data instead of just saying nothing exists.
+
 ## Version Richards 0.12.0 - 2026-07-29
 
 Full rebrand/redesign of the dashboard website away from the casino

@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.12.0
+# InvestingBot — Version Richards 0.12.1
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 143 passing](https://img.shields.io/badge/tests-143%20passing-4c9a2a)](tests/)
@@ -124,7 +124,7 @@ Both share: **real-money mode disabled** (2 independent locks - see
 live right now, so there's nothing to retrain for), and **CI running
 the test suite on every push/PR** (`.github/workflows/ci.yml`).
 
-**What "140 tests passing" (`pytest tests/`) actually means:** these are
+**What "143 tests passing" (`pytest tests/`) actually means:** these are
 fast, offline checks that specific pieces of code do what they're
 supposed to on made-up numbers - e.g. "does the stop-loss actually
 trigger when price falls exactly 5% below entry," "does the circuit
@@ -216,12 +216,27 @@ this repository's own Settings.
   headline metric cards, a Today/This Week/This Month/All Time period
   selector, then the active tab's content. Kept deliberately light: no
   Chart.js, no canvases.
-- **`charts.html`** - every graph (net account gain/loss, cumulative
+- **`charts.html`** - every graph (account gain/loss, cumulative
   realized P&L per asset class, win/loss per ticker per asset class,
-  daily P&L, drawdown, strategy comparison), grouped into "Whole
-  Account" / "Crypto" / "Stocks" sections with its own Today/This
-  Week/This Month dropdown, split onto its own page specifically so the
-  main dashboard never has to load Chart.js or render eight canvases.
+  daily P&L, drawdown, realized P&L by strategy), grouped into "Account
+  Performance" / "Crypto" / "Stocks" sections, split onto its own page
+  specifically so the main dashboard never has to load Chart.js or
+  render eight canvases. Fully interactive: hover (or tap on mobile) for
+  an exact-value tooltip with the ET timestamp, portfolio value,
+  gain/loss, period return and change from the previous recorded point;
+  a snapped vertical crosshair; clickable legend; Today / 7 Days /
+  30 Days / All Time range controls; a Combined / Stocks / Crypto
+  selector; optional drag-to-zoom with a reset button; and a text
+  summary under each chart for screen readers.
+
+  **What the per-class series actually are:** the stock and crypto
+  workflows each log the *whole account's* value, not a separate
+  per-asset-class balance, so a historical portfolio value split by
+  asset class does not exist in the logs and is not estimated. The
+  Stocks/Crypto series show **cumulative realized P&L from confirmed
+  sell fills**, which genuinely is per-class and timestamped. A series
+  with no sample at a given timestamp shows "No recorded value" - gaps
+  are never zero-filled or interpolated.
 
 ### How the live update works
 

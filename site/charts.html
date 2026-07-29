@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Performance Charts — InvestingBot</title>
-<meta name="description" content="Live trading charts for a real paper-trading bot - net gain/loss, cumulative realized P&L, win/loss per ticker, drawdown.">
+<meta name="description" content="Interactive trading charts for a real paper-trading bot - net gain/loss, cumulative realized P&L, win/loss per ticker, drawdown.">
 <link rel="stylesheet" href="assets/styles.css">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0d0b'/%3E%3Cpath d='M6 21l6-8 5 5 9-11' stroke='%2334d372' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
@@ -28,86 +28,109 @@
   <div class="page-header page-header-compact">
     <a class="back-link" href="index.html">← Back to dashboard</a>
     <h1 class="page-title">Performance Charts</h1>
-    <p class="page-subtitle">Every graph below is built from the same real numbers as the main dashboard.</p>
+    <p class="page-subtitle">Every graph below is built from the same real numbers as the main dashboard. Hover (or tap on mobile) any chart for exact values at that timestamp.</p>
   </div>
 
-  <div class="charts-toolbar">
-    <label class="period-picker">
-      <span>Graphs show:</span>
-      <select id="chart-period-select" aria-label="Time period for the graphs below">
-        <option value="today">Today</option>
-        <option value="week">This Week</option>
-        <option value="month">This Month</option>
-      </select>
-    </label>
-    <p class="last-updated" id="last-updated">Last updated: —</p>
+  <div class="chart-controls">
+    <div class="control-group">
+      <span class="control-label" id="range-label">Range</span>
+      <div class="segmented" role="group" aria-labelledby="range-label" id="range-control">
+        <button type="button" data-range="today" class="active">Today</button>
+        <button type="button" data-range="7d">7 Days</button>
+        <button type="button" data-range="30d">30 Days</button>
+        <button type="button" data-range="all">All Time</button>
+      </div>
+    </div>
+    <div class="control-group">
+      <span class="control-label" id="category-label">Category</span>
+      <div class="segmented" role="group" aria-labelledby="category-label" id="category-control">
+        <button type="button" data-category="combined" class="active">Combined</button>
+        <button type="button" data-category="stock">Stocks</button>
+        <button type="button" data-category="crypto">Crypto</button>
+      </div>
+    </div>
+    <button type="button" class="ghost-btn" id="reset-zoom" hidden>Reset zoom</button>
+    <p class="range-caption" id="range-caption"></p>
   </div>
+
+  <p class="last-updated" id="last-updated">Last updated: —</p>
 
   <section class="chart-section-group" aria-label="Whole account">
-    <h2 class="section-title"><span class="dot" aria-hidden="true"></span>Whole Account</h2>
+    <h2 class="section-title"><span class="dot" aria-hidden="true"></span>Account Performance</h2>
     <div class="chart-grid">
       <div class="chart-card chart-card-wide">
-        <h3>Net Account Gain/Loss</h3>
-        <div class="chart-canvas-wrap" id="chart-net-gain-loss-wrap"><canvas id="chart-net-gain-loss"></canvas></div>
-        <div class="chart-empty-state" id="chart-net-gain-loss-empty" hidden></div>
+        <h3 id="equity-heading">Account Gain / Loss</h3>
+        <div class="chart-canvas-wrap" id="chart-equity-wrap"><canvas id="chart-equity" aria-describedby="chart-equity-summary"></canvas></div>
+        <div class="chart-empty-state" id="chart-equity-empty" hidden></div>
+        <p class="chart-summary" id="chart-equity-summary"></p>
       </div>
       <div class="chart-card">
         <h3>Daily P&amp;L</h3>
-        <div class="chart-canvas-wrap" id="chart-daily-pnl-wrap"><canvas id="chart-daily-pnl"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-daily-pnl-wrap"><canvas id="chart-daily-pnl" aria-describedby="chart-daily-pnl-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-daily-pnl-empty" hidden></div>
+        <p class="chart-summary" id="chart-daily-pnl-summary"></p>
       </div>
       <div class="chart-card">
-        <h3>Drawdown</h3>
-        <div class="chart-canvas-wrap" id="chart-drawdown-wrap"><canvas id="chart-drawdown"></canvas></div>
+        <h3>Drawdown From Peak</h3>
+        <div class="chart-canvas-wrap" id="chart-drawdown-wrap"><canvas id="chart-drawdown" aria-describedby="chart-drawdown-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-drawdown-empty" hidden></div>
+        <p class="chart-summary" id="chart-drawdown-summary"></p>
       </div>
       <div class="chart-card">
-        <h3>Strategy Comparison (Realized P&amp;L)</h3>
-        <div class="chart-canvas-wrap" id="chart-strategy-wrap"><canvas id="chart-strategy"></canvas></div>
+        <h3>Realized P&amp;L by Strategy</h3>
+        <div class="chart-canvas-wrap" id="chart-strategy-wrap"><canvas id="chart-strategy" aria-describedby="chart-strategy-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-strategy-empty" hidden></div>
+        <p class="chart-summary" id="chart-strategy-summary"></p>
       </div>
     </div>
   </section>
 
-  <section class="chart-section-group chart-section-crypto" aria-label="Crypto">
+  <section class="chart-section-group chart-section-crypto" aria-label="Crypto" id="section-crypto">
     <h2 class="section-title"><span class="dot" aria-hidden="true"></span>Crypto</h2>
     <div class="chart-grid">
       <div class="chart-card">
         <h3>Cumulative Realized P&amp;L</h3>
-        <div class="chart-canvas-wrap" id="chart-crypto-cum-pnl-wrap"><canvas id="chart-crypto-cum-pnl"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-crypto-cum-pnl-wrap"><canvas id="chart-crypto-cum-pnl" aria-describedby="chart-crypto-cum-pnl-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-crypto-cum-pnl-empty" hidden></div>
+        <p class="chart-summary" id="chart-crypto-cum-pnl-summary"></p>
       </div>
       <div class="chart-card">
-        <h3>Win/Loss per Ticker</h3>
-        <div class="chart-canvas-wrap" id="chart-crypto-winloss-wrap"><canvas id="chart-crypto-winloss"></canvas></div>
+        <h3>Win / Loss per Ticker</h3>
+        <div class="chart-canvas-wrap" id="chart-crypto-winloss-wrap"><canvas id="chart-crypto-winloss" aria-describedby="chart-crypto-winloss-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-crypto-winloss-empty" hidden></div>
+        <p class="chart-summary" id="chart-crypto-winloss-summary"></p>
       </div>
     </div>
   </section>
 
-  <section class="chart-section-group chart-section-stocks" aria-label="Stocks">
+  <section class="chart-section-group chart-section-stocks" aria-label="Stocks" id="section-stocks">
     <h2 class="section-title"><span class="dot" aria-hidden="true"></span>Stocks</h2>
     <div class="chart-grid">
       <div class="chart-card">
         <h3>Cumulative Realized P&amp;L</h3>
-        <div class="chart-canvas-wrap" id="chart-stock-cum-pnl-wrap"><canvas id="chart-stock-cum-pnl"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-stock-cum-pnl-wrap"><canvas id="chart-stock-cum-pnl" aria-describedby="chart-stock-cum-pnl-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-stock-cum-pnl-empty" hidden></div>
+        <p class="chart-summary" id="chart-stock-cum-pnl-summary"></p>
       </div>
       <div class="chart-card">
-        <h3>Win/Loss per Ticker</h3>
-        <div class="chart-canvas-wrap" id="chart-stock-winloss-wrap"><canvas id="chart-stock-winloss"></canvas></div>
+        <h3>Win / Loss per Ticker</h3>
+        <div class="chart-canvas-wrap" id="chart-stock-winloss-wrap"><canvas id="chart-stock-winloss" aria-describedby="chart-stock-winloss-summary"></canvas></div>
         <div class="chart-empty-state" id="chart-stock-winloss-empty" hidden></div>
+        <p class="chart-summary" id="chart-stock-winloss-summary"></p>
       </div>
     </div>
   </section>
 
   <footer class="site-footer">
+    <p id="data-note"></p>
     <p>Paper trading only. Not investment advice. See
       <a href="https://github.com/HarringtonEthan/InvestingBot" target="_blank" rel="noopener">the source repo</a>
       for exactly how these numbers are computed.</p>
   </footer>
 
 </main>
+
+<div id="chart-tooltip" role="tooltip" aria-hidden="true"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script src="assets/charts.js"></script>
