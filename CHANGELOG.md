@@ -17,6 +17,19 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.5 - 2026-07-29
+
+- **Added cache-busting `?v=` query strings** to every stylesheet/script
+  tag in `index.html`/`charts.html` (`styles.css`, `intro.css`,
+  `dashboard.js`, `intro.js`, `charts.js`). None of them previously
+  carried any version marker, so a browser (or GitHub Pages' CDN edge)
+  could keep serving an old cached copy of one of these files for a
+  while after a real fix had already been deployed - confirmed live:
+  0.13.4's fix was already the deployed commit, but a user still saw the
+  pre-fix behavior in their browser. Bump the `?v=` value on every
+  future release that touches one of these files, the same way the
+  version number itself already gets bumped.
+
 ## Version Richards 0.13.4 - 2026-07-29
 
 Follow-up to 0.13.3: the charts page had the same missing-cost-basis gap
