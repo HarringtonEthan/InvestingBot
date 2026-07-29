@@ -17,6 +17,27 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.4 - 2026-07-29
+
+Follow-up to 0.13.3: the charts page had the same missing-cost-basis gap
+as its own separate bug, one layer up.
+
+- **Fixed the Stocks Cumulative Realized P&L and Win/Loss charts
+  claiming "No executed stock sell trades in this range"** even though
+  2 real confirmed sells (XOM, DIS) happened - `confirmedSells()` in
+  charts.js silently excluded any sell whose `realized_pnl_usd` was
+  unknown (missing cost basis, same root cause as 0.13.3), so from the
+  page's perspective those sells simply never existed. Now returns every
+  confirmed sell regardless of known P&L; the chart still can't plot a
+  dollar figure it doesn't have, but the empty-state and summary text
+  now say "N confirmed sells recorded, but no cost basis to compute
+  P&L" instead of falsely implying nothing happened.
+- Also fixed a latent bug this exposed: JavaScript's `null <= 0` is
+  `true`, so once unknown-P&L sells stopped being filtered out upstream,
+  the win/loss chart would have silently counted them as losses. Both
+  win/loss and cumulative P&L now explicitly filter to sells with a
+  known `realized_pnl_usd` before doing any win/loss or sum arithmetic.
+
 ## Version Richards 0.13.3 - 2026-07-29
 
 Fixed a real production crash: the scheduled "Update trade dashboard"

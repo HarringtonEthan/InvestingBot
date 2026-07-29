@@ -157,10 +157,17 @@
     return (equity && equity.available && Array.isArray(equity.points)) ? equity.points : [];
   }
   function confirmedSells(assetClass, startMs, endMs) {
+    // Returns every confirmed sell in range, regardless of whether its
+    // realized_pnl_usd is known - a sell with a missing cost basis (see
+    // site_data.py/live_trade.py's fix in CHANGELOG) still genuinely
+    // happened and must not silently disappear from "how many sells
+    // were there," even though its own $ contribution can't be plotted.
+    // Callers that need a plottable number filter to isNum(...) rows
+    // themselves.
     if (!trades || !trades.available) return [];
     return trades.trades
       .filter((t) => {
-        if (t.action !== "SELL" || t.order_status !== "confirmed_fill" || !isNum(t.realized_pnl_usd)) return false;
+        if (t.action !== "SELL" || t.order_status !== "confirmed_fill") return false;
         if (assetClass && t.asset_class !== assetClass) return false;
         const ts = toDate(t.timestamp_utc);
         return ts && ts.getTime() >= startMs && ts.getTime() <= endMs;
@@ -547,10 +554,22 @@
       setSummary(chartId, `No confirmed ${nice} sells recorded for ${label.toLowerCase()}, so there is no realized P&L to plot.`);
       return;
     }
+    // A sell can be confirmed but still have no computable P&L (its
+    // cost basis was never recorded - see CHANGELOG). It's still a real
+    // sell, so it must never make this look like "no trades happened" -
+    // just excluded from the cumulative total it can't contribute a
+    // number to.
+    const known = sells.filter((t) => isNum(t.realized_pnl_usd));
+    const unknownCount = sells.length - known.length;
+    if (!known.length) {
+      setEmpty(chartId, `<p>${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"} recorded for ${label.toLowerCase()}, but none has a recorded cost basis, so realized P&L can't be computed yet.</p>${unrealizedNote(assetClass)}`);
+      setSummary(chartId, `${label}: ${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"}, but cost basis wasn't recorded for any of them, so cumulative realized P&L can't be computed.`);
+      return;
+    }
     setEmpty(chartId, null);
     let running = 0, prev = null;
     const stamps = [], records = [];
-    sells.forEach((t) => {
+    known.forEach((t) => {
       running += t.realized_pnl_usd;
       stamps.push(t.timestamp_utc);
       records.push({ value: running, portfolio: null, pct: null, delta: prev === null ? null : running - prev });
@@ -577,7 +596,9 @@
       plugins: [crosshairPlugin],
     });
     charts[chartKey].$ibMeta = meta;
-    setSummary(chartId, `${label}: ${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"}, ending at ${fmtUsdSigned(running)} cumulative realized P&L (last fill ${fmtDateTimeET(stamps[stamps.length - 1])}).`);
+    setSummary(chartId, `${label}: ${known.length} confirmed ${nice} sell${known.length === 1 ? "" : "s"}` +
+      (unknownCount ? ` (${unknownCount} more with no recorded cost basis, excluded from this total)` : "") +
+      `, ending at ${fmtUsdSigned(running)} cumulative realized P&L (last fill ${fmtDateTimeET(stamps[stamps.length - 1])}).`);
   }
 
   function renderClassWinLoss(assetClass, chartId, chartKey) {
@@ -592,10 +613,20 @@
       setSummary(chartId, `No confirmed ${nice} sells recorded for ${label.toLowerCase()}, so there is no win/loss split to plot.`);
       return;
     }
+    // Only a sell with a known P&L can be classified win/loss at all -
+    // JS's `null <= 0` is true, so without this filter an unknown-P&L
+    // sell (missing cost basis) would silently be counted as a loss.
+    const known = sells.filter((t) => isNum(t.realized_pnl_usd));
+    const unknownCount = sells.length - known.length;
+    if (!known.length) {
+      setEmpty(chartId, `<p>${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"} recorded for ${label.toLowerCase()}, but none has a recorded cost basis, so win/loss can't be classified yet.</p>${unrealizedNote(assetClass)}`);
+      setSummary(chartId, `${label}: ${sells.length} confirmed ${nice} sell${sells.length === 1 ? "" : "s"}, but cost basis wasn't recorded for any of them, so win/loss can't be classified.`);
+      return;
+    }
     setEmpty(chartId, null);
-    const tickers = Array.from(new Set(sells.map((t) => t.ticker))).sort();
-    const wins = tickers.map((tk) => sells.filter((t) => t.ticker === tk && t.realized_pnl_usd > 0).length);
-    const losses = tickers.map((tk) => sells.filter((t) => t.ticker === tk && t.realized_pnl_usd <= 0).length);
+    const tickers = Array.from(new Set(known.map((t) => t.ticker))).sort();
+    const wins = tickers.map((tk) => known.filter((t) => t.ticker === tk && t.realized_pnl_usd > 0).length);
+    const losses = tickers.map((tk) => known.filter((t) => t.ticker === tk && t.realized_pnl_usd <= 0).length);
     charts[chartKey] = new Chart(canvas, {
       type: "bar",
       data: { labels: tickers, datasets: [
@@ -612,7 +643,8 @@
     });
     charts[chartKey].$ibMeta = { kind: "bar", title: `${assetClass === "stock" ? "Stocks" : "Crypto"} win/loss`, valueFormatter: (v) => `${v} trade${v === 1 ? "" : "s"}` };
     const totalW = wins.reduce((a, b) => a + b, 0), totalL = losses.reduce((a, b) => a + b, 0);
-    setSummary(chartId, `${label}: ${totalW} winning and ${totalL} losing confirmed ${nice} sells across ${tickers.length} ticker${tickers.length === 1 ? "" : "s"} (${tickers.join(", ")}).`);
+    setSummary(chartId, `${label}: ${totalW} winning and ${totalL} losing confirmed ${nice} sells across ${tickers.length} ticker${tickers.length === 1 ? "" : "s"} (${tickers.join(", ")})` +
+      (unknownCount ? ` - ${unknownCount} more sell${unknownCount === 1 ? "" : "s"} excluded (no recorded cost basis)` : "") + `.`);
   }
 
   // ---------------------------------------------------------------------
