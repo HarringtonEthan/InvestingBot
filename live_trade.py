@@ -443,15 +443,22 @@ def decide(ticker: str, args, broker: Broker):
     gain_pct = None
     pct_below = None
 
+    if currently_holding:
+        # Already holding - the real cost basis comes from the broker's
+        # actual average entry price (not the moving average, which is
+        # irrelevant to actual P&L). Fetched here, unconditionally on
+        # strategy, because this is also what gets logged as a SELL's
+        # avg_entry_price_usd below: this used to sit inside the
+        # day_trading-only branch, so a rule_based/ml_filtered SELL
+        # logged an empty cost basis - not just unused here, but
+        # permanently unrecoverable, since realized P&L for that trade
+        # can never be computed after the fact from a blank field.
+        entry_price = broker.get_position_avg_entry_price(symbol.alpaca)
+
     if args.strategy == "day_trading":
         # How far below (negative) or above the 20-period average price
         # currently sits - the dip signal this strategy buys on.
         pct_below = float(df["pct_below_sma20"].iloc[-1])
-        if currently_holding:
-            # Already holding - the real cost basis comes from the
-            # broker's actual average entry price (not the moving
-            # average, which is irrelevant to actual P&L).
-            entry_price = broker.get_position_avg_entry_price(symbol.alpaca)
         if currently_holding and not entry_price:
             # Held according to Alpaca, but its own entry-price lookup
             # came back empty (shouldn't normally happen) - can't

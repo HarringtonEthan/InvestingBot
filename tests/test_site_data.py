@@ -320,6 +320,60 @@ def test_win_loss_and_win_rate():
     assert result["worst_trade"]["realized_pnl_usd"] == -100.0
 
 
+def test_confirmed_sell_with_no_computable_pnl_does_not_crash_best_worst():
+    # Regression test for a real production crash (2026-07-29, see
+    # CHANGELOG): a confirmed SELL whose avg_entry_price_usd came back
+    # blank (live_trade.py once only fetched the cost basis for the
+    # day_trading strategy - see live_trade.py's decide()) has a NaN
+    # realized_pnl_usd. idxmax()/idxmin() raise ValueError on an
+    # all-NaN column instead of just skipping it, which took down the
+    # entire scheduled site_data.py run. Must still count as a trade,
+    # just excluded from best/worst-trade ranking.
+    trades = _trades_df([
+        {"action": "SELL", "price_usd": 158.53, "avg_entry_price_usd": "", "position_qty_before": 13.02},
+    ])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    realized = pd.Series(float("nan"), index=trades.index)
+    confirmed = trades["is_confirmed_sell"]
+    realized[confirmed] = (
+        pd.to_numeric(trades.loc[confirmed, "price_usd"])
+        - pd.to_numeric(trades.loc[confirmed, "avg_entry_price_usd"], errors="coerce")
+    ) * trades.loc[confirmed, "position_qty_before"]
+    trades["realized_pnl_usd"] = realized
+
+    result = summarize_period("Today", None, dt.datetime(2026, 7, 29, 16, tzinfo=dt.timezone.utc), None, trades, None, None)
+    assert result["num_trades"] == 1
+    assert result["best_trade"] is None
+    assert result["worst_trade"] is None
+    assert result["num_wins"] == 0
+    assert result["num_losses"] == 0
+
+
+def test_confirmed_sell_with_unknown_pnl_does_not_hide_a_real_win():
+    # A mix of one unknown-P&L sell and one real win - idxmax/idxmin
+    # must still find the real winner instead of being confused by the
+    # NaN row sitting alongside it.
+    trades = _trades_df([
+        {"action": "SELL", "price_usd": 110.0, "avg_entry_price_usd": "", "position_qty_before": 10.0},
+        {"action": "SELL", "price_usd": 110.0, "avg_entry_price_usd": 100.0, "position_qty_before": 10.0},
+    ])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    realized = pd.Series(float("nan"), index=trades.index)
+    confirmed = trades["is_confirmed_sell"]
+    realized[confirmed] = (
+        pd.to_numeric(trades.loc[confirmed, "price_usd"])
+        - pd.to_numeric(trades.loc[confirmed, "avg_entry_price_usd"], errors="coerce")
+    ) * trades.loc[confirmed, "position_qty_before"]
+    trades["realized_pnl_usd"] = realized
+
+    result = summarize_period("Today", None, dt.datetime(2026, 7, 29, 16, tzinfo=dt.timezone.utc), None, trades, None, None)
+    assert result["num_trades"] == 2
+    assert result["best_trade"]["realized_pnl_usd"] == 100.0
+    assert result["worst_trade"]["realized_pnl_usd"] == 100.0
+
+
 def test_stocks_vs_crypto_split_never_mixes_asset_classes():
     trades = _trades_df([
         {"action": "SELL", "asset_class": "stock", "price_usd": 110.0, "avg_entry_price_usd": 100.0, "position_qty_before": 10.0},

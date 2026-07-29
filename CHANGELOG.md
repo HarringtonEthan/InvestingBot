@@ -17,6 +17,39 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.3 - 2026-07-29
+
+Fixed a real production crash: the scheduled "Update trade dashboard"
+workflow started failing at its `Generate dashboard data (JSON)` step
+(runs #136-138) the moment the account's first-ever confirmed SELL under
+a non-`day_trading` strategy was logged.
+
+- **Root cause, in `live_trade.py`:** `decide()` only fetched the
+  position's real cost basis (`broker.get_position_avg_entry_price()`)
+  inside the `day_trading`-only branch. Every other strategy - including
+  `rule_based`, the one actually running live - fell through without
+  ever fetching it, so a SELL under those strategies logged a blank
+  `avg_entry_price_usd`. Today's XOM and DIS sells (2026-07-29, both
+  `rule_based`) are the first sells this account has ever made, and both
+  hit this gap. Fixed by moving the fetch above the strategy branch so
+  it runs for any strategy whenever a position is currently held - it
+  was always available from the broker, just never asked for outside
+  `day_trading`.
+- **Immediate crash, in `site_data.py`:** a SELL with no cost basis has
+  a `NaN` `realized_pnl_usd`; `summarize_period()`'s best/worst-trade
+  lookup called `idxmax()`/`idxmin()` directly on that column, which
+  raises `ValueError: Encountered all NA values` on an all-`NaN` column
+  instead of just skipping it - taking down the whole scheduled run
+  (JSON generation, the PNG, and the Pages deploy all failed together).
+  Now filters to rows with a computable P&L first: a sell with unknown
+  P&L still counts toward `num_trades` (it's a real completed round
+  trip) but is excluded from best/worst-trade ranking instead of
+  crashing the page generation over it.
+- The two already-logged sells will keep showing $0 realized P&L for
+  today/this-week/etc. (an honest "unknown," not a real zero) since
+  their cost basis was never recorded - the fix above only prevents this
+  from happening to *future* sells.
+
 ## Version Richards 0.13.2 - 2026-07-29
 
 More equity-chart coloring follow-ups, plus a new logo.

@@ -408,9 +408,19 @@ def summarize_period(
         result["num_losses"] = int(len(losses))
         if result["num_trades"] > 0:
             result["win_rate"] = result["num_wins"] / result["num_trades"]
-        if len(confirmed_sells):
-            best = confirmed_sells.loc[confirmed_sells["realized_pnl_usd"].idxmax()]
-            worst = confirmed_sells.loc[confirmed_sells["realized_pnl_usd"].idxmin()]
+        # Only consider sells with a computable P&L - a confirmed sell
+        # whose avg_entry_price_usd came back blank (a real logging gap:
+        # e.g. live_trade.py once only fetched the cost basis for the
+        # day_trading strategy, so a rule_based/ml_filtered sell could
+        # log an empty one) has a NaN realized_pnl_usd, and idxmax/idxmin
+        # raise ValueError on an all-NaN column rather than just skipping
+        # it - exactly what crashed this script's scheduled run. Still
+        # counted in num_trades above (it's a real completed round trip),
+        # just excluded here since there's nothing to rank it by.
+        known_pnl = confirmed_sells[confirmed_sells["realized_pnl_usd"].notna()]
+        if len(known_pnl):
+            best = known_pnl.loc[known_pnl["realized_pnl_usd"].idxmax()]
+            worst = known_pnl.loc[known_pnl["realized_pnl_usd"].idxmin()]
             result["best_trade"] = _trade_summary(best)
             result["worst_trade"] = _trade_summary(worst)
 
