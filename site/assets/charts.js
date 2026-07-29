@@ -78,6 +78,11 @@
     }
   }
 
+  // Every time-series chart on this page used to label every single
+  // data point (a new equity/trade row every few minutes), which meant
+  // dozens of overlapping timestamps crammed along the x-axis - close
+  // to unreadable. maxTicksLimit + autoSkip let Chart.js pick a sane,
+  // evenly-spaced subset instead of trying to cram all of them in.
   function baseChartOptions(extra) {
     return Object.assign({
       responsive: true,
@@ -86,7 +91,10 @@
         legend: { labels: { color: CASINO_COLORS.cream } },
       },
       scales: {
-        x: { ticks: { color: CASINO_COLORS.cream }, grid: { color: "rgba(255,215,0,0.08)" } },
+        x: {
+          ticks: { color: CASINO_COLORS.cream, maxTicksLimit: 7, autoSkip: true, maxRotation: 40, minRotation: 0 },
+          grid: { color: "rgba(255,215,0,0.08)" },
+        },
         // beginAtZero matters for every chart on this page: they're all
         // either counts (wins/losses - naturally 0-based) or a value
         // measured *relative to* a baseline (net gain/loss, cumulative
@@ -99,6 +107,33 @@
       },
       animation: REDUCED_MOTION ? false : undefined,
     }, extra || {});
+  }
+
+  // Shows a helpful explanation instead of a blank chart card whenever
+  // there's genuinely nothing to plot yet (e.g. no closed trades this
+  // period) - mirrors what the PNG dashboard (visualize_log.py) already
+  // does for the same situation, rather than leaving empty axes.
+  function setChartEmptyState(chartId, message) {
+    const wrap = document.getElementById(chartId + "-wrap");
+    const empty = document.getElementById(chartId + "-empty");
+    const isEmpty = message !== null;
+    if (wrap) wrap.hidden = isEmpty;
+    if (empty) {
+      empty.hidden = !isEmpty;
+      if (isEmpty) empty.innerHTML = message;
+    }
+  }
+
+  function unrealizedNote(period, assetClass) {
+    const p = dashboard.periods[period];
+    const value = assetClass
+      ? (p.unrealized_pnl_by_asset_class || {})[assetClass]
+      : p.unrealized_pnl_usd;
+    if (value === null || value === undefined) return "";
+    const cls = value >= 0 ? "positive" : "negative";
+    const sign = value >= 0 ? "+" : "-";
+    const amount = sign + "$" + Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return `<p class="chart-empty-note ${cls}">Live unrealized P&amp;L right now (open positions): ${amount}</p>`;
   }
 
   // Confirmed-fill SELLs within a period's window, optionally restricted
@@ -126,11 +161,18 @@
     if (typeof Chart === "undefined") return;
     destroyChart("netGainLoss");
     const p = dashboard.periods[period];
-    if (!equity || !equity.available || !equity.points.length || p.starting_value_usd === null) return;
+    if (!equity || !equity.available || !equity.points.length || p.starting_value_usd === null) {
+      setChartEmptyState("chart-net-gain-loss", "No equity history logged yet for this period.");
+      return;
+    }
     const baseline = p.starting_value_usd;
     const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
     const points = equity.points.filter((pt) => new Date(pt.timestamp_utc).getTime() >= startMs);
-    if (!points.length) return;
+    if (!points.length) {
+      setChartEmptyState("chart-net-gain-loss", "No equity history logged yet for this period.");
+      return;
+    }
+    setChartEmptyState("chart-net-gain-loss", null);
     const labels = points.map((pt) => fmtEt(pt.timestamp_utc));
     const values = points.map((pt) => pt.portfolio_value_usd - baseline);
     const finalPositive = values[values.length - 1] >= 0;
@@ -157,7 +199,12 @@
     if (typeof Chart === "undefined") return;
     destroyChart(chartKey);
     const sells = confirmedSellsForPeriod(period, assetClass);
-    if (!sells.length) return;
+    if (!sells.length) {
+      const label = assetClass === "crypto" ? "Crypto" : "Stock";
+      setChartEmptyState(canvasId, `<p>No executed ${label} SELL trades yet this period.</p>${unrealizedNote(period, assetClass)}`);
+      return;
+    }
+    setChartEmptyState(canvasId, null);
     let running = 0;
     const points = sells.map((t) => {
       running += t.realized_pnl_usd;
@@ -186,7 +233,12 @@
     if (typeof Chart === "undefined") return;
     destroyChart(chartKey);
     const sells = confirmedSellsForPeriod(period, assetClass);
-    if (!sells.length) return;
+    if (!sells.length) {
+      const label = assetClass === "crypto" ? "Crypto" : "Stock";
+      setChartEmptyState(canvasId, `<p>No executed ${label} SELL trades yet this period.</p>${unrealizedNote(period, assetClass)}`);
+      return;
+    }
+    setChartEmptyState(canvasId, null);
     const tickers = Array.from(new Set(sells.map((t) => t.ticker))).sort();
     const wins = tickers.map((tk) => sells.filter((t) => t.ticker === tk && t.realized_pnl_usd > 0).length);
     const losses = tickers.map((tk) => sells.filter((t) => t.ticker === tk && t.realized_pnl_usd <= 0).length);
@@ -210,7 +262,11 @@
 
   function renderDailyPnlChart(period) {
     const canvas = document.getElementById("chart-daily-pnl");
-    if (typeof Chart === "undefined" || !equity || !equity.available || equity.points.length < 2) return;
+    if (typeof Chart === "undefined") return;
+    if (!equity || !equity.available || equity.points.length < 2) {
+      setChartEmptyState("chart-daily-pnl", "<p>Not enough days logged yet to show day-over-day P&amp;L - needs at least 2 calendar days of equity history.</p>");
+      return;
+    }
     const p = dashboard.periods[period];
     const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
     const points = equity.points.filter((pt) => new Date(pt.timestamp_utc).getTime() >= startMs);
@@ -227,7 +283,11 @@
       dailyPnl.push({ day: days[i], pnl: byDay.get(days[i]) - byDay.get(days[i - 1]) });
     }
     destroyChart("dailyPnl");
-    if (!dailyPnl.length) return;
+    if (!dailyPnl.length) {
+      setChartEmptyState("chart-daily-pnl", "<p>Not enough days logged yet to show day-over-day P&amp;L - needs at least 2 calendar days of equity history.</p>");
+      return;
+    }
+    setChartEmptyState("chart-daily-pnl", null);
     charts.dailyPnl = new Chart(canvas, {
       type: "bar",
       data: {
@@ -244,17 +304,25 @@
 
   function renderDrawdownChart(period) {
     const canvas = document.getElementById("chart-drawdown");
-    if (typeof Chart === "undefined" || !equity || !equity.available || equity.points.length < 2) return;
+    if (typeof Chart === "undefined") return;
+    if (!equity || !equity.available || equity.points.length < 2) {
+      setChartEmptyState("chart-drawdown", "<p>Not enough equity history logged yet to compute drawdown.</p>");
+      return;
+    }
     const p = dashboard.periods[period];
     const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
     const points = equity.points.filter((pt) => new Date(pt.timestamp_utc).getTime() >= startMs);
-    if (points.length < 2) { destroyChart("drawdown"); return; }
+    destroyChart("drawdown");
+    if (points.length < 2) {
+      setChartEmptyState("chart-drawdown", "<p>Not enough equity history logged yet this period to compute drawdown.</p>");
+      return;
+    }
+    setChartEmptyState("chart-drawdown", null);
     let peak = points[0].portfolio_value_usd;
     const drawdowns = points.map((pt) => {
       peak = Math.max(peak, pt.portfolio_value_usd);
       return peak > 0 ? (pt.portfolio_value_usd - peak) / peak : 0;
     });
-    destroyChart("drawdown");
     charts.drawdown = new Chart(canvas, {
       type: "line",
       data: {
@@ -279,7 +347,11 @@
     const p = dashboard.periods[period];
     const entries = Object.entries(p.by_strategy || {});
     destroyChart("strategy");
-    if (!entries.length) return;
+    if (!entries.length) {
+      setChartEmptyState("chart-strategy", `<p>No closed trades yet for any strategy this period.</p>${unrealizedNote(period, null)}`);
+      return;
+    }
+    setChartEmptyState("chart-strategy", null);
     charts.strategy = new Chart(canvas, {
       type: "bar",
       data: {

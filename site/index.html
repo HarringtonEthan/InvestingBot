@@ -15,6 +15,7 @@
 <div class="panda-intro" id="panda-intro" aria-hidden="true">
   <span class="panda-emoji">🐼</span>
   <span class="kiss-mark">💋</span>
+  <span class="blush-mark">😊</span>
   <span class="skip-hint">(click to skip)</span>
 </div>
 
@@ -35,6 +36,10 @@
   <button class="tab-btn" data-period="month" role="tab" aria-selected="false">THIS MONTH</button>
   <button class="tab-btn" data-period="all_time" role="tab" aria-selected="false">ALL TIME</button>
 </nav>
+
+<div class="quick-links">
+  <a class="odds-board-link" href="charts.html">📊 View the Odds Board (Graphs) →</a>
+</div>
 
 <main id="app">
 
@@ -69,57 +74,64 @@
   <p class="methodology-note" id="methodology-note"></p>
   <p class="reset-note" id="reset-note" hidden>⚠️ The bot was relaunched partway through this period - Dollar P&amp;L may not match Realized + Unrealized below, since it still includes equity swings from before the relaunch that the trade history no longer covers. This resolves itself once a full period passes without another relaunch.</p>
 
-  <section class="stats-table-wrap">
-    <h2 class="section-title">🃏 The House Ledger — <span id="period-label">Today</span></h2>
-    <div class="stats-grid" id="stats-grid" aria-live="polite"></div>
-  </section>
+  <nav class="content-tabs" role="tablist" aria-label="Dashboard sections">
+    <button class="content-tab-btn active" data-tab="stats" role="tab" aria-selected="true">🃏 Stats</button>
+    <button class="content-tab-btn" data-tab="positions" role="tab" aria-selected="false">🎴 Positions</button>
+    <button class="content-tab-btn" data-tab="trades" role="tab" aria-selected="false">🎡 Past Trades</button>
+  </nav>
 
-  <section class="account-strip" id="account-strip" aria-label="Account cash and buying power">
-    <div class="chip-stat"><span class="chip-icon">💵</span><span class="chip-label">Cash</span><span class="chip-value" id="stat-cash">—</span></div>
-    <div class="chip-stat"><span class="chip-icon">🪙</span><span class="chip-label">Buying Power</span><span class="chip-value" id="stat-buying-power">—</span></div>
-    <div class="chip-stat"><span class="chip-icon">🏦</span><span class="chip-label">Equity</span><span class="chip-value" id="stat-equity">—</span></div>
-  </section>
+  <div class="content-tab-panel" data-tab-panel="stats">
+    <section class="stats-table-wrap">
+      <h2 class="section-title">🃏 The House Ledger — <span id="period-label">Today</span></h2>
+      <div class="stats-grid" id="stats-grid" aria-live="polite"></div>
+    </section>
 
-  <section class="blackjack-table" aria-label="Current open positions">
-    <h2 class="section-title">🎴 The Table — Open Positions</h2>
-    <div class="table-felt">
-      <div class="hand-group hand-group-stocks">
-        <h3 class="hand-label">📈 Stocks</h3>
-        <div class="hand" id="hand-stocks"></div>
+    <section class="account-strip" id="account-strip" aria-label="Account cash and buying power">
+      <div class="chip-stat"><span class="chip-icon">💵</span><span class="chip-label">Cash</span><span class="chip-value" id="stat-cash">—</span></div>
+      <div class="chip-stat"><span class="chip-icon">🪙</span><span class="chip-label">Buying Power</span><span class="chip-value" id="stat-buying-power">—</span></div>
+      <div class="chip-stat"><span class="chip-icon">🏦</span><span class="chip-label">Equity</span><span class="chip-value" id="stat-equity">—</span></div>
+    </section>
+  </div>
+
+  <div class="content-tab-panel" data-tab-panel="positions" hidden>
+    <section class="blackjack-table" aria-label="Current open positions">
+      <h2 class="section-title">🎴 The Table — Open Positions</h2>
+      <div class="table-felt">
+        <div class="hand-group hand-group-stocks">
+          <h3 class="hand-label">📈 Stocks</h3>
+          <div class="hand" id="hand-stocks"></div>
+        </div>
+        <div class="hand-group hand-group-crypto">
+          <h3 class="hand-label">🪙 Crypto</h3>
+          <div class="hand" id="hand-crypto"></div>
+        </div>
       </div>
-      <div class="hand-group hand-group-crypto">
-        <h3 class="hand-label">🪙 Crypto</h3>
-        <div class="hand" id="hand-crypto"></div>
+    </section>
+  </div>
+
+  <div class="content-tab-panel" data-tab-panel="trades" hidden>
+    <section class="ledger-section" aria-label="Past trades">
+      <h2 class="section-title">🎡 Past Trades — Roulette Results Board</h2>
+      <p class="ledger-note">Always shows the most recent trades regardless of the period pickers above - not filtered to Today/Week/Month.</p>
+      <div class="ledger-legend">
+        <span class="badge badge-confirmed">Confirmed Fill</span>
+        <span class="badge badge-unconfirmed">Submitted, Unconfirmed</span>
+        <span class="badge badge-notplaced">Not Placed</span>
       </div>
-    </div>
-  </section>
-
-  <section class="charts-link-section" aria-label="Charts">
-    <a class="charts-link-button" href="charts.html">📊 View the Odds Board (graphs) →</a>
-    <p class="charts-link-note">Net gain/loss, cumulative realized P&amp;L, win/loss per ticker, daily P&amp;L, drawdown &amp; strategy comparison - moved to their own page to keep this one fast.</p>
-  </section>
-
-  <section class="ledger-section" aria-label="Past trades">
-    <h2 class="section-title">🎡 Past Trades — Roulette Results Board</h2>
-    <p class="ledger-note">Always shows the most recent trades regardless of the period pickers above - not filtered to Today/Week/Month.</p>
-    <div class="ledger-legend">
-      <span class="badge badge-confirmed">Confirmed Fill</span>
-      <span class="badge badge-unconfirmed">Submitted, Unconfirmed</span>
-      <span class="badge badge-notplaced">Not Placed</span>
-    </div>
-    <div class="table-scroll">
-      <table class="ledger-table" id="ledger-table">
-        <thead>
-          <tr>
-            <th>Time (ET)</th><th>Class</th><th>Ticker</th><th>Strategy</th><th>Side</th>
-            <th>Price</th><th>Qty / Notional</th><th>Realized</th><th>Status</th><th>Notes</th>
-          </tr>
-        </thead>
-        <tbody id="ledger-body"></tbody>
-      </table>
-    </div>
-    <p class="empty-state" id="ledger-empty" hidden>No trades logged yet — the house is waiting.</p>
-  </section>
+      <div class="table-scroll">
+        <table class="ledger-table" id="ledger-table">
+          <thead>
+            <tr>
+              <th>Time (ET)</th><th>Class</th><th>Ticker</th><th>Strategy</th><th>Side</th>
+              <th>Price</th><th>Qty / Notional</th><th>Realized</th><th>Status</th><th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="ledger-body"></tbody>
+        </table>
+      </div>
+      <p class="empty-state" id="ledger-empty" hidden>No trades logged yet — the house is waiting.</p>
+    </section>
+  </div>
 
   <footer class="site-footer">
     <p>Paper trading only. Not investment advice. Every number on this page comes straight from

@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.11.1
+# InvestingBot — Version Richards 0.11.2
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 140 passing](https://img.shields.io/badge/tests-140%20passing-4c9a2a)](tests/)
@@ -209,9 +209,11 @@ this repository's own Settings.
 
 ### Pages
 
-- **`index.html`** - slot machines, the stats grid, open positions
-  (sectioned by stocks vs. crypto), and the past-trades ledger. Kept
-  deliberately light: no Chart.js, no canvases.
+- **`index.html`** - slot machines up top, then a "View the Odds Board"
+  link to `charts.html` (visible without scrolling), then three content
+  tabs - 🃏 Stats, 🎴 Positions (sectioned by stocks vs. crypto), 🎡 Past
+  Trades - so only one section is on screen at a time instead of one
+  long scroll. Kept deliberately light: no Chart.js, no canvases.
 - **`charts.html`** - every graph (net account gain/loss, cumulative
   realized P&L per asset class, win/loss per ticker per asset class,
   daily P&L, drawdown, strategy comparison), grouped into "Whole

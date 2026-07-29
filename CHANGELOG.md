@@ -17,6 +17,45 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.11.2 - 2026-07-29
+
+Organization/readability pass on the casino dashboard website, from
+real feedback after using 0.11.1: the page was one long undifferentiated
+scroll, charts crammed in every timestamp, several charts went totally
+blank with no data, and the charts-page dropdown was unreadable.
+
+- **Split the main page into content tabs** (🃏 Stats / 🎴 Positions /
+  🎡 Past Trades) instead of one long scroll of every section stacked
+  on top of each other - a completely separate tab set from the
+  existing Today/Week/Month/All-Time period pills, so the two never get
+  confused with each other.
+- **Moved the "View the Odds Board" charts link to right under the
+  period tabs**, above the slot machines - visible on page load with no
+  scrolling, instead of being the last thing at the bottom of the page.
+- **Reduced chart x-axis clutter.** Every time-series chart used to
+  label every single logged point (a new row every few minutes),
+  producing dozens of overlapping timestamps. `maxTicksLimit`/`autoSkip`
+  now cap it to a handful of evenly-spaced labels.
+- **Every chart now explains itself when there's nothing to plot**,
+  instead of rendering blank axes: Daily P&L and Drawdown say so when
+  there isn't 2+ days of equity history yet; Strategy Comparison and
+  the per-asset-class cumulative-P&L/win-loss charts say "no executed
+  SELL trades yet" and additionally surface the relevant live unrealized
+  P&L figure right there, mirroring what the PNG dashboard
+  (`visualize_log.py`) already did for the same situation.
+- **Fixed the unreadable chart-period dropdown.** Most browsers
+  (especially mobile Safari) render a `<select>`'s popup option list
+  with the OS's own white background regardless of the parent element's
+  custom styling - cream-on-transparent text became cream-on-white.
+  `<option>` elements now get an explicit dark color/light background so
+  they're readable in the native popup, not just the closed control.
+- **Added a blushing emoji next to the panda-kiss intro splash**, on
+  request - kept the kiss, didn't touch anything else about it.
+- Minor polish: chart cards no longer stretch to match a taller sibling
+  in the same grid row (was leaving big empty gaps under short
+  empty-state messages), and content-tab panels no longer double up on
+  top margin from their first heading.
+
 ## Version Richards 0.11.1 - 2026-07-29
 
 Follow-up fixes to the casino dashboard website (0.11.0), all from real

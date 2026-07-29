@@ -35,19 +35,23 @@
     <div class="chart-grid">
       <div class="chart-card chart-card-wide">
         <h3>Net Account Gain/Loss</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-net-gain-loss"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-net-gain-loss-wrap"><canvas id="chart-net-gain-loss"></canvas></div>
+        <div class="chart-empty-state" id="chart-net-gain-loss-empty" hidden></div>
       </div>
       <div class="chart-card">
         <h3>Daily P&amp;L</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-daily-pnl"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-daily-pnl-wrap"><canvas id="chart-daily-pnl"></canvas></div>
+        <div class="chart-empty-state" id="chart-daily-pnl-empty" hidden></div>
       </div>
       <div class="chart-card">
         <h3>Drawdown</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-drawdown"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-drawdown-wrap"><canvas id="chart-drawdown"></canvas></div>
+        <div class="chart-empty-state" id="chart-drawdown-empty" hidden></div>
       </div>
       <div class="chart-card">
         <h3>Strategy Comparison (Realized P&amp;L)</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-strategy"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-strategy-wrap"><canvas id="chart-strategy"></canvas></div>
+        <div class="chart-empty-state" id="chart-strategy-empty" hidden></div>
       </div>
     </div>
   </section>
@@ -57,11 +61,13 @@
     <div class="chart-grid">
       <div class="chart-card">
         <h3>Cumulative Realized P&amp;L</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-crypto-cum-pnl"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-crypto-cum-pnl-wrap"><canvas id="chart-crypto-cum-pnl"></canvas></div>
+        <div class="chart-empty-state" id="chart-crypto-cum-pnl-empty" hidden></div>
       </div>
       <div class="chart-card">
         <h3>Win/Loss per Ticker</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-crypto-winloss"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-crypto-winloss-wrap"><canvas id="chart-crypto-winloss"></canvas></div>
+        <div class="chart-empty-state" id="chart-crypto-winloss-empty" hidden></div>
       </div>
     </div>
   </section>
@@ -71,11 +77,13 @@
     <div class="chart-grid">
       <div class="chart-card">
         <h3>Cumulative Realized P&amp;L</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-stock-cum-pnl"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-stock-cum-pnl-wrap"><canvas id="chart-stock-cum-pnl"></canvas></div>
+        <div class="chart-empty-state" id="chart-stock-cum-pnl-empty" hidden></div>
       </div>
       <div class="chart-card">
         <h3>Win/Loss per Ticker</h3>
-        <div class="chart-canvas-wrap"><canvas id="chart-stock-winloss"></canvas></div>
+        <div class="chart-canvas-wrap" id="chart-stock-winloss-wrap"><canvas id="chart-stock-winloss"></canvas></div>
+        <div class="chart-empty-state" id="chart-stock-winloss-empty" hidden></div>
       </div>
     </div>
   </section>

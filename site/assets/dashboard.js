@@ -306,6 +306,24 @@
     renderStatsGrid(period);
   }
 
+  // ---------------------------------------------------------------------
+  // Content tabs (Stats / Positions / Past Trades) - a completely
+  // separate concept from the Today/Week/Month/All-Time period pills
+  // above: this just controls which section of the page is visible, so
+  // visitors pick one thing to look at instead of scrolling past
+  // everything else to find it.
+  // ---------------------------------------------------------------------
+  function switchContentTab(tab) {
+    document.querySelectorAll(".content-tab-btn").forEach((btn) => {
+      const active = btn.dataset.tab === tab;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", String(active));
+    });
+    document.querySelectorAll(".content-tab-panel").forEach((panel) => {
+      panel.hidden = panel.dataset.tabPanel !== tab;
+    });
+  }
+
   async function boot() {
     [dashboard, positions, trades] = await Promise.all([
       loadJson("dashboard.json", null),
@@ -327,6 +345,9 @@
 
     document.querySelectorAll(".tab-btn").forEach((btn) => {
       btn.addEventListener("click", () => renderPeriod(btn.dataset.period));
+    });
+    document.querySelectorAll(".content-tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => switchContentTab(btn.dataset.tab));
     });
 
     renderPeriod(currentPeriod);
