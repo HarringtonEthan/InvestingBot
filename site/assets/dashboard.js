@@ -304,6 +304,15 @@
       btn.addEventListener("click", () => switchContentTab(btn.dataset.tab));
     });
 
+    // A nav link from charts.html points here with a hash (e.g.
+    // index.html#positions) so a single click lands on the right tab -
+    // without this, every such link always opened the default Overview
+    // tab first, requiring a second click once already on this page.
+    const hashTab = location.hash.slice(1);
+    if (["overview", "positions", "trades"].includes(hashTab)) {
+      switchContentTab(hashTab);
+    }
+
     [dashboard, positions, trades] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),

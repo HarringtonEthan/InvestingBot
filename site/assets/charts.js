@@ -312,6 +312,26 @@
           position: "top",
           align: "start",
           labels: { color: COLORS.text, usePointStyle: true, pointStyle: "rectRounded", boxWidth: 10, boxHeight: 10, padding: 14, font: { size: 11 } },
+          // Chart.js's default legend click toggles that dataset's
+          // visibility - fine with several series, but on a
+          // single-series chart (e.g. the equity line) it hides the
+          // only thing there is to show, leaving a technically-empty
+          // chart whose axis then autoscales to an arbitrary, confusing
+          // range ("super zooms"). Never allow toggling off the last
+          // dataset still visible in this chart, in any chart.
+          onClick(_evt, legendItem, legend) {
+            const chart = legend.chart;
+            const index = legendItem.datasetIndex;
+            const visibleCount = chart.data.datasets.filter((_, i) => chart.isDatasetVisible(i)).length;
+            if (chart.isDatasetVisible(index)) {
+              if (visibleCount <= 1) return;
+              chart.hide(index);
+              legendItem.hidden = true;
+            } else {
+              chart.show(index);
+              legendItem.hidden = false;
+            }
+          },
         },
         tooltip: { enabled: false, external: externalTooltip },
       },

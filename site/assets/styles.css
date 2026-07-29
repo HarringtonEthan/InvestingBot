@@ -40,11 +40,19 @@ html, body {
   min-height: 100%;
 }
 
+/* Soft, fixed ambient glow behind the whole page - green light fading
+   into dark, the same mood/palette as the brand mark, never scrolling
+   away with content so it reads as atmosphere rather than a banner. No
+   finance iconography, just light and shadow. */
 body {
-  background:
-    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(52,211,114,0.09), transparent 60%),
-    radial-gradient(ellipse 700px 500px at 100% 0%, rgba(52,211,114,0.05), transparent 55%),
-    var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 900px 550px at 12% -10%, rgba(52,211,114,0.11), transparent 60%),
+    radial-gradient(ellipse 750px 550px at 102% 0%, rgba(52,211,114,0.06), transparent 55%),
+    radial-gradient(ellipse 1100px 750px at 50% 105%, rgba(52,211,114,0.055), transparent 60%),
+    radial-gradient(ellipse 900px 900px at 88% 58%, rgba(255,255,255,0.02), transparent 65%);
+  background-repeat: no-repeat;
+  background-attachment: fixed;
 }
 
 a { color: var(--accent); text-decoration: none; }

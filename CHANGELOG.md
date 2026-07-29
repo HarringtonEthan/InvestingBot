@@ -17,6 +17,38 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.7 - 2026-07-29
+
+- **Fixed a real backfill:** XOM and DIS's two sells (2026-07-29) had
+  their `avg_entry_price_usd` restored in `logs/trade_log_stocks.csv`
+  from the matching BUY fills already in the same log (independently
+  confirmed against Alpaca's own fill-level activity data) - realized
+  P&L now shows the true, verified numbers (XOM +$64.73, DIS -$11.95,
+  net +$52.78) instead of "unknown." `notes` deliberately left blank
+  rather than annotated with the backfill rationale - visualize_log.py
+  treats any non-empty `notes` as "flagged" (an unrepresentative-trade
+  signal with its own hatched styling and excluded-trades line), which
+  doesn't apply to a verified, complete backfill.
+- **Fixed a real navigation bug:** the Overview/Positions/Trades links
+  on charts.html all pointed at plain `index.html` with no anchor, so
+  clicking any of them from the charts page always landed on index.html's
+  default Overview tab first - a second click, now already on that page,
+  was needed to actually reach the tab you wanted. Links now point to
+  `index.html#overview`/`#positions`/`#trades`, and `dashboard.js` reads
+  `location.hash` on load and switches to that tab immediately.
+- **Fixed a real chart bug:** clicking a chart's legend item (e.g. "Net
+  gain/loss vs. baseline") used Chart.js's default behavior of toggling
+  that dataset's visibility - fine with several series, but on a
+  single-series chart it hid the only line there was, leaving a
+  technically-empty chart whose axis then autoscaled to an arbitrary,
+  confusing range. `baseOptions()`'s legend now refuses to toggle off
+  the last dataset still visible in any chart, so this can't happen
+  regardless of how many series a given chart has.
+- **Added a subtle, fixed ambient background** (soft green glow fading
+  into the dark theme, several radial gradients, `background-attachment:
+  fixed` so it reads as atmosphere rather than a banner that scrolls
+  away) - no finance iconography, matching the existing brand palette.
+
 ## Version Richards 0.13.6 - 2026-07-29
 
 Found via a user screenshot of the PNG dashboard: `visualize_log.py` had
