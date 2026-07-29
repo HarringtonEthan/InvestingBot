@@ -390,6 +390,13 @@
     const multiDay = new Set(stamps.map(etDayKey)).size > 1;
     const finalPositive = records[records.length - 1].value >= 0;
     const trendColor = finalPositive ? COLORS.green : COLORS.red;
+    // Per-point color, not one fixed color for the whole line - a
+    // segment is green when the point it's heading *to* is above the
+    // $0 baseline, red when it's below, so the line actually reflects
+    // where the account was at each point in time, not just where it
+    // ended up.
+    const pointColor = (i) => (records[i].value >= 0 ? COLORS.green : COLORS.red);
+    const segmentColor = (ctx) => (ctx.p1.parsed.y >= 0 ? COLORS.green : COLORS.red);
     const meta = {
       kind: "timeseries", title: "Whole Account", stamps, multiDay, maxXTicks: 7, beginAtZero: false, yTick: fmtUsdAxis, forceLegend: true,
       series: [{ key: "combined", label: `Net gain/loss vs. ${fmtUsd(baseline)} baseline`, color: trendColor, valueLabel: "Gain / loss vs. baseline", pctLabel: "Period return", records }],
@@ -402,15 +409,16 @@
           label: meta.series[0].label,
           data: records.map((r) => r.value),
           borderColor: trendColor,
+          segment: { borderColor: segmentColor },
           // Line color only - no shaded area under the curve, it makes
           // the chart harder to read at a glance.
           fill: false,
           borderWidth: 2,
           tension: 0.18,
           pointRadius: 0,
-          pointBackgroundColor: trendColor,
+          pointBackgroundColor: (ctx) => pointColor(ctx.dataIndex),
           pointHoverRadius: 5,
-          pointHoverBackgroundColor: trendColor,
+          pointHoverBackgroundColor: (ctx) => pointColor(ctx.dataIndex),
           pointHoverBorderWidth: 2,
           pointHoverBorderColor: "#050706",
           spanGaps: false,

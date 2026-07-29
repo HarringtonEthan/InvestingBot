@@ -17,6 +17,22 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.1 - 2026-07-29
+
+Follow-up fix to 0.13.0's equity-chart coloring, from real usage: the
+line was using one fixed color for its entire length instead of tracking
+the account's actual position at each point in time.
+
+- **Fixed the equity line only reflecting its final point's sign.** The
+  line color was computed once from the last recorded value, so a period
+  that spent most of its time comfortably positive could still render
+  entirely red just because it dipped negative right at the end. The
+  line, and each point's own hover marker, now use Chart.js's per-segment
+  coloring - green while above the $0 baseline, red while below it,
+  switching right at each crossing - so the color always matches what
+  the line is actually doing at that point in time, not just where it
+  ended up.
+
 ## Version Richards 0.13.0 - 2026-07-29
 
 Rebuilt the charts page to mirror the PNG dashboard's own layout, fixed a
