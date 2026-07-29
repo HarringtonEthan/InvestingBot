@@ -77,6 +77,17 @@ asset class, and the PNG dashboard had quietly stopped updating.
   detects the mismatch honestly - whenever the earliest trade currently
   on record is newer than a period's own starting reference - and says
   so in the UI instead of presenting an unexplained gap.
+- **Anchor a period's starting value to the relaunch itself, not stale
+  pre-relaunch equity.** Follow-up to the flag above, same day: instead
+  of only flagging the mismatch, `summarize_period()` now uses the last
+  known equity right before the earliest trade currently on record as
+  the starting value whenever that's more recent than the naive
+  carried-forward figure - the full-cash reading a relaunch always
+  leaves right before its first buy. Confirmed against today's real
+  logs: "Today" now starts from $99,751.68 (the actual relaunch moment),
+  not the stale pre-relaunch $99,787.08. Still not a hardcoded number -
+  it's read straight off the equity log, so it keeps computing correctly
+  on its own after future relaunches too.
 
 ## Version Richards 0.11.0 - 2026-07-28
 

@@ -299,6 +299,36 @@ def test_trade_log_reset_flag_set_when_earliest_trade_is_after_carried_forward_s
     assert result["trade_log_reset_during_period"] is True
 
 
+def test_starting_value_anchors_to_reset_row_not_stale_pre_reset_equity():
+    # Mirrors a real relaunch: equity was ~99787 at true midnight, dipped
+    # around during earlier (now-archived) trading, came back to 100%
+    # cash at the moment of relaunch (99751.68), and only *then* did the
+    # first BUY currently on record happen. The period's starting value
+    # should be the relaunch's own all-cash reading, not the stale
+    # pre-relaunch midnight figure - otherwise Dollar P&L keeps
+    # including swings from trades that no longer appear anywhere on
+    # the page.
+    equity_df = _equity_df([
+        ("2026-07-28T04:00:00+00:00", 99787.08),  # true midnight, pre-relaunch
+        ("2026-07-28T13:35:00+00:00", 99785.45),  # pre-relaunch trading (now archived)
+        ("2026-07-28T18:53:05+00:00", 99751.68),  # relaunch: back to 100% cash
+        ("2026-07-28T19:41:00+00:00", 99780.29),  # after the post-relaunch buys
+    ])
+    trades = _trades_df([{"action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-28T19:12:52+00:00")}])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = None
+
+    start = dt.datetime(2026, 7, 28, 4, 0, tzinfo=dt.timezone.utc)  # midnight ET
+    end = dt.datetime(2026, 7, 28, 20, 0, tzinfo=dt.timezone.utc)
+    result = summarize_period("Today", start, end, equity_df, trades, None, None)
+    assert result["starting_value_usd"] == 99751.68
+    assert result["ending_value_usd"] == 99780.29
+    assert result["dollar_pnl_usd"] == pytest.approx(28.61)
+    assert result["trade_log_reset_during_period"] is True
+    assert result["starting_value_is_first_available"] is False
+
+
 def test_trade_log_reset_flag_not_set_when_trades_predate_period_start():
     equity_df = _equity_df([
         ("2026-07-28T04:00:00+00:00", 99787.08),
