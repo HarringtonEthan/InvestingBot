@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.11.2
+# InvestingBot — Version Richards 0.12.0
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 140 passing](https://img.shields.io/badge/tests-140%20passing-4c9a2a)](tests/)
+[![Tests: 143 passing](https://img.shields.io/badge/tests-143%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 
@@ -34,7 +34,7 @@ paper (fake-money) brokerage account.
 
 - [Documentation](#documentation)
 - [Current live status](#current-live-status-as-of-this-writing)
-- [🎰 Casino Dashboard Website](#-casino-dashboard-website)
+- [Dashboard Website](#dashboard-website)
 - [Setup](#setup)
 - [Architecture](#architecture)
 - [Security: who can see what, and who can change what](#security-who-can-see-what-and-who-can-change-what)
@@ -71,7 +71,7 @@ architecture. Deeper material lives in `docs/`:
 I keep this section updated so I don't have to reverse engineer what's
 actually running from workflow files six months from now. This is a
 snapshot and will be stale by the time you read it - check the
-[🎰 Casino Dashboard Website](#-casino-dashboard-website) for the live
+[Dashboard Website](#dashboard-website) for the live
 number. **This section only covers what's true right now** - every bug,
 incident, and past decision that shaped this configuration is in
 `CHANGELOG.md`, not repeated here.
@@ -117,7 +117,7 @@ neither one is missing information the other has:
 | **Daily loss circuit breaker** | 5% of that day's starting balance | 5% of that day's starting balance |
 | **Market-hours guard** | N/A - crypto trades 24/7 | Yes - refuses to submit a BUY/SELL unless Alpaca's own market clock confirms the market is open right now |
 | **Demonstrated edge?** | No - "meaningfully de-risked," not proven | No - best-of-8 walk-forward candidate, not proven |
-| **Current positions/trades** | See the [Casino Dashboard Website](#-casino-dashboard-website) | See the [Casino Dashboard Website](#-casino-dashboard-website) |
+| **Current positions/trades** | See the [Dashboard Website](#dashboard-website) | See the [Dashboard Website](#dashboard-website) |
 
 Both share: **real-money mode disabled** (2 independent locks - see
 `docs/RISK.md`), **stock model retraining off** (`ml_filtered` isn't
@@ -171,7 +171,7 @@ the code isn't broken; it does not mean the strategy is good.
   <img src="results/param_sweep/param_sweep_overview_stocks_5m_all.png" alt="Scatter plot combining three 5-minute grid searches (plain rule-based, rule-based with stop-loss and cooldown, and ML-filtered). All three variants' points are intermixed in a loose cloud between roughly 0 and 7 percent return. One point - dip=-1.5% exit=2.0%, plain rule-based - is circled and labeled as the best walk-forward result of all 8 candidates tested." width="720">
 
 - **Dashboard: a live website, regenerated hourly - `results/trade_dashboard.png`
-  is too.** See [🎰 Casino Dashboard Website](#-casino-dashboard-website)
+  is too.** See [Dashboard Website](#dashboard-website)
   below - the same real numbers the PNG panels always showed
   (whole-account net gain/loss, realized P&L and win/loss split by asset
   class, live unrealized P&L, current open positions), now also a
@@ -188,19 +188,21 @@ further off a handful of days of live data.
 
 ---
 
-## 🎰 Casino Dashboard Website
+## Dashboard Website
 
-A tongue-in-cheek casino theme wrapped around real numbers: slot-machine
-reels that land on the actual account value/P&L/win-rate, blackjack-style
-cards for open positions (glowing green/red/gold by unrealized P&L,
-sectioned by stocks vs. crypto with a consistent purple/pink colour
-language used everywhere on the site), a roulette-styled trade ledger,
-a dedicated charts page, and a giant panda that kisses the screen when
-the page first loads. See `CHANGELOG.md` 0.11.0 for the original build
-(which replaced `results/trade_dashboard.png` as the primary view) and
-0.11.1 for a round of fixes from real usage - condensed page length, a
-real Chart.js sizing bug, and the PNG dashboard being restored alongside
-the website rather than dropped.
+A clean, professional dashboard wrapped around real numbers: headline
+metric cards for account value/P&L/win-rate, position cards for open
+positions (colour-coded by unrealized P&L, sectioned by stocks vs.
+crypto with a consistent colour language used everywhere on the site),
+a trade history table, and a dedicated charts page - organized into
+clearly labeled tabs (Overview / Positions / Trades / Charts) so nothing
+requires a long scroll to find. The one deliberately playful thing kept
+anywhere on the site is a giant panda that kisses the screen when the
+page first loads. See `CHANGELOG.md` 0.11.0 for the original build
+(which replaced `results/trade_dashboard.png` as the primary view),
+0.11.1/0.11.2 for fixes from real usage, and 0.12.0 for the full
+professional redesign (tabs, colour scheme, a real bug where a data
+render error could silently kill every tab's click handler).
 
 **Website URL:** `https://harringtonethan.github.io/InvestingBot/` once
 GitHub Pages is enabled (one-time manual step, see below) - not something
@@ -209,11 +211,11 @@ this repository's own Settings.
 
 ### Pages
 
-- **`index.html`** - slot machines up top, then a "View the Odds Board"
-  link to `charts.html` (visible without scrolling), then three content
-  tabs - 🃏 Stats, 🎴 Positions (sectioned by stocks vs. crypto), 🎡 Past
-  Trades - so only one section is on screen at a time instead of one
-  long scroll. Kept deliberately light: no Chart.js, no canvases.
+- **`index.html`** - a top nav bar with Overview/Positions/Trades as
+  in-page tabs (only one section on screen at a time) plus a Charts link,
+  headline metric cards, a Today/This Week/This Month/All Time period
+  selector, then the active tab's content. Kept deliberately light: no
+  Chart.js, no canvases.
 - **`charts.html`** - every graph (net account gain/loss, cumulative
   realized P&L per asset class, win/loss per ticker per asset class,
   daily P&L, drawdown, strategy comparison), grouped into "Whole
@@ -442,15 +444,15 @@ InvestingBot/
 ├── live_trade.py                 # Automated live (paper) trading entry point
 ├── site_data.py                  # Reads logs/*.csv (+ optional live Alpaca query) -> site/data/*.json for the website
 ├── visualize_log.py              # Builds results/trade_dashboard.png - still run by update-dashboard.yml alongside the website
-├── site/                         # The casino dashboard website (GitHub Pages) - see README's own section on it
-│   ├── index.html                 #   slots, stats, positions, past trades - no Chart.js on this page
+├── site/                         # The dashboard website (GitHub Pages) - see README's own section on it
+│   ├── index.html                 #   nav, metrics, tabs (Overview/Positions/Trades) - no Chart.js on this page
 │   ├── charts.html                #   every graph, its own page, own Today/Week/Month dropdown
 │   ├── assets/
 │   │   ├── styles.css             #   real dashboard theme/layout
-│   │   ├── dashboard.js           #   real-data rendering for index.html (slots, stats, positions, ledger)
+│   │   ├── dashboard.js           #   real-data rendering for index.html (metrics, positions, trade history)
 │   │   ├── charts.js              #   real-data rendering for charts.html (all Chart.js charts)
-│   │   ├── casino-fx.css          #   purely decorative: fireworks, panda intro
-│   │   └── casino-fx.js           #   ^ same - never reads any of the JSON below
+│   │   ├── intro.css              #   purely decorative: the panda-kiss intro splash
+│   │   └── intro.js               #   ^ same - never reads any of the JSON below
 │   └── data/                      # Generated by site_data.py, gitignored - never committed (see update-dashboard.yml)
 ├── src/
 │   ├── data.py                   # Price data loading (Yahoo Finance + synthetic fallback; Alpaca-first for crypto validation)

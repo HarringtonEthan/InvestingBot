@@ -17,6 +17,45 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.12.0 - 2026-07-29
+
+Full rebrand/redesign of the dashboard website away from the casino
+theme, on request, plus a real bug fix found while investigating a
+report that the content tabs "don't even work."
+
+- **Found and fixed the actual tab bug.** `boot()` rendered positions
+  and the trade history *before* attaching the tab click-listeners, with
+  no error handling around either. If either render function threw on
+  an unexpected data shape (verified by reproducing it with a
+  deliberately malformed `positions.json`), the whole async `boot()`
+  function aborted right there and the click-listeners for every tab -
+  and the Today/Week/Month/All Time period pills - never got attached.
+  Clicking any of them did nothing, with no visible error. Fixed two
+  ways: listener attachment now happens first and unconditionally, and
+  each render call is wrapped so one section's bad data can't take down
+  the rest of the page's interactivity. Verified with real
+  `page.click()` Playwright tests (not just programmatic state changes)
+  against both good data and the reproduced broken-data case.
+- **Removed the casino theme entirely** - gold/purple/neon palette,
+  Bungee/Luckiest Guy fonts, slot machines, blackjack-style position
+  cards, roulette-styled trade table, all casino terminology and emojis
+  site-wide. Replaced with a plain dark theme (single green accent,
+  Inter typeface), matching a reference design the request pointed to.
+  The one thing kept exactly as it was: the panda-kiss intro splash.
+- **Site renamed back to InvestingBot** everywhere - page titles, the
+  nav brand, the favicon (a plain checkmark-trend mark, not an emoji).
+- **Real navigation, not ad hoc buttons.** A proper top nav bar
+  (Overview / Positions / Trades / Charts) on every page, with the
+  current section clearly highlighted - `assets/casino-fx.js/css`
+  deleted, replaced by `assets/intro.js/css` (panda splash only).
+- **Removed the reset/relaunch caveat banner** from the UI on request.
+  The underlying detection (`trade_log_reset_during_period` in
+  `dashboard.json`) is untouched for anyone who wants it later - only
+  the on-page banner is gone.
+- Chart color palette (`charts.js`) renamed and restyled to match:
+  green/red for gains/losses, blue for stocks, orange for crypto,
+  neutral gray grid lines instead of gold.
+
 ## Version Richards 0.11.2 - 2026-07-29
 
 Organization/readability pass on the casino dashboard website, from

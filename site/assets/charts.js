@@ -1,12 +1,12 @@
 /*
- * Ethan's Market Casino - dedicated charts page (charts.html).
+ * InvestingBot - dedicated charts page (charts.html).
  *
  * Split out of dashboard.js so the main dashboard page never has to load
- * Chart.js or render eight canvases just to show the slot machines and
- * open positions - the unbounded-canvas-height bug (see .chart-canvas-wrap
- * in styles.css) plus keeping Chart.js off the main page were both real
- * contributors to page lag. This file owns every chart and nothing else:
- * no fireworks, no panda intro, no positions/ledger rendering.
+ * Chart.js or render eight canvases just to show the headline metrics
+ * and open positions - the unbounded-canvas-height bug (see
+ * .chart-canvas-wrap in styles.css) plus keeping Chart.js off the main
+ * page were both real contributors to page lag. This file owns every
+ * chart and nothing else: no positions/trade-history rendering.
  */
 
 (function () {
@@ -25,22 +25,22 @@
     try {
       const res = await fetch(DATA_BASE + name, { cache: "no-store" });
       if (!res.ok) {
-        console.warn(`[casino] ${name} responded with HTTP ${res.status} - using fallback.`);
+        console.warn(`[investingbot] ${name} responded with HTTP ${res.status} - using fallback.`);
         return fallback;
       }
       const text = await res.text();
       if (!text || !text.trim()) {
-        console.warn(`[casino] ${name} was empty - using fallback.`);
+        console.warn(`[investingbot] ${name} was empty - using fallback.`);
         return fallback;
       }
       try {
         return JSON.parse(text);
       } catch (parseErr) {
-        console.warn(`[casino] ${name} was malformed JSON - using fallback.`, parseErr);
+        console.warn(`[investingbot] ${name} was malformed JSON - using fallback.`, parseErr);
         return fallback;
       }
     } catch (networkErr) {
-      console.warn(`[casino] ${name} could not be fetched (offline? missing file?) - using fallback.`, networkErr);
+      console.warn(`[investingbot] ${name} could not be fetched (offline? missing file?) - using fallback.`, networkErr);
       return fallback;
     }
   }
@@ -62,13 +62,13 @@
     return formatted + " ET";
   }
 
-  const CASINO_COLORS = {
-    gold: "#ffd700",
-    green: "#39ff14",
-    red: "#ff3b3b",
-    purple: "#a259ff",
-    pink: "#ff2fb0",
-    cream: "#f3e6c8",
+  const CHART_COLORS = {
+    accent: "#34d372",
+    green: "#34d372",
+    red: "#f0554a",
+    stocks: "#6aa6ff",
+    crypto: "#f0a63c",
+    text: "#9aa5a0",
   };
 
   function destroyChart(key) {
@@ -88,12 +88,12 @@
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: CASINO_COLORS.cream } },
+        legend: { labels: { color: CHART_COLORS.text } },
       },
       scales: {
         x: {
-          ticks: { color: CASINO_COLORS.cream, maxTicksLimit: 7, autoSkip: true, maxRotation: 40, minRotation: 0 },
-          grid: { color: "rgba(255,215,0,0.08)" },
+          ticks: { color: CHART_COLORS.text, maxTicksLimit: 7, autoSkip: true, maxRotation: 40, minRotation: 0 },
+          grid: { color: "rgba(255,255,255,0.06)" },
         },
         // beginAtZero matters for every chart on this page: they're all
         // either counts (wins/losses - naturally 0-based) or a value
@@ -103,7 +103,7 @@
         // y-axis to NOT start at 0, which visually exaggerates the
         // difference between bars/lines that are actually close in real
         // magnitude.
-        y: { beginAtZero: true, ticks: { color: CASINO_COLORS.cream }, grid: { color: "rgba(255,215,0,0.08)" } },
+        y: { beginAtZero: true, ticks: { color: CHART_COLORS.text }, grid: { color: "rgba(255,255,255,0.06)" } },
       },
       animation: REDUCED_MOTION ? false : undefined,
     }, extra || {});
@@ -183,7 +183,7 @@
         datasets: [{
           label: `Net gain/loss vs. ${fmtUsd(baseline)} baseline ($)`,
           data: values,
-          borderColor: finalPositive ? CASINO_COLORS.green : CASINO_COLORS.red,
+          borderColor: finalPositive ? CHART_COLORS.green : CHART_COLORS.red,
           backgroundColor: finalPositive ? "rgba(57,255,20,0.15)" : "rgba(255,59,59,0.15)",
           fill: true,
           tension: 0.2,
@@ -247,14 +247,14 @@
       data: {
         labels: tickers,
         datasets: [
-          { label: "Wins", data: wins, backgroundColor: CASINO_COLORS.green },
-          { label: "Losses", data: losses, backgroundColor: CASINO_COLORS.red },
+          { label: "Wins", data: wins, backgroundColor: CHART_COLORS.green },
+          { label: "Losses", data: losses, backgroundColor: CHART_COLORS.red },
         ],
       },
       options: baseChartOptions({
         scales: {
-          x: { stacked: true, ticks: { color: CASINO_COLORS.cream }, grid: { color: "rgba(255,215,0,0.08)" } },
-          y: { stacked: true, beginAtZero: true, ticks: { color: CASINO_COLORS.cream, precision: 0 }, grid: { color: "rgba(255,215,0,0.08)" } },
+          x: { stacked: true, ticks: { color: CHART_COLORS.text }, grid: { color: "rgba(255,255,255,0.06)" } },
+          y: { stacked: true, beginAtZero: true, ticks: { color: CHART_COLORS.text, precision: 0 }, grid: { color: "rgba(255,255,255,0.06)" } },
         },
       }),
     });
@@ -295,7 +295,7 @@
         datasets: [{
           label: "Daily P&L ($)",
           data: dailyPnl.map((d) => d.pnl),
-          backgroundColor: dailyPnl.map((d) => (d.pnl >= 0 ? CASINO_COLORS.green : CASINO_COLORS.red)),
+          backgroundColor: dailyPnl.map((d) => (d.pnl >= 0 ? CHART_COLORS.green : CHART_COLORS.red)),
         }],
       },
       options: baseChartOptions(),
@@ -330,7 +330,7 @@
         datasets: [{
           label: "Drawdown (%)",
           data: drawdowns.map((d) => d * 100),
-          borderColor: CASINO_COLORS.red,
+          borderColor: CHART_COLORS.red,
           backgroundColor: "rgba(255,59,59,0.15)",
           fill: true,
           tension: 0.2,
@@ -359,7 +359,7 @@
         datasets: [{
           label: "Realized P&L ($)",
           data: entries.map(([, v]) => v.realized_pnl_usd),
-          backgroundColor: CASINO_COLORS.gold,
+          backgroundColor: CHART_COLORS.accent,
         }],
       },
       options: baseChartOptions(),
@@ -368,8 +368,8 @@
 
   function renderChartsForPeriod(period) {
     renderNetGainLossChart(period);
-    renderCumulativePnlChart(period, "crypto", "chart-crypto-cum-pnl", "cryptoCumPnl", CASINO_COLORS.pink);
-    renderCumulativePnlChart(period, "stock", "chart-stock-cum-pnl", "stockCumPnl", CASINO_COLORS.purple);
+    renderCumulativePnlChart(period, "crypto", "chart-crypto-cum-pnl", "cryptoCumPnl", CHART_COLORS.crypto);
+    renderCumulativePnlChart(period, "stock", "chart-stock-cum-pnl", "stockCumPnl", CHART_COLORS.stocks);
     renderWinLossPerTickerChart(period, "crypto", "chart-crypto-winloss", "cryptoWinLoss");
     renderWinLossPerTickerChart(period, "stock", "chart-stock-winloss", "stockWinLoss");
     renderDailyPnlChart(period);
@@ -387,7 +387,7 @@
     if (!dashboard) {
       document.getElementById("charts-app").innerHTML =
         '<p class="empty-state" style="text-align:center;padding:60px 0;">' +
-        "🎰 The house data hasn't loaded yet - dashboard.json is missing or unreadable. " +
+        "The dashboard data hasn't loaded yet - dashboard.json is missing or unreadable. " +
         "Once the update-dashboard workflow runs, this page will populate automatically.</p>";
       return;
     }

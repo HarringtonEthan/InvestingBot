@@ -3,11 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Ethan's Market Casino — Live Trading Dashboard</title>
-<meta name="description" content="A tongue-in-cheek casino-themed dashboard for a real paper-trading bot - accurate numbers, ridiculous presentation.">
+<title>InvestingBot — Live Trading Dashboard</title>
+<meta name="description" content="Live performance dashboard for a real automated paper-trading bot.">
 <link rel="stylesheet" href="assets/styles.css">
-<link rel="stylesheet" href="assets/casino-fx.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%B0%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="assets/intro.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a0d0b'/%3E%3Cpath d='M6 21l6-8 5 5 9-11' stroke='%2334d372' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
 
@@ -19,107 +19,100 @@
   <span class="skip-hint">(click to skip)</span>
 </div>
 
-<div class="sparkle-layer" aria-hidden="true"></div>
-
-<header class="marquee-frame">
-  <div class="marquee-lights" aria-hidden="true"></div>
-  <h1 class="neon-title">
-    <span class="neon-flicker">ETHAN'S</span> <span class="neon-flicker neon-gold">MARKET CASINO</span>
-  </h1>
-  <p class="tagline">🎲 A Real Paper-Trading Bot, Dressed Up Like Vegas 🎲</p>
-  <div class="marquee-lights marquee-lights-bottom" aria-hidden="true"></div>
+<header class="site-header">
+  <div class="site-header-inner">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>InvestingBot</a>
+    <nav class="main-nav" aria-label="Dashboard sections">
+      <button class="main-nav-link content-tab-btn active" data-tab="overview" type="button">Overview</button>
+      <button class="main-nav-link content-tab-btn" data-tab="positions" type="button">Positions</button>
+      <button class="main-nav-link content-tab-btn" data-tab="trades" type="button">Trades</button>
+      <a class="main-nav-link" href="charts.html">Charts</a>
+    </nav>
+    <a class="nav-cta" href="https://github.com/HarringtonEthan/InvestingBot" target="_blank" rel="noopener">View Source</a>
+  </div>
 </header>
-
-<nav class="period-tabs" role="tablist" aria-label="Time period">
-  <button class="tab-btn active" data-period="today" role="tab" aria-selected="true">TODAY</button>
-  <button class="tab-btn" data-period="week" role="tab" aria-selected="false">THIS WEEK</button>
-  <button class="tab-btn" data-period="month" role="tab" aria-selected="false">THIS MONTH</button>
-  <button class="tab-btn" data-period="all_time" role="tab" aria-selected="false">ALL TIME</button>
-</nav>
-
-<div class="quick-links">
-  <a class="odds-board-link" href="charts.html">📊 View the Odds Board (Graphs) →</a>
-</div>
 
 <main id="app">
 
-  <section class="slot-row" aria-label="Headline numbers">
-    <div class="slot-machine" data-slot="equity">
-      <div class="slot-label">💰 Account Value</div>
-      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+  <div class="page-header">
+    <h1 class="page-title">Live Trading Performance</h1>
+    <p class="page-subtitle">Real automated paper-trading results, regenerated automatically from the account's own logs. Nothing here is backtested or simulated after the fact.</p>
+    <nav class="period-tabs" role="tablist" aria-label="Time period">
+      <button class="tab-btn active" data-period="today" role="tab" aria-selected="true">Today</button>
+      <button class="tab-btn" data-period="week" role="tab" aria-selected="false">This Week</button>
+      <button class="tab-btn" data-period="month" role="tab" aria-selected="false">This Month</button>
+      <button class="tab-btn" data-period="all_time" role="tab" aria-selected="false">All Time</button>
+    </nav>
+  </div>
+
+  <section class="metric-row" aria-label="Headline numbers">
+    <div class="metric-card" data-metric="equity">
+      <div class="metric-label">Account Value</div>
+      <div class="metric-value" data-value>—</div>
     </div>
-    <div class="slot-machine" data-slot="period_pnl">
-      <div class="slot-label">📈 P&amp;L (period)</div>
-      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    <div class="metric-card" data-metric="period_pnl">
+      <div class="metric-label">P&amp;L (period)</div>
+      <div class="metric-value" data-value>—</div>
     </div>
-    <div class="slot-machine" data-slot="pct_return">
-      <div class="slot-label">🎯 % Return</div>
-      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    <div class="metric-card" data-metric="pct_return">
+      <div class="metric-label">% Return</div>
+      <div class="metric-value" data-value>—</div>
     </div>
-    <div class="slot-machine" data-slot="win_rate">
-      <div class="slot-label">🍀 Win Rate</div>
-      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    <div class="metric-card" data-metric="win_rate">
+      <div class="metric-label">Win Rate</div>
+      <div class="metric-value" data-value>—</div>
     </div>
-    <div class="slot-machine" data-slot="num_trades">
-      <div class="slot-label">🎰 Trades</div>
-      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    <div class="metric-card" data-metric="num_trades">
+      <div class="metric-label">Trades</div>
+      <div class="metric-value" data-value>—</div>
     </div>
-    <div class="slot-machine" data-slot="unrealized">
-      <div class="slot-label">💎 Unrealized</div>
-      <div class="slot-window"><div class="slot-reel" data-reel>—</div></div>
+    <div class="metric-card" data-metric="unrealized">
+      <div class="metric-label">Unrealized</div>
+      <div class="metric-value" data-value>—</div>
     </div>
   </section>
 
   <p class="last-updated" id="last-updated">Last updated: —</p>
   <p class="methodology-note" id="methodology-note"></p>
-  <p class="reset-note" id="reset-note" hidden>⚠️ The bot was relaunched partway through this period - Dollar P&amp;L may not match Realized + Unrealized below, since it still includes equity swings from before the relaunch that the trade history no longer covers. This resolves itself once a full period passes without another relaunch.</p>
 
-  <nav class="content-tabs" role="tablist" aria-label="Dashboard sections">
-    <button class="content-tab-btn active" data-tab="stats" role="tab" aria-selected="true">🃏 Stats</button>
-    <button class="content-tab-btn" data-tab="positions" role="tab" aria-selected="false">🎴 Positions</button>
-    <button class="content-tab-btn" data-tab="trades" role="tab" aria-selected="false">🎡 Past Trades</button>
-  </nav>
-
-  <div class="content-tab-panel" data-tab-panel="stats">
-    <section class="stats-table-wrap">
-      <h2 class="section-title">🃏 The House Ledger — <span id="period-label">Today</span></h2>
-      <div class="stats-grid" id="stats-grid" aria-live="polite"></div>
+  <div class="content-tab-panel is-active" data-tab-panel="overview">
+    <section>
+      <h2 class="section-title">Performance Summary — <span id="period-label">Today</span></h2>
+      <div class="metric-row" id="stats-grid" aria-live="polite"></div>
     </section>
 
     <section class="account-strip" id="account-strip" aria-label="Account cash and buying power">
-      <div class="chip-stat"><span class="chip-icon">💵</span><span class="chip-label">Cash</span><span class="chip-value" id="stat-cash">—</span></div>
-      <div class="chip-stat"><span class="chip-icon">🪙</span><span class="chip-label">Buying Power</span><span class="chip-value" id="stat-buying-power">—</span></div>
-      <div class="chip-stat"><span class="chip-icon">🏦</span><span class="chip-label">Equity</span><span class="chip-value" id="stat-equity">—</span></div>
+      <div class="chip-stat"><span class="chip-label">Cash</span><span class="chip-value" id="stat-cash">—</span></div>
+      <div class="chip-stat"><span class="chip-label">Buying Power</span><span class="chip-value" id="stat-buying-power">—</span></div>
+      <div class="chip-stat"><span class="chip-label">Equity</span><span class="chip-value" id="stat-equity">—</span></div>
     </section>
   </div>
 
-  <div class="content-tab-panel" data-tab-panel="positions" hidden>
-    <section class="blackjack-table" aria-label="Current open positions">
-      <h2 class="section-title">🎴 The Table — Open Positions</h2>
-      <div class="table-felt">
-        <div class="hand-group hand-group-stocks">
-          <h3 class="hand-label">📈 Stocks</h3>
-          <div class="hand" id="hand-stocks"></div>
-        </div>
-        <div class="hand-group hand-group-crypto">
-          <h3 class="hand-label">🪙 Crypto</h3>
-          <div class="hand" id="hand-crypto"></div>
-        </div>
+  <div class="content-tab-panel" data-tab-panel="positions">
+    <section class="positions-board" aria-label="Current open positions">
+      <h2 class="section-title">Open Positions</h2>
+      <div class="position-group position-group-stocks">
+        <h3 class="position-group-title"><span class="dot" aria-hidden="true"></span>Stocks</h3>
+        <div class="position-cards" id="hand-stocks"></div>
+      </div>
+      <div class="position-group position-group-crypto">
+        <h3 class="position-group-title"><span class="dot" aria-hidden="true"></span>Crypto</h3>
+        <div class="position-cards" id="hand-crypto"></div>
       </div>
     </section>
   </div>
 
-  <div class="content-tab-panel" data-tab-panel="trades" hidden>
-    <section class="ledger-section" aria-label="Past trades">
-      <h2 class="section-title">🎡 Past Trades — Roulette Results Board</h2>
-      <p class="ledger-note">Always shows the most recent trades regardless of the period pickers above - not filtered to Today/Week/Month.</p>
-      <div class="ledger-legend">
+  <div class="content-tab-panel" data-tab-panel="trades">
+    <section aria-label="Trade history">
+      <h2 class="section-title">Trade History</h2>
+      <p class="table-note">Always shows the most recent trades regardless of the period selector above - not filtered to Today/Week/Month.</p>
+      <div class="table-legend">
         <span class="badge badge-confirmed">Confirmed Fill</span>
         <span class="badge badge-unconfirmed">Submitted, Unconfirmed</span>
         <span class="badge badge-notplaced">Not Placed</span>
       </div>
       <div class="table-scroll">
-        <table class="ledger-table" id="ledger-table">
+        <table class="data-table" id="ledger-table">
           <thead>
             <tr>
               <th>Time (ET)</th><th>Class</th><th>Ticker</th><th>Strategy</th><th>Side</th>
@@ -129,7 +122,7 @@
           <tbody id="ledger-body"></tbody>
         </table>
       </div>
-      <p class="empty-state" id="ledger-empty" hidden>No trades logged yet — the house is waiting.</p>
+      <p class="empty-state" id="ledger-empty" hidden>No trades logged yet.</p>
     </section>
   </div>
 
@@ -143,6 +136,6 @@
 </main>
 
 <script src="assets/dashboard.js"></script>
-<script src="assets/casino-fx.js"></script>
+<script src="assets/intro.js"></script>
 </body>
 </html>

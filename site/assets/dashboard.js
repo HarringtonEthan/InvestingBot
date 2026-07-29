@@ -1,12 +1,12 @@
 /*
- * Ethan's Market Casino - dashboard frontend.
+ * InvestingBot dashboard frontend.
  *
  * Loads the JSON files site_data.py generates (data/dashboard.json,
- * positions.json, trades.json, equity.json) and renders them. Every
- * fetch is wrapped so a missing, empty, or malformed file degrades to a
- * clearly-labeled empty state instead of a broken page or a console
- * error the visitor never sees. Nothing here fabricates a number - if a
- * file didn't load, the corresponding widget says so.
+ * positions.json, trades.json) and renders them. Every fetch is wrapped
+ * so a missing, empty, or malformed file degrades to a clearly-labeled
+ * empty state instead of a broken page or a console error the visitor
+ * never sees. Nothing here fabricates a number - if a file didn't load,
+ * the corresponding widget says so.
  */
 
 (function () {
@@ -18,7 +18,7 @@
   let dashboard = null;
   let positions = null;
   let trades = null;
-  let currentPeriod = "today";  // controls the slot machines + stats grid (top pill-tabs)
+  let currentPeriod = "today";  // controls the metric row + performance summary (period selector)
 
   // ---------------------------------------------------------------------
   // Safe fetch: never throws, never lets one bad file break the others.
@@ -27,22 +27,22 @@
     try {
       const res = await fetch(DATA_BASE + name, { cache: "no-store" });
       if (!res.ok) {
-        console.warn(`[casino] ${name} responded with HTTP ${res.status} - using fallback.`);
+        console.warn(`[investingbot] ${name} responded with HTTP ${res.status} - using fallback.`);
         return fallback;
       }
       const text = await res.text();
       if (!text || !text.trim()) {
-        console.warn(`[casino] ${name} was empty - using fallback.`);
+        console.warn(`[investingbot] ${name} was empty - using fallback.`);
         return fallback;
       }
       try {
         return JSON.parse(text);
       } catch (parseErr) {
-        console.warn(`[casino] ${name} was malformed JSON - using fallback.`, parseErr);
+        console.warn(`[investingbot] ${name} was malformed JSON - using fallback.`, parseErr);
         return fallback;
       }
     } catch (networkErr) {
-      console.warn(`[casino] ${name} could not be fetched (offline? missing file?) - using fallback.`, networkErr);
+      console.warn(`[investingbot] ${name} could not be fetched (offline? missing file?) - using fallback.`, networkErr);
       return fallback;
     }
   }
@@ -84,9 +84,9 @@
   }
 
   // ---------------------------------------------------------------------
-  // Slot machines
+  // Headline metric row
   // ---------------------------------------------------------------------
-  const SLOT_DEFS = {
+  const METRIC_DEFS = {
     equity: (p) => ({ text: fmtUsd(p.ending_value_usd), cls: "" }),
     period_pnl: (p) => ({ text: fmtUsdSigned(p.dollar_pnl_usd), cls: signClass(p.dollar_pnl_usd) }),
     pct_return: (p) => ({ text: fmtPct(p.pct_return), cls: signClass(p.pct_return) }),
@@ -95,54 +95,39 @@
     unrealized: (p) => ({ text: fmtUsdSigned(p.unrealized_pnl_usd), cls: signClass(p.unrealized_pnl_usd) }),
   };
 
-  function spinSlot(el, finalText, finalClass) {
+  function setMetric(el, finalText, finalClass) {
     el.classList.remove("positive", "negative");
-    if (REDUCED_MOTION) {
+    const apply = () => {
       el.textContent = finalText;
       if (finalClass) el.classList.add(finalClass);
-      return;
-    }
-    el.classList.add("spinning");
-    const scrambleChars = "0123456789$%+-.,";
-    let ticks = 0;
-    const maxTicks = 10;
-    const interval = setInterval(() => {
-      ticks += 1;
-      if (ticks >= maxTicks) {
-        clearInterval(interval);
-        el.classList.remove("spinning");
-        el.textContent = finalText;
-        if (finalClass) el.classList.add(finalClass);
-        return;
-      }
-      let scrambled = "";
-      for (let i = 0; i < Math.max(3, finalText.length); i++) {
-        scrambled += scrambleChars[Math.floor(Math.random() * scrambleChars.length)];
-      }
-      el.textContent = scrambled;
-    }, 45);
+    };
+    if (REDUCED_MOTION) { apply(); return; }
+    el.style.opacity = "0";
+    setTimeout(() => {
+      apply();
+      el.style.opacity = "1";
+    }, 120);
   }
 
-  function renderSlots(period) {
+  function renderMetricRow(period) {
     const p = dashboard.periods[period];
-    document.querySelectorAll(".slot-machine").forEach((machine) => {
-      const key = machine.dataset.slot;
-      const def = SLOT_DEFS[key];
+    document.querySelectorAll(".metric-card[data-metric]").forEach((card) => {
+      const key = card.dataset.metric;
+      const def = METRIC_DEFS[key];
       if (!def) return;
       const { text, cls } = def(p);
-      const reel = machine.querySelector("[data-reel]");
-      spinSlot(reel, text, cls);
+      setMetric(card.querySelector("[data-value]"), text, cls);
     });
   }
 
   // ---------------------------------------------------------------------
-  // Stats grid
+  // Performance summary grid
   // ---------------------------------------------------------------------
-  function statTile(label, value, opts) {
+  function metricCard(label, value, opts) {
     opts = opts || {};
     const cls = opts.cls || "";
-    const sub = opts.sub ? `<div class="sub">${opts.sub}</div>` : "";
-    return `<div class="stat-tile"><div class="label">${label}</div><div class="value ${cls}">${value}</div>${sub}</div>`;
+    const sub = opts.sub ? `<div class="metric-sub">${opts.sub}</div>` : "";
+    return `<div class="metric-card"><div class="metric-label">${label}</div><div class="metric-value ${cls}">${value}</div>${sub}</div>`;
   }
 
   function renderStatsGrid(period) {
@@ -153,36 +138,24 @@
       : (p.start_utc ? `as of ${fmtEt(p.start_utc)}` : "start of all logged history");
 
     const tiles = [
-      statTile("Starting Value", fmtUsd(p.starting_value_usd), { sub: startNote }),
-      statTile("Ending Value", fmtUsd(p.ending_value_usd)),
-      statTile("Dollar P&amp;L", fmtUsdSigned(p.dollar_pnl_usd), { cls: signClass(p.dollar_pnl_usd) }),
-      statTile("% Return", fmtPct(p.pct_return), { cls: signClass(p.pct_return) }),
-      statTile("Realized P&amp;L", fmtUsdSigned(p.realized_pnl_usd), { cls: signClass(p.realized_pnl_usd) }),
-      statTile("Unrealized P&amp;L", fmtUsdSigned(p.unrealized_pnl_usd), { cls: signClass(p.unrealized_pnl_usd) }),
-      statTile("Trades (closed)", p.num_trades, { sub: `${p.num_buys ?? 0} buys, ${p.num_unconfirmed ?? 0} unconfirmed, ${p.num_not_placed ?? 0} not placed` }),
-      statTile("Winning Trades", p.num_wins),
-      statTile("Losing Trades", p.num_losses),
-      statTile("Win Rate", p.win_rate === null ? "—" : (p.win_rate * 100).toFixed(1) + "%"),
-      statTile("Best Trade", p.best_trade ? `${p.best_trade.ticker} ${fmtUsdSigned(p.best_trade.realized_pnl_usd)}` : "—", { cls: p.best_trade ? "positive" : "" }),
-      statTile("Worst Trade", p.worst_trade ? `${p.worst_trade.ticker} ${fmtUsdSigned(p.worst_trade.realized_pnl_usd)}` : "—", { cls: p.worst_trade ? "negative" : "" }),
-      statTile("Max Drawdown", p.max_drawdown === null ? "not enough data" : fmtPct(p.max_drawdown), { cls: p.max_drawdown ? "negative" : "" }),
+      metricCard("Starting Value", fmtUsd(p.starting_value_usd), { sub: startNote }),
+      metricCard("Ending Value", fmtUsd(p.ending_value_usd)),
+      metricCard("Dollar P&amp;L", fmtUsdSigned(p.dollar_pnl_usd), { cls: signClass(p.dollar_pnl_usd) }),
+      metricCard("% Return", fmtPct(p.pct_return), { cls: signClass(p.pct_return) }),
+      metricCard("Realized P&amp;L", fmtUsdSigned(p.realized_pnl_usd), { cls: signClass(p.realized_pnl_usd) }),
+      metricCard("Unrealized P&amp;L", fmtUsdSigned(p.unrealized_pnl_usd), { cls: signClass(p.unrealized_pnl_usd) }),
+      metricCard("Trades (closed)", p.num_trades, { sub: `${p.num_buys ?? 0} buys, ${p.num_unconfirmed ?? 0} unconfirmed, ${p.num_not_placed ?? 0} not placed` }),
+      metricCard("Winning Trades", p.num_wins),
+      metricCard("Losing Trades", p.num_losses),
+      metricCard("Win Rate", p.win_rate === null ? "—" : (p.win_rate * 100).toFixed(1) + "%"),
+      metricCard("Best Trade", p.best_trade ? `${p.best_trade.ticker} ${fmtUsdSigned(p.best_trade.realized_pnl_usd)}` : "—", { cls: p.best_trade ? "positive" : "" }),
+      metricCard("Worst Trade", p.worst_trade ? `${p.worst_trade.ticker} ${fmtUsdSigned(p.worst_trade.realized_pnl_usd)}` : "—", { cls: p.worst_trade ? "negative" : "" }),
+      metricCard("Max Drawdown", p.max_drawdown === null ? "not enough data" : fmtPct(p.max_drawdown), { cls: p.max_drawdown ? "negative" : "" }),
     ];
     document.getElementById("stats-grid").innerHTML = tiles.join("");
 
     document.getElementById("methodology-note").innerHTML =
-      `📜 <strong>How this is calculated:</strong> ${dashboard.methodology.baseline}. ${dashboard.methodology.num_trades}`;
-
-    const resetNote = document.getElementById("reset-note");
-    if (resetNote) {
-      // Trade logs get archived and restarted fresh on a same-day
-      // relaunch, but the equity log never resets - so a period's
-      // Starting/Ending Value can straddle the relaunch while Realized
-      // P&L only counts trades since it. When that happens, Dollar P&L
-      // legitimately won't match Realized + Unrealized - it's not a bug,
-      // it's two numbers describing different eras of the account. See
-      // site_data.py's summarize_period() for the exact detection logic.
-      resetNote.hidden = !p.trade_log_reset_during_period;
-    }
+      `<strong>How this is calculated:</strong> ${dashboard.methodology.baseline}. ${dashboard.methodology.num_trades}`;
   }
 
   // ---------------------------------------------------------------------
@@ -199,30 +172,23 @@
   }
 
   // ---------------------------------------------------------------------
-  // Blackjack table (positions)
+  // Open positions
   // ---------------------------------------------------------------------
-  const SUITS = { crypto: "♦ ♦", stock: "♠ ♣" };
-
   function positionCard(p) {
     const pnl = p.unrealized_pl;
-    const glow = pnl > 0 ? "glow-win" : pnl < 0 ? "glow-loss" : "glow-neutral";
-    const suit = SUITS[p.is_crypto ? "crypto" : "stock"];
+    const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
     const strategyLabel = p.strategy || "unknown";
-    // Strategy used to render as a "card-strategy" strip pinned to the
-    // bottom of the card, which overlapped the dollar amount above it and
-    // made it unreadable. It's still available on hover via title -
-    // just not painted on top of the numbers anymore.
     return `
-      <div class="playing-card ${glow}" title="Strategy: ${strategyLabel}">
-        <div class="card-corner">${p.symbol}</div>
-        <div class="card-suit">${suit}</div>
-        <div class="card-ticker">${p.symbol}</div>
-        <div class="card-row"><span>Qty</span><span>${fmtQty(p.qty)}</span></div>
-        <div class="card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
-        <div class="card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
-        <div class="card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
-        <div class="card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPct(p.unrealized_plpc)})</div>
-        <div class="card-strategy-tag">${strategyLabel}</div>
+      <div class="position-card ${trend}">
+        <div class="position-card-head">
+          <span class="position-card-ticker">${p.symbol}</span>
+          <span class="position-card-strategy">${strategyLabel}</span>
+        </div>
+        <div class="position-card-row"><span>Qty</span><span>${fmtQty(p.qty)}</span></div>
+        <div class="position-card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
+        <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
+        <div class="position-card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
+        <div class="position-card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPct(p.unrealized_plpc)})</div>
       </div>`;
   }
 
@@ -242,11 +208,11 @@
   }
 
   // ---------------------------------------------------------------------
-  // Ledger (past trades) - deliberately NOT filtered by the top pill-tabs
-  // period control (or by the charts page's own period dropdown, which
-  // lives entirely on charts.html now): this section is meant to always
-  // show the most recent real history regardless of whatever period the
-  // rest of the page is currently scoped to.
+  // Trade history - deliberately NOT filtered by the period selector
+  // above (or by the charts page's own period dropdown, which lives
+  // entirely on charts.html): this section always shows the most recent
+  // real history regardless of whatever period the rest of the page is
+  // currently scoped to.
   // ---------------------------------------------------------------------
   const STATUS_LABEL = {
     confirmed_fill: "Confirmed Fill",
@@ -265,7 +231,7 @@
     if (!trades || !trades.available || !trades.trades.length) {
       body.innerHTML = "";
       empty.hidden = false;
-      empty.textContent = "No trades logged yet — the house is waiting.";
+      empty.textContent = "No trades logged yet.";
       return;
     }
     const rows = trades.trades; // already newest-first, capped server-side (site_data.py's MAX_TRADES_PUBLISHED)
@@ -289,12 +255,9 @@
   }
 
   // ---------------------------------------------------------------------
-  // Period switch + boot
+  // Period switch (Today/Week/Month/All Time) + content tabs
+  // (Overview/Positions/Trades) - two completely independent controls.
   // ---------------------------------------------------------------------
-  // Controls the slot machines + stats grid only. The charts now live on
-  // their own page (charts.html / assets/charts.js) - splitting them out
-  // keeps Chart.js and eight canvases off the main dashboard entirely,
-  // which was a real source of page lag.
   function renderPeriod(period) {
     currentPeriod = period;
     document.querySelectorAll(".tab-btn").forEach((btn) => {
@@ -302,29 +265,45 @@
       btn.classList.toggle("active", active);
       btn.setAttribute("aria-selected", String(active));
     });
-    renderSlots(period);
+    renderMetricRow(period);
     renderStatsGrid(period);
   }
 
-  // ---------------------------------------------------------------------
-  // Content tabs (Stats / Positions / Past Trades) - a completely
-  // separate concept from the Today/Week/Month/All-Time period pills
-  // above: this just controls which section of the page is visible, so
-  // visitors pick one thing to look at instead of scrolling past
-  // everything else to find it.
-  // ---------------------------------------------------------------------
   function switchContentTab(tab) {
     document.querySelectorAll(".content-tab-btn").forEach((btn) => {
-      const active = btn.dataset.tab === tab;
-      btn.classList.toggle("active", active);
-      btn.setAttribute("aria-selected", String(active));
+      btn.classList.toggle("active", btn.dataset.tab === tab);
     });
     document.querySelectorAll(".content-tab-panel").forEach((panel) => {
-      panel.hidden = panel.dataset.tabPanel !== tab;
+      panel.classList.toggle("is-active", panel.dataset.tabPanel === tab);
     });
   }
 
+  // Runs `fn`, logging (not throwing) on failure - one section's data
+  // being in an unexpected shape must never stop the rest of boot() from
+  // running. A real bug once let exactly this happen: an exception
+  // thrown while rendering positions/trades aborted the whole async
+  // boot() function before it ever reached the code that attaches the
+  // tab click-listeners below, leaving every tab silently dead with no
+  // error visible on the page itself.
+  function safely(label, fn) {
+    try {
+      fn();
+    } catch (err) {
+      console.error(`[investingbot] ${label} failed to render:`, err);
+    }
+  }
+
   async function boot() {
+    // Tab wiring happens first and unconditionally, before any
+    // data-dependent rendering - so the tabs are always clickable even
+    // if dashboard.json is missing or a render function throws below.
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => renderPeriod(btn.dataset.period));
+    });
+    document.querySelectorAll(".content-tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => switchContentTab(btn.dataset.tab));
+    });
+
     [dashboard, positions, trades] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
@@ -334,23 +313,15 @@
     if (!dashboard) {
       document.getElementById("app").innerHTML =
         '<p class="empty-state" style="text-align:center;padding:60px 0;">' +
-        "🎰 The house data hasn't loaded yet - dashboard.json is missing or unreadable. " +
+        "The dashboard data hasn't loaded yet - dashboard.json is missing or unreadable. " +
         "Once the update-dashboard workflow runs, this page will populate automatically.</p>";
       return;
     }
 
-    renderAccountStrip();
-    renderPositions();
-    renderLedger();
-
-    document.querySelectorAll(".tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => renderPeriod(btn.dataset.period));
-    });
-    document.querySelectorAll(".content-tab-btn").forEach((btn) => {
-      btn.addEventListener("click", () => switchContentTab(btn.dataset.tab));
-    });
-
-    renderPeriod(currentPeriod);
+    safely("account strip", renderAccountStrip);
+    safely("positions", renderPositions);
+    safely("trade history", renderLedger);
+    safely("period metrics", () => renderPeriod(currentPeriod));
   }
 
   document.addEventListener("DOMContentLoaded", boot);
