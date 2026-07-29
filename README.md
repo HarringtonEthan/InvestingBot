@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.12.1
+# InvestingBot — Version Richards 0.13.0
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 143 passing](https://img.shields.io/badge/tests-143%20passing-4c9a2a)](tests/)
@@ -216,18 +216,27 @@ this repository's own Settings.
   headline metric cards, a Today/This Week/This Month/All Time period
   selector, then the active tab's content. Kept deliberately light: no
   Chart.js, no canvases.
-- **`charts.html`** - every graph (account gain/loss, cumulative
-  realized P&L per asset class, win/loss per ticker per asset class,
-  daily P&L, drawdown, realized P&L by strategy), grouped into "Account
-  Performance" / "Crypto" / "Stocks" sections, split onto its own page
-  specifically so the main dashboard never has to load Chart.js or
-  render eight canvases. Fully interactive: hover (or tap on mobile) for
-  an exact-value tooltip with the ET timestamp, portfolio value,
-  gain/loss, period return and change from the previous recorded point;
-  a snapped vertical crosshair; clickable legend; Today / 7 Days /
-  30 Days / All Time range controls; a Combined / Stocks / Crypto
-  selector; optional drag-to-zoom with a reset button; and a text
-  summary under each chart for screen readers.
+- **`charts.html`** - mirrors `results/trade_dashboard.png`'s own panel
+  layout exactly, on request, so the two never look like they're showing
+  different things: whole-account net gain/loss, then crypto and stocks
+  each get their own cumulative-realized-P&L chart, win/loss-per-ticker
+  chart, and a "Current Open Positions" panel, grouped into "Account
+  Performance" / "Crypto" / "Stocks" sections. There's no Combined /
+  Stocks / Crypto selector (a whole-account value split by asset class
+  doesn't exist to plot - see below) and no daily-P&L/drawdown/strategy
+  charts (the PNG doesn't have them either). Split onto its own page so
+  the main dashboard never has to load Chart.js or render canvases.
+  Fully interactive: hover (or tap on mobile) for an exact-value tooltip
+  with the ET timestamp, portfolio value, gain/loss, period return and
+  change from the previous recorded point; a snapped vertical crosshair;
+  clickable legend; a Today / This Week / This Month / All Time range
+  control that reads the exact same period boundaries `dashboard.json`
+  computes server-side (never a separately-computed rolling window);
+  optional drag-to-zoom with a reset button; and a text summary under
+  each chart for screen readers. The net gain/loss line, its hover
+  point, the card's hover outline, and the summary's headline number are
+  all colored green when the period is up and red when it's down - the
+  same convention "Max Drawdown" already uses on the main dashboard.
 
   **What the per-class series actually are:** the stock and crypto
   workflows each log the *whole account's* value, not a separate
@@ -237,6 +246,16 @@ this repository's own Settings.
   sell fills**, which genuinely is per-class and timestamped. A series
   with no sample at a given timestamp shows "No recorded value" - gaps
   are never zero-filled or interpolated.
+
+  **Every period's start is floored at the account's most recent
+  relaunch.** `site_data.py`'s `find_account_relaunch()` reads the
+  equity log's own `cash_usd`/`portfolio_value_usd` columns for the most
+  recent point they're exactly equal - 100% cash, zero open positions,
+  the same signature every relaunch leaves behind - and uses it as a
+  floor under Today/This Week/This Month/All Time's calendar
+  boundaries, so a calendar cutoff earlier than that point (e.g. the
+  1st of the month) can never pull pre-relaunch history back in. The
+  point it detects is exposed as `account_relaunch` in `dashboard.json`.
 
 ### How the live update works
 

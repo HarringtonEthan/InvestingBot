@@ -17,6 +17,54 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.13.0 - 2026-07-29
+
+Rebuilt the charts page to mirror the PNG dashboard's own layout, fixed a
+real baseline-anchoring bug that let pre-relaunch history leak into
+today/this-week/this-month/all-time, and gave the equity chart
+direction-aware coloring.
+
+- **Charts page now mirrors `visualize_log.py`'s PNG panel-for-panel.**
+  Removed the Combined/Stocks/Crypto selector (a whole-account "combined"
+  portfolio value split by asset class doesn't exist in the logs - both
+  workflows log the same whole-account number, never a per-class
+  balance - so overlaying three series that couldn't actually agree with
+  each other was the reason the page looked broken). The chart set is
+  now exactly the PNG's 7 panels: net account gain/loss (whole account),
+  then crypto/stocks each get their own cumulative-realized-P&L and
+  win/loss-per-ticker chart. Daily P&L / drawdown / strategy-comparison
+  charts, which don't exist in the PNG either, were removed rather than
+  left showing an empty state.
+- **Range control now reads the server's own Today/This Week/This
+  Month/All Time boundaries** from `dashboard.json` instead of rolling
+  7/30-day windows, so the charts page can never disagree with the main
+  dashboard about where a period starts.
+- **Added a "Current Open Positions" panel under each asset class's
+  charts**, reusing the same position-card component the main dashboard
+  uses - fills what used to be a large empty area below the charts with
+  real, relevant information instead of blank space.
+- **Fixed a real bug: calendar period boundaries could reach past the
+  account's most recent relaunch.** `site_data.py` now has
+  `find_account_relaunch()`, which reads the account's own logged
+  cash_usd/portfolio_value_usd columns for the most recent point they're
+  exactly equal - the same signature every relaunch leaves behind (100%
+  cash, zero open positions), not a guessed or hand-typed date. Every
+  period's calendar start (midnight ET, the 1st of the month, ...) is
+  now floored at that point, so "This Month" can no longer show a
+  calendar-month boundary from before the account was last reset (e.g.
+  showing July 1st as a start date when the account's current run
+  actually began mid-afternoon on July 28th). The detected point is
+  exposed as `account_relaunch` in `dashboard.json` for transparency.
+  "Today" keeps normal midnight-ET semantics once enough time has passed
+  that the calendar day no longer contains the relaunch - no special
+  casing needed, the floor is simply a no-op past that point.
+- **Equity chart line, hover point, card outline, and summary number now
+  match the account's direction** - green if the period is up, red if
+  down, the same red/green convention "Max Drawdown" already used on the
+  main dashboard. Dropped the shaded area under the line entirely (line
+  color only - a filled area under a line this active made the chart
+  harder to read at a glance).
+
 ## Version Richards 0.12.1 - 2026-07-29
 
 Made the charts genuinely interactive, and fixed a layout bug plus

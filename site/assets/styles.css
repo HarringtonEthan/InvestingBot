@@ -193,7 +193,21 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   color: var(--text);
   margin: 0 0 16px;
   letter-spacing: -0.01em;
+  position: relative;
+  padding-left: 12px;
 }
+.section-title::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 2px; bottom: 2px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* charts.html's section titles already carry their own coloured dot -
+   the generic accent bar would just duplicate that signal. */
+.chart-section-group .section-title { padding-left: 0; }
+.chart-section-group .section-title::before { display: none; }
 .section-subtitle { color: var(--text-dim); font-size: 0.88rem; margin: -10px 0 20px; }
 
 /* ==========================================================================
@@ -207,11 +221,13 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   margin-top: 22px;
 }
 .metric-card {
-  background: var(--panel);
+  background: linear-gradient(165deg, var(--panel-strong), var(--panel));
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 16px 16px 14px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
 }
+.metric-card:hover { border-color: var(--border-strong); transform: translateY(-1px); }
 .metric-card .metric-label {
   font-size: 0.7rem;
   font-weight: 600;
@@ -251,7 +267,9 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   border-radius: 999px;
   padding: 10px 18px;
   min-width: 190px;
+  transition: border-color 0.15s ease;
 }
+.chip-stat:hover { border-color: var(--border-strong); }
 .chip-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
 .chip-value { margin-left: auto; font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
 
@@ -289,14 +307,18 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   gap: 12px;
 }
 .position-card {
-  background: var(--panel);
+  background: linear-gradient(165deg, var(--panel-strong), var(--panel));
   border: 1px solid var(--border);
   border-top: 3px solid var(--border-strong);
   border-radius: var(--radius);
   padding: 16px;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
+.position-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.35); }
 .position-card.trend-up { border-top-color: var(--win); }
+.position-card.trend-up:hover { box-shadow: 0 8px 20px rgba(52,211,114,0.12); }
 .position-card.trend-down { border-top-color: var(--loss); }
+.position-card.trend-down:hover { box-shadow: 0 8px 20px rgba(240,85,74,0.12); }
 .position-card-head {
   display: flex;
   justify-content: space-between;
@@ -370,6 +392,19 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .chart-section-crypto .section-title .dot { background: #f0a63c; }
 .chart-section-stocks .section-title .dot { background: #6aa6ff; }
 
+/* Open-positions panel under each asset class's charts on charts.html -
+   the same position-card component index.html uses, so a position
+   looks identical everywhere it appears on the site. Also what fills
+   out the bottom of each section instead of leaving it looking sparse
+   once only two charts remain per class. */
+.positions-panel { margin-top: 18px; }
+.positions-panel-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin: 0 0 12px;
+}
+
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
@@ -377,11 +412,18 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   align-items: start;
 }
 .chart-card {
-  background: var(--panel);
+  background: linear-gradient(165deg, var(--panel-strong), var(--panel));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 18px 18px 10px;
+  transition: border-color 0.15s ease;
 }
+.chart-card:hover { border-color: var(--border-strong); }
+/* Applied to the whole-account chart card based on whether the period
+   is currently up or down - the hover outline matches the line's own
+   color instead of always reading green regardless of direction. */
+.chart-card.trend-up:hover { border-color: var(--win); box-shadow: 0 8px 20px rgba(52,211,114,0.12); }
+.chart-card.trend-down:hover { border-color: var(--loss); box-shadow: 0 8px 20px rgba(240,85,74,0.12); }
 .chart-card-wide { grid-column: 1 / -1; }
 .chart-card h3 {
   font-size: 0.85rem;
@@ -448,6 +490,8 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   color: var(--text-faint);
 }
 .chart-summary:empty { display: none; }
+.chart-summary .positive { color: var(--win); font-weight: 600; }
+.chart-summary .negative { color: var(--loss); font-weight: 600; }
 
 /* ---- segmented range / category controls ---- */
 .chart-controls {

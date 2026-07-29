@@ -20,6 +20,7 @@ from site_data import (
     build_positions_payload,
     classify_order_status,
     dedupe_trades,
+    find_account_relaunch,
     period_bounds,
     summarize_period,
 )
@@ -55,6 +56,16 @@ def _equity_df(pairs: list[tuple[str, float]]) -> pd.DataFrame:
     return pd.DataFrame({
         "timestamp_utc": pd.to_datetime([p[0] for p in pairs], utc=True),
         "portfolio_value_usd": [p[1] for p in pairs],
+    })
+
+
+def _equity_df_with_cash(rows: list[tuple[str, float, float]]) -> pd.DataFrame:
+    """Same as _equity_df but each row also carries a cash_usd value -
+    needed for find_account_relaunch, which reads cash_usd directly."""
+    return pd.DataFrame({
+        "timestamp_utc": pd.to_datetime([r[0] for r in rows], utc=True),
+        "portfolio_value_usd": [r[1] for r in rows],
+        "cash_usd": [r[2] for r in rows],
     })
 
 
@@ -139,6 +150,75 @@ def test_week_boundary_handles_a_monday_itself():
     bounds = period_bounds(now)
     start, _ = bounds["week"]
     assert start.astimezone(ET).date() == dt.date(2026, 7, 27)
+
+
+# ---- find_account_relaunch ----
+
+def test_find_account_relaunch_picks_latest_full_cash_row():
+    # Two full-cash points (100% cash, zero open positions) - the later
+    # one is the account's current relaunch, not the first one ever logged.
+    df = _equity_df_with_cash([
+        ("2026-07-25T07:00:00+00:00", 100000.0, 100000.0),  # earlier reset
+        ("2026-07-28T14:00:00+00:00", 99769.29, 93787.11),  # mid-session, positions open
+        ("2026-07-28T18:53:05+00:00", 99751.68, 99751.68),  # the real relaunch
+        ("2026-07-28T19:12:58+00:00", 99751.00, 91751.72),  # positions bought back
+    ])
+    result = find_account_relaunch(df)
+    assert result is not None
+    ts, value = result
+    assert ts == pd.Timestamp("2026-07-28T18:53:05+00:00")
+    assert value == 99751.68
+
+
+def test_find_account_relaunch_none_without_cash_column():
+    df = _equity_df([("2026-07-28T14:00:00+00:00", 99769.29)])
+    assert find_account_relaunch(df) is None
+
+
+def test_find_account_relaunch_none_when_never_fully_cash():
+    df = _equity_df_with_cash([
+        ("2026-07-28T14:00:00+00:00", 99769.29, 93787.11),
+        ("2026-07-28T19:00:00+00:00", 99751.00, 91751.72),
+    ])
+    assert find_account_relaunch(df) is None
+
+
+def test_find_account_relaunch_none_on_empty_or_missing_df():
+    assert find_account_relaunch(None) is None
+    assert find_account_relaunch(_equity_df_with_cash([]).iloc[0:0]) is None
+
+
+# ---- period_bounds relaunch floor ----
+
+def test_period_bounds_floors_calendar_start_at_relaunch():
+    # Relaunch happened mid-afternoon on the same day "now" is - the
+    # calendar month/week/today boundaries (midnight ET, the 1st, ...)
+    # would otherwise reach back before it and pull in pre-relaunch
+    # history, which is exactly the bug this floor exists to prevent.
+    now = dt.datetime(2026, 7, 28, 23, 0, tzinfo=dt.timezone.utc)  # 7pm ET
+    relaunch = dt.datetime(2026, 7, 28, 18, 53, 5, tzinfo=dt.timezone.utc)  # 2:53pm ET
+    bounds = period_bounds(now, relaunch)
+    for period in ("today", "week", "month"):
+        start, _ = bounds[period]
+        assert start == relaunch, f"{period} should be floored at the relaunch"
+
+
+def test_period_bounds_relaunch_floor_is_noop_once_calendar_moves_past_it():
+    # A day later, midnight ET naturally falls after the relaunch - the
+    # floor should do nothing and normal calendar semantics apply.
+    now = dt.datetime(2026, 7, 29, 15, 0, tzinfo=dt.timezone.utc)  # 11am ET, next day
+    relaunch = dt.datetime(2026, 7, 28, 18, 53, 5, tzinfo=dt.timezone.utc)
+    bounds = period_bounds(now, relaunch)
+    start, _ = bounds["today"]
+    assert start == dt.datetime(2026, 7, 29, 4, 0, tzinfo=dt.timezone.utc)  # midnight ET 7/29
+    # week/month still contain the relaunch, so they stay floored at it.
+    assert bounds["week"][0] == relaunch
+    assert bounds["month"][0] == relaunch
+
+
+def test_period_bounds_without_relaunch_is_unaffected():
+    now = dt.datetime(2026, 7, 28, 15, 0, tzinfo=dt.timezone.utc)
+    assert period_bounds(now) == period_bounds(now, None)
 
 
 # ---- _equity_value_asof ----

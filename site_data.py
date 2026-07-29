@@ -148,7 +148,37 @@ def load_trades(paths: list[str]) -> pd.DataFrame:
     return df
 
 
-def period_bounds(now_utc: dt.datetime) -> dict[str, tuple[dt.datetime, dt.datetime]]:
+def find_account_relaunch(equity_df: pd.DataFrame | None) -> tuple[pd.Timestamp, float] | None:
+    """
+    The most recent point the account held 100% cash - portfolio_value_usd
+    == cash_usd, i.e. zero open positions - which is exactly the signature
+    every relaunch in this project's history leaves behind (a fresh start
+    with nothing bought yet). Returns (timestamp_utc, value) for the
+    latest such row, or None if the equity log has no cash_usd column
+    (older log format) or no such row at all.
+
+    This is the honest, code-verifiable answer to "when did the account's
+    current run actually begin" - not a hand-typed date, and not inferred
+    indirectly from trade-log file archiving. It's used as a floor under
+    every period's own calendar boundary: a calendar cutoff (midnight ET,
+    the 1st of the month, ...) that falls before the account's most
+    recent relaunch would otherwise pull in now-irrelevant pre-relaunch
+    history (an earlier bug-fix reset, a paused-and-relaunched account)
+    into "this week" / "this month" / "all time," which is never what
+    those labels should mean for a live paper account.
+    """
+    if equity_df is None or equity_df.empty or "cash_usd" not in equity_df.columns:
+        return None
+    full_cash = equity_df[(equity_df["cash_usd"] - equity_df["portfolio_value_usd"]).abs() < 0.01]
+    if full_cash.empty:
+        return None
+    row = full_cash.iloc[-1]
+    return pd.Timestamp(row["timestamp_utc"]), float(row["portfolio_value_usd"])
+
+
+def period_bounds(
+    now_utc: dt.datetime, relaunch_utc: dt.datetime | None = None
+) -> dict[str, tuple[dt.datetime, dt.datetime]]:
     """
     Returns {period_name: (start_utc, end_utc)} for "today", "week", and
     "month" - each period runs from its Eastern-Time calendar boundary
@@ -162,6 +192,15 @@ def period_bounds(now_utc: dt.datetime) -> dict[str, tuple[dt.datetime, dt.datet
     to UTC - so a DST transition (which shifts the UTC offset, not the
     ET wall-clock time) is handled correctly by construction, not by a
     fixed-offset approximation that would drift wrong twice a year.
+
+    `relaunch_utc`, when given (see find_account_relaunch above), floors
+    every boundary at the account's own most recent relaunch: a calendar
+    boundary earlier than that point is bumped forward to it, so "this
+    week"/"this month" never quietly starts counting from before the
+    account's current run began. Once enough real calendar time has
+    passed that a boundary naturally falls after the relaunch, the floor
+    stops doing anything and normal calendar semantics take back over -
+    no special-casing needed for that transition.
     """
     now_et = now_utc.astimezone(ET)
     today_start_et = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -169,11 +208,14 @@ def period_bounds(now_utc: dt.datetime) -> dict[str, tuple[dt.datetime, dt.datet
     # to land on this week's own Monday, at midnight ET.
     week_start_et = today_start_et - dt.timedelta(days=today_start_et.weekday())
     month_start_et = today_start_et.replace(day=1)
-    return {
-        "today": (today_start_et.astimezone(dt.timezone.utc), now_utc),
-        "week": (week_start_et.astimezone(dt.timezone.utc), now_utc),
-        "month": (month_start_et.astimezone(dt.timezone.utc), now_utc),
+    bounds_utc = {
+        "today": today_start_et.astimezone(dt.timezone.utc),
+        "week": week_start_et.astimezone(dt.timezone.utc),
+        "month": month_start_et.astimezone(dt.timezone.utc),
     }
+    if relaunch_utc is not None:
+        bounds_utc = {k: max(v, relaunch_utc) for k, v in bounds_utc.items()}
+    return {k: (v, now_utc) for k, v in bounds_utc.items()}
 
 
 def _equity_value_asof(equity_df: pd.DataFrame | None, ts: dt.datetime) -> float | None:
@@ -522,12 +564,16 @@ def main():
             live_row = pd.DataFrame([{"timestamp_utc": pd.Timestamp(now_utc), "portfolio_value_usd": equity}])
             equity_df = pd.concat([equity_df, live_row], ignore_index=True).sort_values("timestamp_utc") if equity_df is not None else live_row
 
-    bounds = period_bounds(now_utc)
+    relaunch = find_account_relaunch(equity_df)
+    relaunch_ts, relaunch_value = relaunch if relaunch is not None else (None, None)
+
+    bounds = period_bounds(now_utc, relaunch_ts)
+    all_time_start = relaunch_ts if relaunch_ts is not None else None
     periods = {
         "today": summarize_period("Today", bounds["today"][0], bounds["today"][1], equity_df, trades_df, unrealized_total, unrealized_by_class),
         "week": summarize_period("This Week", bounds["week"][0], bounds["week"][1], equity_df, trades_df, unrealized_total, unrealized_by_class),
         "month": summarize_period("This Month", bounds["month"][0], bounds["month"][1], equity_df, trades_df, unrealized_total, unrealized_by_class),
-        "all_time": summarize_period("All Time", None, now_utc, equity_df, trades_df, unrealized_total, unrealized_by_class),
+        "all_time": summarize_period("All Time", all_time_start, now_utc, equity_df, trades_df, unrealized_total, unrealized_by_class),
     }
 
     dashboard = {
@@ -540,9 +586,16 @@ def main():
             "buying_power_usd": round(buying_power, 2) if buying_power is not None else None,
             "available": args.live_positions and live_result is not None and live_result[1] is None,
         },
+        "account_relaunch": {
+            "detected": relaunch_ts is not None,
+            "timestamp_utc": relaunch_ts.isoformat() if relaunch_ts is not None else None,
+            "timestamp_et": relaunch_ts.astimezone(ET).isoformat() if relaunch_ts is not None else None,
+            "value_usd": round(relaunch_value, 2) if relaunch_value is not None else None,
+        },
         "periods": periods,
         "methodology": {
             "baseline": "each period's starting value is the last known account equity at or before that period's own start (carried forward from whenever it was last logged, not a fixed dollar amount) - all_time starts from the very first row ever logged, with no hardcoded baseline",
+            "relaunch_floor": "every period's calendar start is floored at the account's most recent full-cash relaunch point (the last logged moment portfolio_value_usd == cash_usd, i.e. zero open positions) - a calendar boundary earlier than that is bumped forward to it, so pre-relaunch history never bleeds into today/this week/this month/all time; see account_relaunch above for the exact point detected",
             "num_trades": "counts only confirmed-fill SELL executions (completed round trips); submitted-but-unconfirmed and not-placed orders are tracked separately (see num_buys/num_unconfirmed/num_not_placed) and never counted as a trade",
             "realized_pnl": "computed only from confirmed fills; a submitted-but-unconfirmed order's price is a decision-time estimate, not treated as realized",
         },
