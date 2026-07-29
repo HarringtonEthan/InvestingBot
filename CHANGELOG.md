@@ -88,6 +88,17 @@ asset class, and the PNG dashboard had quietly stopped updating.
   not the stale pre-relaunch $99,787.08. Still not a hardcoded number -
   it's read straight off the equity log, so it keeps computing correctly
   on its own after future relaunches too.
+- **Kept `results/trade_dashboard.png` in sync with that same anchor.**
+  `visualize_log.py` has its own `--baseline`/`--baseline-since` flags
+  (added back in v0.9.20 for this exact reset problem, but only ever
+  filled in by hand - `100000` -> `99787.08` -> `99747.83` ->
+  `99751.68`, one manual workflow edit per relaunch, every time someone
+  noticed). `update-dashboard.yml` now reads `starting_value_usd` and
+  the new `starting_value_asof_utc` field straight out of
+  `site/data/dashboard.json` (generated one step earlier in the same
+  run) and hands them to `visualize_log.py` as those same flags - one
+  reset-detection implementation driving both the PNG and the website,
+  no more hand-typed numbers on either one.
 
 ## Version Richards 0.11.0 - 2026-07-28
 

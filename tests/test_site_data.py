@@ -323,6 +323,7 @@ def test_starting_value_anchors_to_reset_row_not_stale_pre_reset_equity():
     end = dt.datetime(2026, 7, 28, 20, 0, tzinfo=dt.timezone.utc)
     result = summarize_period("Today", start, end, equity_df, trades, None, None)
     assert result["starting_value_usd"] == 99751.68
+    assert result["starting_value_asof_utc"] == "2026-07-28T18:53:05+00:00"
     assert result["ending_value_usd"] == 99780.29
     assert result["dollar_pnl_usd"] == pytest.approx(28.61)
     assert result["trade_log_reset_during_period"] is True

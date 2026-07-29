@@ -239,6 +239,7 @@ def summarize_period(
         "start_utc": start_utc.isoformat() if start_utc is not None else None,
         "end_utc": end_utc.isoformat(),
         "starting_value_usd": None,
+        "starting_value_asof_utc": None,
         "ending_value_usd": None,
         "dollar_pnl_usd": None,
         "pct_return": None,
@@ -324,6 +325,13 @@ def summarize_period(
         ending = _equity_value_asof(equity_df, end_utc)
         if starting is not None and ending is not None:
             result["starting_value_usd"] = round(starting, 2)
+            # Exposed so update-dashboard.yml can hand this exact same
+            # dynamically-computed anchor to visualize_log.py's
+            # --baseline/--baseline-since - without it, the PNG dashboard
+            # would fall back to its own default (the first row of the
+            # equity log), reintroducing the stale-pre-reset-baseline bug
+            # this field's computation above just fixed for the website.
+            result["starting_value_asof_utc"] = pd.Timestamp(starting_ts).isoformat() if starting_ts is not None else None
             result["ending_value_usd"] = round(ending, 2)
             result["dollar_pnl_usd"] = round(ending - starting, 2)
             result["pct_return"] = (ending / starting - 1.0) if starting else None

@@ -76,17 +76,43 @@ jobs:
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
         run: python site_data.py --live-positions --out-dir site/data
 
+      - name: Read today's dynamically-computed baseline for the PNG
+        id: baseline
+        # Reuses the exact same reset-aware anchor site_data.py just
+        # computed for the website's "Today" period (summarize_period()'s
+        # reset/relaunch-anchor logic - see site_data.py) instead of
+        # letting visualize_log.py fall back to its own default (the
+        # first row of the equity log, which goes stale the moment a
+        # same-day relaunch happens). Keeps the PNG and the website
+        # reporting the exact same starting balance, still with nothing
+        # hardcoded - if a fresh account has no equity data yet, both
+        # fields are null and the step below falls back to
+        # visualize_log.py's own default baseline instead of crashing.
+        run: |
+          python3 -c "
+          import json
+          with open('site/data/dashboard.json') as f:
+              d = json.load(f)
+          p = d['periods']['today']
+          val = p.get('starting_value_usd')
+          since = p.get('starting_value_asof_utc')
+          args = f'--baseline {val} --baseline-since {since}' if val is not None and since is not None else ''
+          print(f'args={args}')
+          " >> "$GITHUB_OUTPUT"
+
       - name: Generate dashboard PNG (results/trade_dashboard.png)
         # Restores the original PNG dashboard alongside the website - on
         # request, both get kept up to date by the same cron rather than
         # the PNG being dropped when the site replaced it as the primary
         # view. Same read-only --live-positions pull as above, same
-        # logs/*.csv source of truth, no hardcoded --baseline.
+        # logs/*.csv source of truth as the JSON step above - the
+        # --baseline/--baseline-since args come from the step right above
+        # this one, not typed in by hand.
         env:
           ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
           ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
           ALPACA_BASE_URL: https://paper-api.alpaca.markets
-        run: python visualize_log.py --live-positions
+        run: python visualize_log.py --live-positions ${{ steps.baseline.outputs.args }}
 
       - name: Commit dashboard PNG
         run: |
