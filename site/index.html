@@ -5,23 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>InvestingBot — Live Trading Dashboard</title>
 <meta name="description" content="Live performance dashboard for a real automated paper-trading bot.">
-<link rel="stylesheet" href="assets/styles.css?v=0.14.0">
-<link rel="stylesheet" href="assets/intro.css?v=0.14.0">
+<link rel="stylesheet" href="assets/styles.css?v=0.15.0">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
-<body>
+<body class="is-loading">
 
 <!-- Purely decorative ambient backdrop (assets/background.js) - drawn behind
      every other element, never intercepts clicks or selection. -->
 <canvas id="bg-canvas" aria-hidden="true"></canvas>
-
-<!-- Purely decorative intro splash - dismisses itself, click to skip early. -->
-<div class="panda-intro" id="panda-intro" aria-hidden="true">
-  <span class="panda-emoji">🐼</span>
-  <span class="kiss-mark">💋</span>
-  <span class="blush-mark">😊</span>
-  <span class="skip-hint">(click to skip)</span>
-</div>
 
 <header class="site-header">
   <div class="site-header-inner">
@@ -53,6 +44,7 @@
     <div class="metric-card" data-metric="equity">
       <div class="metric-label">Account Value</div>
       <div class="metric-value" data-value>—</div>
+      <div class="metric-spark" data-spark aria-hidden="true"></div>
     </div>
     <div class="metric-card" data-metric="period_pnl">
       <div class="metric-label">P&amp;L (period)</div>
@@ -76,7 +68,7 @@
     </div>
   </section>
 
-  <p class="last-updated" id="last-updated">Last updated: —</p>
+  <p class="last-updated"><span class="live-dot" aria-hidden="true"></span><span id="last-updated">Last updated: —</span></p>
   <p class="methodology-note" id="methodology-note"></p>
 
   <div class="content-tab-panel is-active" data-tab-panel="overview">
@@ -139,8 +131,7 @@
 
 </main>
 
-<script src="assets/background.js?v=0.14.0"></script>
-<script src="assets/dashboard.js?v=0.14.0"></script>
-<script src="assets/intro.js?v=0.14.0"></script>
+<script src="assets/background.js?v=0.15.0"></script>
+<script src="assets/dashboard.js?v=0.15.0"></script>
 </body>
 </html>

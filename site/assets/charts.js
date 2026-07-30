@@ -28,6 +28,13 @@
 (function () {
   "use strict";
 
+  // Runs synchronously the moment this file parses - only reason
+  // .chart-section-group's opacity:0 starting state in styles.css is
+  // scoped behind this class, so if this script 404s or fails to parse
+  // for any reason, every section just renders visible immediately
+  // (the safe default) instead of silently staying hidden forever.
+  document.body.classList.add("reveal-ready");
+
   const DATA_BASE = "data/";
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const IS_TOUCH = window.matchMedia("(hover: none)").matches;
@@ -745,7 +752,31 @@
     });
     window.addEventListener("resize", () => { hideTooltip(); tooltipLocked = false; });
 
+    setupScrollReveal();
     load();
+  }
+
+  // Each account/crypto/stocks section eases in as it's scrolled into
+  // view, rather than all being visible (or all invisible) at once.
+  // Doesn't gate access to anything: falls back to showing every
+  // section immediately if IntersectionObserver isn't supported, and
+  // skips the transition (shows immediately) under reduced motion.
+  function setupScrollReveal() {
+    const groups = document.querySelectorAll(".chart-section-group");
+    if (!groups.length) return;
+    if (REDUCED_MOTION || !("IntersectionObserver" in window)) {
+      groups.forEach((g) => g.classList.add("is-visible"));
+      return;
+    }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("is-visible");
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: "0px 0px -60px 0px" });
+    groups.forEach((g) => io.observe(g));
   }
 
   async function load() {

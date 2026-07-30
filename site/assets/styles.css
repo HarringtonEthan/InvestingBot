@@ -1,9 +1,8 @@
 /* ==========================================================================
    InvestingBot dashboard - clean, professional theme. Dark background,
-   single green accent, plain sans-serif. The only deliberately playful
-   element left anywhere on the site is the panda-kiss intro splash
-   (assets/intro.css/intro.js) - everything else here is meant to read
-   as a straightforward product dashboard, not a theme.
+   single green accent, plain sans-serif, a restrained animated backdrop
+   (assets/background.js) for atmosphere. Reads as a straightforward
+   product/trading-terminal dashboard throughout, not a theme.
    ========================================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
@@ -26,6 +25,10 @@
   --radius-lg: 18px;
   --radius: 12px;
   --radius-sm: 8px;
+  /* System monospace stack for numeric values only (prices, P&L, qty) -
+     no webfont/network request, just a terminal-style aligned-digit
+     look on top of the tabular-nums already applied to these values. */
+  --font-mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
 }
 
 * { box-sizing: border-box; }
@@ -345,6 +348,7 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   margin-bottom: 8px;
 }
 .metric-card .metric-value {
+  font-family: var(--font-mono);
   font-size: 1.35rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
@@ -355,8 +359,34 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .metric-card .metric-value.positive { color: var(--win); }
 .metric-card .metric-value.negative { color: var(--loss); }
 .metric-card .metric-sub { font-size: 0.74rem; color: var(--text-faint); margin-top: 4px; line-height: 1.4; }
+/* Decorative per-period trend line (assets/dashboard.js draws an inline
+   SVG here from the same equity.json series the charts page uses) -
+   aria-hidden because the exact figures are already in the text value
+   above; this is a supplementary visual, never the only place a number
+   appears. Empty and collapses to nothing if there isn't enough data
+   in the current period to draw a meaningful line. */
+.metric-spark { height: 28px; margin-top: 10px; }
+.metric-spark:empty { margin-top: 0; }
+.metric-spark svg { display: block; width: 100%; height: 100%; overflow: visible; }
 
-.last-updated { color: var(--text-faint); margin: 20px 0 2px; font-size: 0.82rem; }
+.last-updated { color: var(--text-faint); margin: 20px 0 2px; font-size: 0.82rem; display: flex; align-items: center; gap: 7px; }
+/* Purely decorative - the adjacent timestamp text is the actual source
+   of truth for freshness; this just signals "this is a live feed" at a
+   glance. Steady, gentle pulse, never a jarring blink. */
+.live-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 0 rgba(52,211,114,0.5);
+  animation: live-pulse 2.4s ease-out infinite;
+}
+@keyframes live-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(52,211,114,0.45); }
+  70%  { box-shadow: 0 0 0 6px rgba(52,211,114,0); }
+  100% { box-shadow: 0 0 0 0 rgba(52,211,114,0); }
+}
 .methodology-note { color: var(--text-faint); font-size: 0.78rem; max-width: 760px; margin: 6px 0 0; line-height: 1.5; }
 
 /* ---- account cash/buying-power/equity strip ---- */
@@ -379,7 +409,7 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 }
 .chip-stat:hover { border-color: var(--border-strong); }
 .chip-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-faint); }
-.chip-value { margin-left: auto; font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.chip-value { margin-left: auto; font-family: var(--font-mono); font-weight: 700; font-size: 1rem; font-variant-numeric: tabular-nums; }
 
 /* ==========================================================================
    Content tabs (Overview / Positions / Trades) - class-based show/hide,
@@ -440,8 +470,8 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-card-ticker { font-size: 1.05rem; font-weight: 700; }
 .position-card-strategy { font-size: 0.7rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.03em; }
 .position-card-row { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-dim); padding: 3px 0; }
-.position-card-row span:last-child { color: var(--text); font-variant-numeric: tabular-nums; }
-.position-card-pnl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-weight: 700; font-size: 0.95rem; text-align: right; }
+.position-card-row span:last-child { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.position-card-pnl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 0.95rem; text-align: right; }
 .position-card-pnl.positive { color: var(--win); }
 .position-card-pnl.negative { color: var(--loss); }
 
@@ -449,6 +479,45 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   color: var(--text-dim);
   font-size: 0.88rem;
   padding: 14px 0;
+}
+
+/* Loading skeleton - purely CSS, no JS state to manage: these grid
+   containers start genuinely empty in the markup and stay matched by
+   :empty only until dashboard.js/charts.js populate them (with real
+   cards OR a real empty-state message) on first load, at which point
+   the rule simply stops applying on its own. */
+#stats-grid:empty::before,
+.position-cards:empty::before {
+  content: "";
+  display: block;
+  grid-column: 1 / -1;
+  height: 88px;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--panel) 0%, var(--panel-strong) 50%, var(--panel) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+/* Same technique for the headline metric-row's numbers specifically -
+   these already have a static "—" placeholder in the markup rather than
+   being empty, so :empty can't key off them; body.is-loading (removed
+   by dashboard.js the moment its first data fetch settles, success or
+   not) is the one bit of JS state this skeleton needs. */
+body.is-loading .metric-row .metric-value[data-value] {
+  color: transparent;
+  position: relative;
+}
+body.is-loading .metric-row .metric-value[data-value]::before {
+  content: "";
+  position: absolute;
+  inset: 3px 30% 3px 0;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--panel) 0%, var(--panel-strong) 50%, var(--panel) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
 
 /* ==========================================================================
@@ -498,6 +567,15 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 }
 
 .chart-section-group { margin-top: 8px; margin-bottom: 40px; }
+/* Scoped behind body.reveal-ready (set by charts.js the instant it
+   parses) so a missing/broken script still leaves every section
+   visible by default - see the comment on that class in charts.js. */
+body.reveal-ready .chart-section-group {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: translateY(0); }
 .chart-section-group:last-of-type { margin-bottom: 0; }
 .chart-section-group .section-title { display: flex; align-items: center; gap: 8px; }
 .chart-section-group .section-title .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); }
@@ -703,7 +781,7 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 #chart-tooltip .tt-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 #chart-tooltip .tt-row { display: flex; justify-content: space-between; gap: 18px; }
 #chart-tooltip .tt-label { color: var(--text-dim); }
-#chart-tooltip .tt-val { color: #fff; font-variant-numeric: tabular-nums; font-weight: 600; }
+#chart-tooltip .tt-val { color: #fff; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
 #chart-tooltip .tt-val.positive { color: var(--win); }
 #chart-tooltip .tt-val.negative { color: var(--loss); }
 #chart-tooltip .tt-val.muted { color: var(--text-faint); font-weight: 500; }
@@ -730,7 +808,17 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .badge-unconfirmed { background: rgba(240,166,60,0.14); color: #f0a63c; }
 .badge-notplaced { background: rgba(255,255,255,0.08); color: var(--text-dim); }
 
-.table-scroll { overflow-x: auto; border-radius: var(--radius); border: 1px solid var(--border); }
+.table-scroll {
+  overflow-x: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.table-scroll::-webkit-scrollbar { height: 8px; }
+.table-scroll::-webkit-scrollbar-track { background: transparent; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; }
+.table-scroll::-webkit-scrollbar-thumb:hover { background: var(--accent-dim); }
 .data-table {
   width: 100%;
   border-collapse: collapse;
@@ -758,6 +846,14 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .data-table tbody tr:hover { background: var(--panel); }
 .data-table td.pnl-positive { color: var(--win); font-weight: 600; }
 .data-table td.pnl-negative { color: var(--loss); font-weight: 600; }
+/* Price / Qty-Notional / Realized are the numeric columns (see the
+   <thead> order in index.html) - terminal-style aligned digits. */
+.data-table tbody td:nth-child(6),
+.data-table tbody td:nth-child(7),
+.data-table tbody td:nth-child(8) {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
 
 /* ==========================================================================
    Footer

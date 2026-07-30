@@ -17,6 +17,53 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.15.0 - 2026-07-30
+
+- **Second visual-polish pass on the dashboard site**, again presentation-
+  only: no displayed information, calculations, filtering, or trading
+  functionality changed.
+  - **Removed the panda intro splash** (`assets/intro.css`/`intro.js`
+    deleted, markup/links removed from `index.html`) - the site's one
+    remaining playful touch, now that the animated background carries
+    the "this feels alive" job instead.
+  - **Terminal-style tabular numerals:** a system monospace font stack
+    (`--font-mono`, no webfont/network request) applied to every numeric
+    value - metric cards, position-card figures, the trade table's
+    Price/Qty/Realized columns, and chart tooltips - so digits align
+    vertically the way they do on a real trading terminal.
+  - **Account-value sparkline:** the headline "Account Value" card now
+    draws a small inline SVG trend line from the same `equity.json`
+    series charts.html already plots, filtered to whichever period is
+    selected and colored by that period's real direction. Purely
+    supplementary (`aria-hidden`, the exact number is always the text
+    next to it) and draws nothing if fewer than 2 real points fall in
+    the period.
+  - **CSS-only loading skeletons:** `#stats-grid` and every
+    `.position-cards` container shimmer while genuinely empty (a plain
+    `:empty` selector - no JS state to manage, and it stops applying the
+    instant real content, including a real empty-state message, is
+    written in). The headline metric-row's "—" placeholders get the
+    same shimmer via `body.is-loading`, cleared by `dashboard.js` the
+    moment its first fetch settles either way.
+  - **Live status pulse dot** next to "Last updated" on both pages -
+    purely decorative (the adjacent timestamp is what's actually
+    accurate), gentle and steady, never a jarring blink.
+  - **Scroll-reveal on charts.html's section groups** (Account
+    Performance/Crypto/Stocks fade and lift in as scrolled into view).
+    Guarded so a missing or broken `charts.js` can never leave content
+    invisible: the CSS that hides sections pre-reveal only applies
+    behind a `body.reveal-ready` class that `charts.js` sets the instant
+    it parses, so if that script 404s or throws, every section falls
+    back to fully visible immediately. Falls back the same way under
+    `prefers-reduced-motion` or if `IntersectionObserver` isn't
+    supported.
+  - **Themed scrollbar** on the horizontally-scrolling trade table.
+  - Cache-busting bumped to `?v=0.15.0`. Verified with Playwright at
+    desktop/mobile widths and with `prefers-reduced-motion` emulated:
+    every tab, period filter, and deep link still behaves identically,
+    no console errors from this project's own code, full pytest suite
+    (159 tests, untouched) still passes.
+
 ## Version Richards 0.14.0 - 2026-07-30
 
 - **Visual redesign of the dashboard site** (`site/index.html`, `site/charts.html`,

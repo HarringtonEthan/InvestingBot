@@ -18,6 +18,7 @@
   let dashboard = null;
   let positions = null;
   let trades = null;
+  let equity = null;
   let currentPeriod = "today";  // controls the metric row + performance summary (period selector)
 
   // ---------------------------------------------------------------------
@@ -109,6 +110,54 @@
     }, 120);
   }
 
+  // ---------------------------------------------------------------------
+  // Account-value sparkline (headline "equity" card only) - drawn from
+  // the same equity.json series charts.html plots, filtered to whichever
+  // period is currently selected. Real recorded points only; if fewer
+  // than 2 fall inside the period the card shows no line rather than a
+  // misleadingly flat/fabricated one.
+  // ---------------------------------------------------------------------
+  const SPARK_WIN = "#34d372";
+  const SPARK_LOSS = "#f0554a";
+
+  function periodEquitySeries(p) {
+    if (!equity || !equity.available || !Array.isArray(equity.points) || !equity.points.length) return null;
+    const startMs = p.start_utc ? new Date(p.start_utc).getTime() : -Infinity;
+    const endMs = p.end_utc ? new Date(p.end_utc).getTime() : Infinity;
+    const vals = equity.points
+      .filter((pt) => {
+        const t = new Date(pt.timestamp_utc).getTime();
+        return !Number.isNaN(t) && t >= startMs && t <= endMs;
+      })
+      .map((pt) => pt.portfolio_value_usd)
+      .filter((v) => typeof v === "number" && !Number.isNaN(v));
+    return vals.length >= 2 ? vals : null;
+  }
+
+  function sparklineSvg(values) {
+    const w = 100, h = 28, pad = 2;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    const stepX = (w - pad * 2) / (values.length - 1);
+    const pts = values.map((v, i) => {
+      const x = pad + i * stepX;
+      const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    const color = values[values.length - 1] >= values[0] ? SPARK_WIN : SPARK_LOSS;
+    const area = `${pad},${h - pad} ${pts.join(" ")} ${w - pad},${h - pad}`;
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
+      `<polyline points="${area}" fill="${color}" fill-opacity="0.1" stroke="none"></polyline>` +
+      `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.6" ` +
+      `stroke-linejoin="round" stroke-linecap="round"></polyline></svg>`;
+  }
+
+  function renderSpark(el, p) {
+    const series = periodEquitySeries(p);
+    el.innerHTML = series ? sparklineSvg(series) : "";
+  }
+
   function renderMetricRow(period) {
     const p = dashboard.periods[period];
     document.querySelectorAll(".metric-card[data-metric]").forEach((card) => {
@@ -117,6 +166,8 @@
       if (!def) return;
       const { text, cls } = def(p);
       setMetric(card.querySelector("[data-value]"), text, cls);
+      const sparkEl = card.querySelector("[data-spark]");
+      if (sparkEl) renderSpark(sparkEl, p);
     });
   }
 
@@ -313,11 +364,17 @@
       switchContentTab(hashTab);
     }
 
-    [dashboard, positions, trades] = await Promise.all([
+    [dashboard, positions, trades, equity] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
       loadJson("trades.json", { available: false, trades: [] }),
+      loadJson("equity.json", { available: false, points: [] }),
     ]);
+
+    // Whatever happened above, the page is done with its initial load -
+    // the CSS skeleton shimmer on empty containers only applies while
+    // this class is present.
+    document.body.classList.remove("is-loading");
 
     if (!dashboard) {
       document.getElementById("app").innerHTML =
