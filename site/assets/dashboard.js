@@ -17,6 +17,7 @@
 
   let dashboard = null;
   let positions = null;
+  let positionIndicators = null;
   let trades = null;
   let equity = null;
   let currentPeriod = "today";  // controls the metric row + performance summary (period selector)
@@ -225,6 +226,30 @@
   // ---------------------------------------------------------------------
   // Open positions
   // ---------------------------------------------------------------------
+  // rule_based/ml_filtered positions sell on a mean-reversion recovery
+  // vs. their own 20-period SMA (see site_data.py's
+  // build_position_sma_indicators) rather than vs. entry price - that's
+  // a different number than the unrealized P&L row above, and the one
+  // this project's live logs never otherwise surface for a held stock
+  // position. day_trading (crypto) positions sell on gain-vs-entry
+  // instead, which the unrealized P&L row already shows, so this row is
+  // deliberately omitted for them rather than showing a second,
+  // unrelated number.
+  function positionSmaRow(p) {
+    if (p.strategy !== "rule_based" && p.strategy !== "ml_filtered") return "";
+    if (!positionIndicators || !positionIndicators.available) return "";
+    const ind = positionIndicators.symbols ? positionIndicators.symbols[p.symbol] : null;
+    if (!ind) return "";
+    const threshold = ind.exit_threshold;
+    if (!ind.available || ind.pct_vs_sma20 === null || ind.pct_vs_sma20 === undefined) {
+      return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span>—</span></div>`;
+    }
+    const label = threshold !== null && threshold !== undefined
+      ? `${fmtPct(ind.pct_vs_sma20)} (sells at ${fmtPct(threshold)})`
+      : fmtPct(ind.pct_vs_sma20);
+    return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span class="${signClass(ind.pct_vs_sma20)}">${label}</span></div>`;
+  }
+
   function positionCard(p) {
     const pnl = p.unrealized_pl;
     const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
@@ -243,6 +268,7 @@
         <div class="position-card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
         <div class="position-card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
+        ${positionSmaRow(p)}
         <div class="position-card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPct(p.unrealized_plpc)})</div>
         <div class="position-card-hint">View price history →</div>
       </div>`;
@@ -369,9 +395,10 @@
       switchContentTab(hashTab);
     }
 
-    [dashboard, positions, trades, equity] = await Promise.all([
+    [dashboard, positions, positionIndicators, trades, equity] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
+      loadJson("position_indicators.json", { available: false, symbols: {} }),
       loadJson("trades.json", { available: false, trades: [] }),
       loadJson("equity.json", { available: false, points: [] }),
     ]);

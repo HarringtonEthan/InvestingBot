@@ -17,6 +17,48 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.4 - 2026-07-30
+
+- **Added a "vs 20-bar avg" reading to every rule_based/ml_filtered
+  position card** (Positions tab on index.html, and both positions
+  panels on charts.html), so it's visible at a glance how close a held
+  stock position is to its actual sell trigger without needing to check
+  GitHub Actions logs. `rule_based`/`ml_filtered` sell on a
+  mean-reversion recovery vs. the position's own trailing 20-period SMA
+  (`pct_below_sma20`, exactly the number `src/features.py`'s
+  `add_features()` computes and `.github/workflows/paper-trade-stocks.yml`
+  currently sells at `+2.00%` of) - not vs. entry price, so the existing
+  unrealized-P&L row on the card was never the right number for these
+  positions in the first place. `live_trade.py`'s `decide()` only ever
+  computes this for the `day_trading` branch, never for
+  `rule_based`/`ml_filtered`, which is exactly why the live stock
+  workflow's own logs have never shown it either - this reproduces the
+  number for the dashboard using the identical formula, independently of
+  that gap.
+- New `site_data.py` function `build_position_sma_indicators()` fetches
+  its own short, recent window of 5-minute bars ending right now (not
+  from the position's entry date, unlike the existing "price since
+  purchase" history) for each currently-open rule_based/ml_filtered
+  position, so a just-opened position still gets a legitimate trailing
+  SMA reading instead of an artificially-short one. day_trading (crypto)
+  positions are skipped entirely - their existing unrealized gain/loss
+  vs. entry is already the number that strategy's sell rule actually
+  checks, so a second reading would be redundant. Same best-effort,
+  never-crashes, per-symbol-isolated contract as
+  `build_position_price_histories`: one ticker's bars being unfetchable,
+  or not having 20 bars of trailing history yet, is recorded as that
+  symbol's own honest "unavailable" state and never blocks another
+  position's card. Written to a new `position_indicators.json`.
+- Cache-busting bumped to `?v=0.16.4`. 9 new tests cover
+  `build_position_sma_indicators` (not-requested/error/no-positions,
+  day_trading skipped, rule_based and ml_filtered both included, crypto
+  symbol conversion, insufficient-history honesty, per-symbol failure
+  isolation) - 191 tests total, all passing. Verified with Playwright
+  against synthetic fixture data on both pages: the new row renders with
+  the correct sign color and "sells at +2.00%" label for a rule_based
+  stock position, and is correctly absent for a day_trading crypto
+  position.
+
 ## Version Richards 0.16.3 - 2026-07-30
 
 - **Fixed the win/loss-per-ticker chart's tooltip always showing a green

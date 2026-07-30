@@ -10,7 +10,7 @@ richly, instead of a static image. Reads the same logs/*.csv files
 visualize_log.py already reads, so there's exactly one source of truth
 for "what actually happened," not a second copy that could drift.
 
-Writes five files into --out-dir (default site/data/):
+Writes six files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
     every slot-machine reel and stat tile on the page.
@@ -22,6 +22,15 @@ Writes five files into --out-dir (default site/data/):
     position_entry_timestamp) through now - only populated with
     --live-positions, same as positions.json above. Powers each position
     card's "price since purchase" chart on the website.
+  - position_indicators.json: for each currently open rule_based/
+    ml_filtered position, how far its current price sits above/below its
+    own trailing 20-period SMA (pct_below_sma20) and the exit threshold
+    that strategy sells at - the same "how close to selling" number
+    live_trade.py's decide() already computes for day_trading but never
+    for rule_based/ml_filtered (see build_position_sma_indicators).
+    Skips day_trading positions - their existing unrealized gain/loss vs
+    entry already serves that purpose. Only populated with
+    --live-positions, same as positions.json above.
   - trades.json: recent individual trade rows, each carrying its own
     order_status (confirmed_fill / submitted_unconfirmed / not_placed -
     see classify_order_status() below for why those are the only three
@@ -688,6 +697,106 @@ def build_position_price_histories(
     return {"available": True, "reason": None, "symbols": symbols_payload}
 
 
+# The live stock workflow's --exit-threshold (see
+# .github/workflows/paper-trade-stocks.yml) - rule_based/ml_filtered sell
+# when price recovers to this far *above* its own 20-period SMA. Not
+# read from the workflow file itself (that would need a YAML-parsing
+# dependency this project doesn't otherwise have just for a display
+# label); if that flag's value ever changes, this constant needs a
+# matching manual update, same as dip_threshold/profit_target elsewhere
+# in this file already require.
+RULE_BASED_EXIT_THRESHOLD = 0.02
+
+# Bar interval and lookback window used only to compute the *current*
+# pct_below_sma20 reading below - deliberately short and always ending
+# "now," unlike build_position_price_histories's since-entry fetch.
+# A position opened minutes ago still needs 20 bars of *trailing*
+# history before it, which its own short lifetime could never supply -
+# this window exists independent of when the position was opened.
+SMA_INDICATOR_BAR_INTERVAL = "5m"
+SMA_INDICATOR_LOOKBACK_DAYS = 10
+
+
+def build_position_sma_indicators(
+    live_positions_result: tuple[list[dict], str | None] | None,
+    trades_df: pd.DataFrame | None,
+) -> dict:
+    """
+    For each currently open rule_based/ml_filtered position, computes the
+    exact number that strategy's own sell rule is measured against:
+    pct_below_sma20, how far the current price sits above/below its own
+    trailing 20-period simple moving average (see src/features.py's
+    add_features - same formula, bit-for-bit). live_trade.py's decide()
+    only ever computes this for the day_trading branch, never for
+    rule_based/ml_filtered, so today the live logs never show a "how
+    close to selling" number for a held rule_based position - this
+    reproduces that missing number for the dashboard instead of the logs.
+
+    Deliberately skips day_trading positions: that strategy's sell rule
+    is instead measured against gain-vs-entry-price, which is exactly
+    the unrealized gain/loss the position card already displays - a
+    second number here would be redundant, not additive.
+
+    Same best-effort-per-symbol contract as build_position_price_histories:
+    one ticker's fetch failing (or not having 20 bars of trailing history
+    yet) never blocks another symbol's reading or the rest of this run.
+    """
+    if live_positions_result is None:
+        return {"available": False, "reason": "live position lookup not requested for this run", "symbols": {}}
+    positions, error = live_positions_result
+    if error is not None:
+        return {"available": False, "reason": error, "symbols": {}}
+    if not positions:
+        return {"available": True, "reason": None, "symbols": {}}
+
+    from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+    from src.features import add_features
+
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    start_date = (now_utc - dt.timedelta(days=SMA_INDICATOR_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    symbols_payload: dict[str, dict] = {}
+
+    for p in positions:
+        symbol = p["symbol"]
+        strategy = attribute_position_strategy(trades_df, symbol)
+        if strategy not in ("rule_based", "ml_filtered"):
+            continue
+
+        try:
+            if p["is_crypto"]:
+                df = get_crypto_bars_range(_crypto_alpaca_symbol(symbol), SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
+            else:
+                df = get_stock_bars_range(symbol, SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
+            pct_series = add_features(df)["pct_below_sma20"].dropna()
+            if pct_series.empty:
+                symbols_payload[symbol] = {
+                    "available": False,
+                    "reason": "not enough trailing bars yet to compute a 20-period average",
+                    "pct_vs_sma20": None,
+                    "exit_threshold": RULE_BASED_EXIT_THRESHOLD,
+                }
+            else:
+                symbols_payload[symbol] = {
+                    "available": True,
+                    "reason": None,
+                    "pct_vs_sma20": round(float(pct_series.iloc[-1]), 6),
+                    "exit_threshold": RULE_BASED_EXIT_THRESHOLD,
+                }
+        except Exception as e:
+            # Same non-blocking reasoning as build_position_price_histories:
+            # one symbol's bars being unfetchable is never a reason to
+            # drop every other position's reading.
+            symbols_payload[symbol] = {
+                "available": False,
+                "reason": f"{type(e).__name__}: {e}",
+                "pct_vs_sma20": None,
+                "exit_threshold": RULE_BASED_EXIT_THRESHOLD,
+            }
+
+    return {"available": True, "reason": None, "symbols": symbols_payload}
+
+
 def fetch_live_positions():
     """
     Returns (positions, error, cash, equity, buying_power) - error is
@@ -798,6 +907,9 @@ def main():
     position_history_payload = build_position_price_histories(live_result, trades_df)
     (out_dir / "position_history.json").write_text(json.dumps(position_history_payload, indent=2))
 
+    position_indicators_payload = build_position_sma_indicators(live_result, trades_df)
+    (out_dir / "position_indicators.json").write_text(json.dumps(position_indicators_payload, indent=2))
+
     if trades_df is not None and not trades_df.empty:
         recent = trades_df.sort_values("timestamp_utc", ascending=False).head(MAX_TRADES_PUBLISHED)
         trades_payload = {
@@ -838,7 +950,7 @@ def main():
         equity_payload = {"available": False, "points": []}
     (out_dir / "equity.json").write_text(json.dumps(equity_payload, indent=2))
 
-    print(f"Wrote dashboard/positions/position_history/trades/equity JSON to {out_dir}/")
+    print(f"Wrote dashboard/positions/position_history/position_indicators/trades/equity JSON to {out_dir}/")
 
 
 if __name__ == "__main__":

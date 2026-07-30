@@ -14,6 +14,7 @@ import pytest
 
 from site_data import (
     ET,
+    RULE_BASED_EXIT_THRESHOLD,
     _crypto_alpaca_symbol,
     _equity_value_asof,
     _max_drawdown,
@@ -21,6 +22,7 @@ from site_data import (
     _thin_points,
     attribute_position_strategy,
     build_position_price_histories,
+    build_position_sma_indicators,
     build_positions_payload,
     classify_order_status,
     dedupe_trades,
@@ -761,3 +763,117 @@ def test_position_history_per_symbol_failure_does_not_block_others(monkeypatch):
     assert "no stock bars" in result["symbols"]["AAPL"]["reason"]
     assert result["symbols"]["MSFT"]["available"] is True
     assert len(result["symbols"]["MSFT"]["points"]) == 2
+
+
+# ---- build_position_sma_indicators ----
+
+def _rising_bars(n: int, start_price: float = 100.0, step: float = 1.0) -> pd.DataFrame:
+    idx = pd.date_range("2026-07-01", periods=n, freq="5min", tz="UTC")
+    closes = [start_price + i * step for i in range(n)]
+    return pd.DataFrame({"Close": closes}, index=idx)
+
+
+def test_sma_indicators_not_requested():
+    result = build_position_sma_indicators(None, None)
+    assert result["available"] is False
+    assert result["symbols"] == {}
+
+
+def test_sma_indicators_alpaca_error_surfaces_reason_not_crash():
+    result = build_position_sma_indicators(([], "RuntimeError: no network access"), None)
+    assert result["available"] is False
+    assert "no network access" in result["reason"]
+
+
+def test_sma_indicators_no_open_positions():
+    result = build_position_sma_indicators(([], None), None)
+    assert result["available"] is True
+    assert result["symbols"] == {}
+
+
+def test_sma_indicators_skips_day_trading_positions(monkeypatch):
+    trades = _trades_df([{"ticker": "BTCUSD", "action": "BUY", "strategy": "day_trading"}])
+    positions = [{"symbol": "BTCUSD", "is_crypto": True}]
+
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("day_trading positions should never need a bars fetch here")
+
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", fail_if_called)
+    result = build_position_sma_indicators((positions, None), trades)
+    assert result["available"] is True
+    assert result["symbols"] == {}
+
+
+def test_sma_indicators_computes_pct_vs_sma20_for_rule_based(monkeypatch):
+    trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "strategy": "rule_based"}])
+    positions = [{"symbol": "AAPL", "is_crypto": False}]
+
+    def fake_stock_bars(symbol, interval, start, end):
+        assert symbol == "AAPL"
+        return _rising_bars(30)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_position_sma_indicators((positions, None), trades)
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["available"] is True
+    assert aapl["reason"] is None
+    # A steadily rising series sits *above* its own trailing average.
+    assert aapl["pct_vs_sma20"] > 0
+    assert aapl["exit_threshold"] == RULE_BASED_EXIT_THRESHOLD
+
+
+def test_sma_indicators_ml_filtered_also_included(monkeypatch):
+    trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "strategy": "ml_filtered"}])
+    positions = [{"symbol": "AAPL", "is_crypto": False}]
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _rising_bars(30))
+    result = build_position_sma_indicators((positions, None), trades)
+    assert result["symbols"]["AAPL"]["available"] is True
+
+
+def test_sma_indicators_crypto_symbol_conversion(monkeypatch):
+    trades = _trades_df([{"ticker": "BTCUSD", "action": "BUY", "strategy": "rule_based"}])
+    positions = [{"symbol": "BTCUSD", "is_crypto": True}]
+
+    def fake_crypto_bars(symbol, interval, start, end):
+        assert symbol == "BTC/USD"
+        return _rising_bars(30, start_price=60000.0, step=100.0)
+
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", fake_crypto_bars)
+    result = build_position_sma_indicators((positions, None), trades)
+    assert result["symbols"]["BTCUSD"]["available"] is True
+
+
+def test_sma_indicators_not_enough_history_is_honest_not_a_guess(monkeypatch):
+    trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "strategy": "rule_based"}])
+    positions = [{"symbol": "AAPL", "is_crypto": False}]
+
+    # Fewer than 20 bars - rolling(20).mean() is NaN for every row.
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _rising_bars(10))
+    result = build_position_sma_indicators((positions, None), trades)
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["available"] is False
+    assert aapl["pct_vs_sma20"] is None
+    assert aapl["exit_threshold"] == RULE_BASED_EXIT_THRESHOLD
+    assert "not enough" in aapl["reason"]
+
+
+def test_sma_indicators_per_symbol_failure_does_not_block_others(monkeypatch):
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "BUY", "strategy": "rule_based"},
+        {"ticker": "MSFT", "action": "BUY", "strategy": "rule_based"},
+    ])
+    positions = [
+        {"symbol": "AAPL", "is_crypto": False},
+        {"symbol": "MSFT", "is_crypto": False},
+    ]
+
+    def fake_stock_bars(symbol, interval, start, end):
+        if symbol == "AAPL":
+            raise RuntimeError("Alpaca returned no stock bars for AAPL")
+        return _rising_bars(30)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_position_sma_indicators((positions, None), trades)
+    assert result["symbols"]["AAPL"]["available"] is False
+    assert "no stock bars" in result["symbols"]["AAPL"]["reason"]
+    assert result["symbols"]["MSFT"]["available"] is True

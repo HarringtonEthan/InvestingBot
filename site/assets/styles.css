@@ -487,6 +487,12 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-card-pnl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 0.95rem; text-align: right; }
 .position-card-pnl.positive { color: var(--win); }
 .position-card-pnl.negative { color: var(--loss); }
+/* rule_based/ml_filtered "how close to selling" reading - visually set
+   apart from the plain Qty/Entry/Current/Value rows with a dashed
+   divider, since it's a derived signal rather than a raw account fact. */
+.position-card-sma { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 5px; }
+.position-card-sma span.positive { color: var(--win); }
+.position-card-sma span.negative { color: var(--loss); }
 .position-card-hint {
   margin-top: 8px;
   text-align: right;
