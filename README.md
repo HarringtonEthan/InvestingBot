@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.16.1
+# InvestingBot — Version Richards 0.16.2
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 180 passing](https://img.shields.io/badge/tests-180%20passing-4c9a2a)](tests/)

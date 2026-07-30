@@ -17,6 +17,31 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.2 - 2026-07-30
+
+- **Fixed a real layout bug in the header brand**: `.brand` is an
+  `inline-flex` container with a `gap` between its children - wrapping
+  "Bot" in its own `<span>` (to color it, in 0.16.0) meant the flexbox
+  gap started applying *between* the plain text "Investing" and that
+  span too, rendering as "Investing Bot" with an unintended space. Fixed
+  by wrapping the whole "InvestingBot" label in one `<span
+  class="brand-text">`, so the flex container only ever sees two
+  children (the logo image and the text block) - "Bot" stays green,
+  the gap goes back to being only between the logo and the text.
+- A few more small touches:
+  - Metric cards now carry the same trend-colored top border language
+    position cards already use (green/red border-top when that card's
+    own value is positive/negative, via a `:has()` selector - no JS
+    changes needed), tying the headline row's visual language to the
+    rest of the page.
+  - Positions/trade-history empty states get a deliberately-styled
+    dashed-border placeholder instead of plain unstyled text.
+  - A green accent underline on the trade table's header row.
+- Cache-busting bumped to `?v=0.16.2`. Verified with Playwright: brand
+  text content confirmed as one unbroken "InvestingBot" string, metric
+  card border colors confirmed programmatically against real rendered
+  values, full pytest suite (180 tests, unaffected) still passes.
+
 ## Version Richards 0.16.1 - 2026-07-30
 
 - **Fixed unreadable black legend text** on the account performance
