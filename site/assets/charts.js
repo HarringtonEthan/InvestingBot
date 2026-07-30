@@ -306,6 +306,30 @@
     },
   };
 
+  // A slightly brighter horizontal line at y=0 on any chart whose scale
+  // actually spans both positive and negative - the "breakeven" reference
+  // a gain/loss chart is implicitly measuring against, made explicit
+  // instead of left for the eye to find among the regular gridlines.
+  // No-ops (and costs nothing) on a chart that never crosses zero.
+  const zeroLinePlugin = {
+    id: "ibZeroLine",
+    beforeDatasetsDraw(chart) {
+      const y = chart.scales.y;
+      const area = chart.chartArea;
+      if (!y || !area || y.min >= 0 || y.max <= 0) return;
+      const py = y.getPixelForValue(0);
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(area.left, py);
+      ctx.lineTo(area.right, py);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,255,255,0.16)";
+      ctx.stroke();
+      ctx.restore();
+    },
+  };
+
   function baseOptions(meta, extra) {
     const multiDay = !!meta.multiDay;
     return Object.assign({
@@ -330,6 +354,16 @@
             // always a single solid box in the dataset's own color
             // (green/red for the equity line, each series' own color
             // elsewhere) with no border at all.
+            //
+            // fontColor must also be set explicitly on every returned
+            // item: a custom generateLabels bypasses Chart.js's own
+            // default-label construction (which is what normally copies
+            // labels.color onto each item), so without it Chart.js falls
+            // through to the canvas context's own default fillStyle -
+            // black - instead of this theme's actual legend text color.
+            // That's the exact bug that made every legend's text
+            // (equity chart, both win/loss bar charts) unreadable
+            // against the dark background.
             generateLabels(chart) {
               return chart.data.datasets.map((ds, i) => {
                 const color = ds.backgroundColor || ds.borderColor || COLORS.text;
@@ -337,6 +371,7 @@
                   text: ds.label,
                   fillStyle: color,
                   strokeStyle: color,
+                  fontColor: COLORS.text,
                   lineWidth: 0,
                   pointStyle: "rectRounded",
                   hidden: !chart.isDatasetVisible(i),
@@ -505,7 +540,7 @@
         }],
       },
       options: baseOptions(meta),
-      plugins: [crosshairPlugin],
+      plugins: [crosshairPlugin, zeroLinePlugin],
     });
     charts.equity.$ibMeta = meta;
     if (zoom) { charts.equity.options.scales.x.min = zoom.min; charts.equity.options.scales.x.max = zoom.max; charts.equity.update("none"); }
@@ -647,7 +682,7 @@
         }],
       },
       options: baseOptions(meta),
-      plugins: [crosshairPlugin],
+      plugins: [crosshairPlugin, zeroLinePlugin],
     });
     charts[chartKey].$ibMeta = meta;
     setSummary(chartId, `${label}: ${known.length} confirmed ${nice} sell${known.length === 1 ? "" : "s"}` +

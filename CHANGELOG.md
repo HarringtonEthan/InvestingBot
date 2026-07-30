@@ -17,6 +17,33 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.1 - 2026-07-30
+
+- **Fixed unreadable black legend text** on the account performance
+  chart ("Net gain/loss vs. $X baseline") and both win/loss bar charts
+  ("Wins"/"Losses") - the `generateLabels` override added in 0.16.0 to
+  fix the legend swatch's mismatched outline returned label objects
+  without a `fontColor`, so Chart.js fell through to the canvas
+  context's own default fill color (black) for the text instead of this
+  theme's actual legend color. Every legend now explicitly carries the
+  theme's grey (`#9aa5a0`), matching the rest of the page.
+- Three more small aesthetic touches:
+  - Chart.js's own default font (a generic sans-serif) is now set
+    globally to match the site's actual typeface (Inter), so chart text
+    reads consistently with the rest of the page instead of looking like
+    a pasted-in widget.
+  - A faint dashed reference line at the entry price on each position's
+    "since purchase" chart - the level its whole framing is measured
+    against, made explicit the same way the account/cumulative-P&L
+    charts already make their own $0 baseline explicit with a subtle
+    reference line where the scale actually crosses it.
+  - Subtle zebra striping on the trade history table's rows, for
+    readability on longer trade lists.
+- Cache-busting bumped to `?v=0.16.1`. Verified with Playwright: legend
+  text color confirmed programmatically (`fontColor` on every rendered
+  legend item) and visually via screenshot; full pytest suite (180
+  tests, unaffected) still passes.
+
 ## Version Richards 0.16.0 - 2026-07-30
 
 - **Added per-position "price since purchase" charts**, clickable from

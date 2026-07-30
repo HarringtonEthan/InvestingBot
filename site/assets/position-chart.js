@@ -20,6 +20,15 @@
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const COLORS = { green: "#34d372", red: "#f0554a", text: "#9aa5a0", grid: "rgba(255,255,255,0.06)" };
 
+  // Chart.js's own default font is a generic sans-serif that doesn't
+  // match the rest of the page (Inter) - set once, globally, here since
+  // this file loads right after the Chart.js CDN script on both pages,
+  // before any chart (this project's own or charts.js's) is built.
+  if (typeof Chart !== "undefined") {
+    Chart.defaults.font.family = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    Chart.defaults.color = COLORS.text;
+  }
+
   let historyData = null;
   let historyPromise = null;
   let chart = null;
@@ -150,6 +159,30 @@
       c.beginPath();
       c.moveTo(x, area.top);
       c.lineTo(x, area.bottom);
+      c.lineWidth = 1;
+      c.strokeStyle = "rgba(255,255,255,0.22)";
+      c.stroke();
+      c.restore();
+    },
+  };
+
+  // A faint dashed reference line at the entry price - the level this
+  // chart's whole "since purchase" framing is measured against, made
+  // explicit instead of left for the eye to find on the y-axis.
+  const entryLinePlugin = {
+    id: "positionEntryLine",
+    beforeDatasetsDraw(chartInstance) {
+      const yScale = chartInstance.scales.y;
+      const area = chartInstance.chartArea;
+      if (!yScale || !area || !isNum(currentEntryPrice)) return;
+      const py = yScale.getPixelForValue(currentEntryPrice);
+      if (py < area.top || py > area.bottom) return;
+      const c = chartInstance.ctx;
+      c.save();
+      c.beginPath();
+      c.setLineDash([4, 4]);
+      c.moveTo(area.left, py);
+      c.lineTo(area.right, py);
       c.lineWidth = 1;
       c.strokeStyle = "rgba(255,255,255,0.22)";
       c.stroke();
@@ -339,7 +372,7 @@
           },
         },
       },
-      plugins: [crosshairPlugin],
+      plugins: [crosshairPlugin, entryLinePlugin],
     });
 
     const changePct = first ? ((last / first) - 1) * 100 : null;

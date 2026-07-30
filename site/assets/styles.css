@@ -941,6 +941,7 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
   top: 0;
 }
 .data-table tbody tr { animation: card-in 0.4s ease both; transition: background 0.12s ease; }
+.data-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.028); }
 .data-table tbody tr:hover { background: var(--panel); }
 .data-table td.pnl-positive { color: var(--win); font-weight: 600; }
 .data-table td.pnl-negative { color: var(--loss); font-weight: 600; }
