@@ -169,6 +169,50 @@ def log_trade(row: dict):
     _append_row(TRADE_LOG_PATH, TRADE_LOG_FIELDS, row)
 
 
+def load_last_logged_rows(path: Path) -> dict[str, dict]:
+    """
+    Most recent trade_log.csv row (by file order, which is chronological
+    append order) for each ticker already logged - used by
+    is_duplicate_not_placed below to recognize when a "not placed" BUY/
+    SELL signal (market closed, circuit breaker active, insufficient
+    cash, an order already open) is the exact same one already on
+    record, not a new event. Returns {} if the log doesn't exist yet
+    (first run ever) rather than raising.
+    """
+    last_by_ticker: dict[str, dict] = {}
+    try:
+        with path.open("r", newline="") as f:
+            for row in csv.DictReader(f):
+                last_by_ticker[row["ticker"]] = row
+    except FileNotFoundError:
+        pass
+    return last_by_ticker
+
+
+def is_duplicate_not_placed(last_row: dict | None, ticker: str, action: str, notes: str) -> bool:
+    """
+    True when the immediately-preceding logged row for this exact ticker
+    already recorded this identical not-placed signal - same action,
+    same reason (notes), still never actually placed. Without this, a
+    real (non-HOLD) signal that fires every single 5-minute run while
+    the condition holds - most commonly a stock dip signal persisting
+    for hours while the market's simply closed - would log a fresh,
+    permanently git-committed row every run for as long as that holds,
+    even though nothing about the situation has actually changed since
+    the last one. Only ever consulted for a row that wasn't executed
+    (see main()) - a submitted or confirmed-fill row is always a
+    genuinely new event and is never deduped by this check.
+    """
+    if last_row is None:
+        return False
+    return (
+        last_row.get("ticker") == ticker
+        and last_row.get("action") == action
+        and last_row.get("order_placed") == "False"
+        and last_row.get("notes", "") == notes
+    )
+
+
 def _last_equity_values() -> tuple[str, str] | None:
     """Returns (portfolio_value_usd, cash_usd) from the last row of the
     equity log, or None if the file doesn't exist yet / has no data rows."""
@@ -593,6 +637,12 @@ def main():
     broker = Broker(allow_live=args.allow_live)
     mode = "PAPER" if broker.is_paper else "LIVE"
 
+    # Snapshot of each ticker's last logged row, taken once before any new
+    # rows are appended this run - see is_duplicate_not_placed's docstring
+    # for why this prevents an unchanging "not placed" signal from
+    # growing the log by one row every single cycle it persists.
+    last_logged_rows = load_last_logged_rows(TRADE_LOG_PATH)
+
     tickers = args.ticker
     decisions = []
     for ticker in tickers:
@@ -743,25 +793,40 @@ def main():
             # single time. Full per-run detail, including HOLDs, is still
             # visible in that run's GitHub Actions console log if you need it.
             if action != "HOLD":
-                log_trade({
-                    "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-                    "mode": mode,
-                    "asset_class": kind,
-                    "ticker": ticker,
-                    "strategy": args.strategy,
-                    "action": action,
-                    # 2 decimals rounds sub-$1 assets (e.g. DOGE at $0.07) down to
-                    # nothing - price_usd and avg_entry_price_usd need enough
-                    # precision to tell entry and exit price apart, since that
-                    # difference is exactly what realized P&L is computed from.
-                    "price_usd": f"{fill_price:.6f}",
-                    "notional_usd": f"{notional:.2f}" if notional is not None else "",
-                    "position_qty_before": decision["current_qty"],
-                    "avg_entry_price_usd": f"{decision['entry_price']:.6f}" if decision["entry_price"] else "",
-                    "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
-                    "order_placed": executed,
-                    "notes": fill_note,
-                })
+                if not executed and is_duplicate_not_placed(last_logged_rows.get(ticker), ticker, action, fill_note):
+                    # Same not-placed signal already on record for this
+                    # ticker (e.g. a dip signal that keeps firing every
+                    # 5-minute run purely because the market's been
+                    # closed for hours) - nothing's actually changed
+                    # since then, so skip adding another identical row.
+                    print(f"[{ticker}] Not logging - identical not-placed signal already recorded last run.")
+                else:
+                    new_row = {
+                        "timestamp_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                        "mode": mode,
+                        "asset_class": kind,
+                        "ticker": ticker,
+                        "strategy": args.strategy,
+                        "action": action,
+                        # 2 decimals rounds sub-$1 assets (e.g. DOGE at $0.07) down to
+                        # nothing - price_usd and avg_entry_price_usd need enough
+                        # precision to tell entry and exit price apart, since that
+                        # difference is exactly what realized P&L is computed from.
+                        "price_usd": f"{fill_price:.6f}",
+                        "notional_usd": f"{notional:.2f}" if notional is not None else "",
+                        "position_qty_before": decision["current_qty"],
+                        "avg_entry_price_usd": f"{decision['entry_price']:.6f}" if decision["entry_price"] else "",
+                        "unrealized_gain_pct": f"{decision['gain_pct'] * 100:.2f}" if decision["gain_pct"] is not None else "",
+                        "order_placed": executed,
+                        "notes": fill_note,
+                    }
+                    log_trade(new_row)
+                    # Keep this run's own in-memory snapshot current too,
+                    # in case a later ticker this same run needs it (not
+                    # expected in practice - each workflow's --ticker list
+                    # never repeats a symbol - but keeps this correct
+                    # rather than relying on that never changing).
+                    last_logged_rows[ticker] = {**new_row, "order_placed": str(executed)}
         except Exception as e:
             # Same reasoning as the decide() loop above - one ticker's
             # order placement or logging failing shouldn't stop the rest

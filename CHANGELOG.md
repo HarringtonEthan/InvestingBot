@@ -17,6 +17,33 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.5 - 2026-07-30
+
+- **Fixed trade-log spam from a repeated "not placed" signal**: a real
+  (non-HOLD) BUY/SELL decision that keeps firing every single 5-minute
+  run while its underlying condition holds - most visibly, a stock dip
+  signal that stays true for hours purely because the market is closed
+  overnight/weekends - used to add a fresh, permanently git-committed
+  row to `trade_log*.csv` on every one of those runs, even though
+  nothing about the situation had actually changed since the last one
+  (e.g. AAPL logging a new "Not Placed" BUY row every 5 minutes all
+  evening). `live_trade.py` now snapshots each ticker's most recently
+  logged row once at the start of a run and skips logging a new
+  not-placed row when it's identical to that snapshot (same ticker,
+  action, and reason, still never actually placed) - the first
+  occurrence of a new "not placed" state still gets logged, and logging
+  resumes normally the moment anything actually changes (market opens,
+  an order is really submitted, the reason changes). This applies to
+  every not-placed cause the same way (market closed, circuit breaker
+  active, insufficient cash, an order already open, no `--execute`
+  dry run) - none of those get row-per-run treatment anymore. A
+  submitted or confirmed-fill row is never deduped; those are always
+  genuinely new events.
+- New `load_last_logged_rows()`/`is_duplicate_not_placed()` in
+  `live_trade.py`. 8 new tests cover both directly (missing log file,
+  most-recent-row-per-ticker, and every reason two rows can legitimately
+  differ) - 199 tests total, all passing.
+
 ## Version Richards 0.16.4 - 2026-07-30
 
 - **Added a "vs 20-bar avg" reading to every rule_based/ml_filtered
