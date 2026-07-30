@@ -422,12 +422,21 @@ def summarize_period(
         # it - exactly what crashed this script's scheduled run. Still
         # counted in num_trades above (it's a real completed round trip),
         # just excluded here since there's nothing to rank it by.
+        #
+        # best_trade/worst_trade are populated independently, each only
+        # from the side of the ledger that actually supports the label:
+        # "Best Trade" only ever names a real winner, "Worst Trade" only
+        # ever names a real loser (or breakeven). Without this split, a
+        # day with exactly one trade - a loss - would show that same
+        # loss as both the "best" and "worst" trade, which reads as if
+        # something good happened when nothing did.
         known_pnl = confirmed_sells[confirmed_sells["realized_pnl_usd"].notna()]
-        if len(known_pnl):
-            best = known_pnl.loc[known_pnl["realized_pnl_usd"].idxmax()]
-            worst = known_pnl.loc[known_pnl["realized_pnl_usd"].idxmin()]
-            result["best_trade"] = _trade_summary(best)
-            result["worst_trade"] = _trade_summary(worst)
+        winners = known_pnl[known_pnl["realized_pnl_usd"] > 0]
+        losers = known_pnl[known_pnl["realized_pnl_usd"] <= 0]
+        if len(winners):
+            result["best_trade"] = _trade_summary(winners.loc[winners["realized_pnl_usd"].idxmax()])
+        if len(losers):
+            result["worst_trade"] = _trade_summary(losers.loc[losers["realized_pnl_usd"].idxmin()])
 
         result["num_buys"] = int((window["action"] == "BUY").sum())
         result["num_unconfirmed"] = int((window["order_status"] == "submitted_unconfirmed").sum())

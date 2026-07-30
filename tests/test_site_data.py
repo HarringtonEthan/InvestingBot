@@ -325,6 +325,41 @@ def test_win_loss_and_win_rate():
     assert result["worst_trade"]["realized_pnl_usd"] == -100.0
 
 
+def test_all_losing_trades_have_no_best_trade():
+    # A day with only losses (e.g. a single losing CAT sell) must not
+    # show that loss as "Best Trade" too - there's no real winner to
+    # report, so best_trade should be None while worst_trade still names
+    # the real loss.
+    trades = _trades_df([
+        {"ticker": "CAT", "action": "SELL", "price_usd": 90.0, "avg_entry_price_usd": 100.0, "position_qty_before": 10.0},
+    ])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = (trades["price_usd"] - trades["avg_entry_price_usd"]) * trades["position_qty_before"]
+
+    result = summarize_period("Today", None, dt.datetime(2026, 7, 28, 16, tzinfo=dt.timezone.utc), None, trades, None, None)
+    assert result["num_trades"] == 1
+    assert result["best_trade"] is None
+    assert result["worst_trade"]["ticker"] == "CAT"
+    assert result["worst_trade"]["realized_pnl_usd"] == -100.0
+
+
+def test_all_winning_trades_have_no_worst_trade():
+    # Mirror case: a day with only wins should not show one of those
+    # wins as "Worst Trade" either.
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "SELL", "price_usd": 110.0, "avg_entry_price_usd": 100.0, "position_qty_before": 10.0},
+    ])
+    trades["order_status"] = trades.apply(classify_order_status, axis=1)
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = (trades["price_usd"] - trades["avg_entry_price_usd"]) * trades["position_qty_before"]
+
+    result = summarize_period("Today", None, dt.datetime(2026, 7, 28, 16, tzinfo=dt.timezone.utc), None, trades, None, None)
+    assert result["num_trades"] == 1
+    assert result["best_trade"]["ticker"] == "AAPL"
+    assert result["worst_trade"] is None
+
+
 def test_confirmed_sell_with_no_computable_pnl_does_not_crash_best_worst():
     # Regression test for a real production crash (2026-07-29, see
     # CHANGELOG): a confirmed SELL whose avg_entry_price_usd came back
@@ -376,7 +411,10 @@ def test_confirmed_sell_with_unknown_pnl_does_not_hide_a_real_win():
     result = summarize_period("Today", None, dt.datetime(2026, 7, 29, 16, tzinfo=dt.timezone.utc), None, trades, None, None)
     assert result["num_trades"] == 2
     assert result["best_trade"]["realized_pnl_usd"] == 100.0
-    assert result["worst_trade"]["realized_pnl_usd"] == 100.0
+    # The only trade with a known P&L is a win - there's no real loser to
+    # report, so worst_trade must stay None rather than double-labeling
+    # that same win as the "worst" trade too.
+    assert result["worst_trade"] is None
 
 
 def test_stocks_vs_crypto_split_never_mixes_asset_classes():

@@ -17,6 +17,40 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.3 - 2026-07-30
+
+- **Fixed the win/loss-per-ticker chart's tooltip always showing a green
+  border**, regardless of whether the hovered ticker was actually a win
+  or a loss: `externalTooltip()`'s bar-chart branch never set the shared
+  `pointColor` variable the border reads, so it always fell through to
+  the CSS default (green). It now inspects which dataset(s) are actually
+  non-zero at the hovered ticker - a ticker that's pure losses (e.g.
+  CAT) now shows a red border, pure wins show green, an all-unknown-P&L
+  ticker shows gray, and a mixed ticker (some wins, some losses) is left
+  at the neutral default rather than picking one color arbitrarily. The
+  same fix also corrected the "Losses: N trades" row inside that
+  tooltip, which read as green text before this (a trade *count* is
+  never itself negative, so coloring it by sign always came out
+  positive) - rows are now colored by which dataset they belong to,
+  matching the bars and legend.
+- **Fixed "Best Trade" and "Worst Trade" both naming the same losing
+  trade** on a day with only losses (e.g. a single CAT loss showing up
+  as both the "best" and "worst" trade of the day, which reads as if
+  something good happened when nothing did). `best_trade` is now only
+  populated from trades with a real gain; `worst_trade` only from trades
+  with a real loss (or breakeven) - each field now only ever appears
+  when there's something real behind it, showing "—" otherwise. The
+  mirror case (an all-winning day showing one win as "Worst Trade") is
+  fixed the same way.
+- Cache-busting bumped to `?v=0.16.3`. Two new tests cover the all-loss
+  and all-win single-trade cases directly; one existing test's
+  expectation was corrected to match the fixed (not the buggy) behavior.
+  182 tests total, all passing. Verified with Playwright against
+  synthetic fixture data reproducing both reported bugs exactly (a
+  single CAT loss): confirmed the tooltip border and row text render
+  red, and confirmed "Best Trade" shows "—" while "Worst Trade" shows
+  the real CAT loss.
+
 ## Version Richards 0.16.2 - 2026-07-30
 
 - **Fixed a real layout bug in the header brand**: `.brand` is an

@@ -247,13 +247,34 @@
     } else {
       html += `<div class="tt-title">${model.title && model.title.length ? model.title[0] : (meta.title || "")}</div>`;
       html += `<div class="tt-rows">`;
+      // For a win/loss breakdown, the border should reflect which
+      // segment(s) are actually present at this ticker - a bar made
+      // entirely of losses (e.g. hovering CAT with 0 wins, 1 loss) must
+      // show red, not always fall back to the default green regardless
+      // of what's actually being hovered.
+      let hasWin = false, hasLoss = false, hasUnknown = false;
       model.dataPoints.forEach((dp) => {
         const raw = dp.raw;
         const fmt = meta.valueFormatter ? meta.valueFormatter(raw) : fmtUsdSigned(raw);
-        const cls = !isNum(raw) ? "muted" : raw >= 0 ? "positive" : "negative";
+        // This is a trade *count* per dataset (Wins/Losses/Unknown), never
+        // itself negative - coloring by raw >= 0 would make a "Losses: 1
+        // trade" row read as positive/green just because 1 isn't below
+        // zero. Color by which dataset the row belongs to instead, same
+        // as the bars and legend swatches already do.
+        const cls = !isNum(raw) ? "muted" : dp.dataset.label === "Losses" ? "negative" : dp.dataset.label === "Wins" ? "positive" : "muted";
         html += `<div class="tt-row"><span class="tt-label">${dp.dataset.label}</span><span class="tt-val ${cls}">${isNum(raw) ? fmt : "No recorded value"}</span></div>`;
+        if (isNum(raw) && raw > 0) {
+          if (dp.dataset.label === "Wins") hasWin = true;
+          else if (dp.dataset.label === "Losses") hasLoss = true;
+          else hasUnknown = true;
+        }
       });
       html += `</div>`;
+      if (hasLoss && !hasWin) pointColor = COLORS.red;
+      else if (hasWin && !hasLoss) pointColor = COLORS.green;
+      else if (hasUnknown && !hasWin && !hasLoss) pointColor = COLORS.gray;
+      // else: a mix of wins and losses at this ticker - no single color
+      // would be honest, so the border stays at its neutral default.
     }
     if (IS_TOUCH) {
       html += `<div class="tt-hint">${tooltipLocked ? "Tap elsewhere to dismiss" : "Tap a point to keep this open"}</div>`;
