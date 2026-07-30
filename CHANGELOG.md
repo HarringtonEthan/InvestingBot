@@ -17,6 +17,43 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.14.0 - 2026-07-30
+
+- **Visual redesign of the dashboard site** (`site/index.html`, `site/charts.html`,
+  `site/assets/styles.css`, new `site/assets/background.js`) - presentation-only,
+  no displayed information, calculations, filtering, or trading-dashboard
+  functionality changed. Every existing card, table, button, tab, and
+  disclaimer is unchanged in content and location.
+  - New lightweight canvas background (`assets/background.js`): sparse
+    slowly-drifting particles, faint connecting lines between nearby ones,
+    an occasional subtle rising/falling "ghost" market-line, and a small
+    cursor-eased parallax on desktop. Single `<canvas id="bg-canvas">`,
+    `pointer-events: none`, pauses while the tab is hidden, draws exactly
+    one static frame under `prefers-reduced-motion` (no rAF loop at all),
+    and scales particle count down on narrow/touch viewports.
+  - CSS-only additions to `styles.css`: a faint fixed technical/grid
+    overlay masked to fade out toward the edges, a second slow-drifting
+    pair of colour glows layered behind the existing static ambient
+    gradient, a soft radial glow seated behind the page heading, restrained
+    glass-panel treatment (backdrop-blur + inner highlight) on metric/
+    position/chart cards, richer hover/active/focus-visible states across
+    nav links, tabs, segmented controls, and the ghost button, a smooth
+    fade for the Overview/Positions/Trades panel switch, and a brief
+    fade-in for cards and table rows as they render. All of it extends the
+    existing `prefers-reduced-motion` override (already the site's
+    established pattern) rather than adding a second mechanism.
+  - Cache-busting `?v=` bumped to `0.14.0` across both HTML files so the
+    new assets aren't served stale from GitHub Pages/browser caches.
+  - Verified with Playwright at desktop/tablet/mobile widths and with
+    `prefers-reduced-motion` emulated: every existing tab, period filter,
+    range control, and deep link (`index.html#trades` etc.) still behaves
+    identically, no console errors from any of this project's own code,
+    and the full pytest suite (159 tests, untouched by this change) still
+    passes.
+  - To revert this redesign specifically, see commit `7702ebd` (the tip of
+    this branch immediately before it) - the four files above are the only
+    ones this change touched.
+
 ## Version Richards 0.13.7 - 2026-07-29
 
 - **Fixed a real backfill:** XOM and DIS's two sells (2026-07-29) had
