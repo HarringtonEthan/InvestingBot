@@ -14,14 +14,19 @@ import pytest
 
 from site_data import (
     ET,
+    _crypto_alpaca_symbol,
     _equity_value_asof,
     _max_drawdown,
+    _pick_bar_interval,
+    _thin_points,
     attribute_position_strategy,
+    build_position_price_histories,
     build_positions_payload,
     classify_order_status,
     dedupe_trades,
     find_account_relaunch,
     period_bounds,
+    position_entry_timestamp,
     summarize_period,
 )
 
@@ -537,3 +542,184 @@ def test_classify_order_status_handles_missing_notes_column():
 def test_classify_order_status_handles_missing_order_placed_column():
     row = pd.Series({"notes": ""})  # no "order_placed" key at all
     assert classify_order_status(row) == "not_placed"
+
+
+# ---- position_entry_timestamp: same rule as attribute_position_strategy,
+# just returning the timestamp instead of the strategy, so a position
+# card's chart start date can never disagree with its strategy label ----
+
+def test_entry_timestamp_is_the_most_recent_unmatched_buy():
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-27T12:00:00+00:00")},
+        {"ticker": "AAPL", "action": "SELL", "timestamp_utc": pd.Timestamp("2026-07-27T14:00:00+00:00")},
+        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-28T10:00:00+00:00")},
+    ])
+    assert position_entry_timestamp(trades, "AAPL") == pd.Timestamp("2026-07-28T10:00:00+00:00")
+
+
+def test_entry_timestamp_none_when_last_buy_was_already_sold():
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-27T12:00:00+00:00")},
+        {"ticker": "AAPL", "action": "SELL", "timestamp_utc": pd.Timestamp("2026-07-27T14:00:00+00:00")},
+    ])
+    assert position_entry_timestamp(trades, "AAPL") is None
+
+
+def test_entry_timestamp_none_for_unknown_ticker_or_missing_data():
+    assert position_entry_timestamp(None, "AAPL") is None
+    trades = _trades_df([{"ticker": "QQQ"}])
+    assert position_entry_timestamp(trades, "AAPL") is None
+
+
+# ---- _pick_bar_interval: coarser bars for a longer span ----
+
+@pytest.mark.parametrize("hours,expected", [
+    (5, "5m"),
+    (24, "5m"),
+    (24 * 3, "15m"),
+    (24 * 20, "1h"),
+    (24 * 90, "4h"),
+    (24 * 200, "1d"),
+])
+def test_pick_bar_interval_boundaries(hours, expected):
+    assert _pick_bar_interval(dt.timedelta(hours=hours)) == expected
+
+
+# ---- _thin_points: downsamples but always keeps the first and last bar ----
+
+def test_thin_points_keeps_all_when_under_the_cap():
+    df = pd.DataFrame({"Close": [1.0, 2.0, 3.0]}, index=pd.date_range("2026-07-01", periods=3, freq="1D", tz="UTC"))
+    points = _thin_points(df, max_points=300)
+    assert len(points) == 3
+    assert points[0]["price"] == 1.0
+    assert points[-1]["price"] == 3.0
+
+
+def test_thin_points_downsamples_but_keeps_first_and_last():
+    df = pd.DataFrame({"Close": list(range(1000))}, index=pd.date_range("2026-01-01", periods=1000, freq="5min", tz="UTC"))
+    points = _thin_points(df, max_points=50)
+    assert len(points) <= 51  # a small, bounded overshoot from always including the last real bar
+    assert points[0]["price"] == 0.0
+    assert points[-1]["price"] == 999.0
+
+
+def test_thin_points_empty_input():
+    assert _thin_points(None) == []
+    assert _thin_points(pd.DataFrame()) == []
+
+
+# ---- _crypto_alpaca_symbol: Alpaca's positions endpoint strips the "/"
+# from crypto symbols, but its bars endpoint needs it back ----
+
+@pytest.mark.parametrize("raw,expected", [
+    ("BTCUSD", "BTC/USD"),
+    ("DOGEUSD", "DOGE/USD"),
+    ("BTC/USD", "BTC/USD"),  # already correct - passed through unchanged
+])
+def test_crypto_alpaca_symbol_reinserts_slash(raw, expected):
+    assert _crypto_alpaca_symbol(raw) == expected
+
+
+# ---- build_position_price_histories: the "price since purchase" data
+# behind each position card's chart - mocked Alpaca fetch, no real
+# network calls in this test suite ----
+
+def test_position_history_not_requested():
+    result = build_position_price_histories(None, None)
+    assert result["available"] is False
+    assert result["symbols"] == {}
+
+
+def test_position_history_alpaca_error_surfaces_reason_not_crash():
+    result = build_position_price_histories(([], "RuntimeError: no network access"), None)
+    assert result["available"] is False
+    assert "no network access" in result["reason"]
+
+
+def test_position_history_no_open_positions():
+    result = build_position_price_histories(([], None), None)
+    assert result["available"] is True
+    assert result["symbols"] == {}
+
+
+def test_position_history_fetches_per_symbol_and_thins(monkeypatch):
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-20T10:00:00+00:00")},
+        {"ticker": "BTCUSD", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-25T10:00:00+00:00")},
+    ])
+    positions = [
+        {"symbol": "AAPL", "is_crypto": False},
+        {"symbol": "BTCUSD", "is_crypto": True},
+    ]
+
+    def fake_stock_bars(symbol, interval, start, end):
+        assert symbol == "AAPL"
+        idx = pd.date_range(start, periods=5, freq="1D", tz="UTC")
+        return pd.DataFrame({"Close": [200.0, 202.0, 205.0, 208.0, 210.0]}, index=idx)
+
+    def fake_crypto_bars(symbol, interval, start, end):
+        assert symbol == "BTC/USD"  # reconstructed from the positions endpoint's "BTCUSD"
+        idx = pd.date_range(start, periods=5, freq="1D", tz="UTC")
+        return pd.DataFrame({"Close": [60000.0, 61000.0, 60500.0, 61500.0, 62000.0]}, index=idx)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", fake_crypto_bars)
+
+    result = build_position_price_histories((positions, None), trades)
+    assert result["available"] is True
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["available"] is True
+    assert aapl["entry_is_estimated"] is False
+    assert aapl["entry_utc"] == "2026-07-20T10:00:00+00:00"
+    assert len(aapl["points"]) == 5
+    assert aapl["points"][0]["price"] == 200.0
+    assert aapl["points"][-1]["price"] == 210.0
+
+    btc = result["symbols"]["BTCUSD"]
+    assert btc["available"] is True
+    assert btc["points"][-1]["price"] == 62000.0
+
+
+def test_position_history_unknown_entry_falls_back_to_lookback_window(monkeypatch):
+    # No trade log at all for this ticker - entry date can't be
+    # determined, so it must fall back to a fixed recent window rather
+    # than fail or fabricate a start date.
+    positions = [{"symbol": "AAPL", "is_crypto": False}]
+    seen_start = {}
+
+    def fake_stock_bars(symbol, interval, start, end):
+        seen_start["start"] = start
+        idx = pd.date_range(start, periods=2, freq="1D", tz="UTC")
+        return pd.DataFrame({"Close": [100.0, 101.0]}, index=idx)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_position_price_histories((positions, None), None)
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["entry_utc"] is None
+    assert aapl["entry_is_estimated"] is True
+    assert aapl["available"] is True
+    assert "start" in seen_start
+
+
+def test_position_history_per_symbol_failure_does_not_block_others(monkeypatch):
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-20T10:00:00+00:00")},
+        {"ticker": "MSFT", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-20T10:00:00+00:00")},
+    ])
+    positions = [
+        {"symbol": "AAPL", "is_crypto": False},
+        {"symbol": "MSFT", "is_crypto": False},
+    ]
+
+    def fake_stock_bars(symbol, interval, start, end):
+        if symbol == "AAPL":
+            raise RuntimeError("Alpaca returned no stock bars for AAPL")
+        idx = pd.date_range(start, periods=2, freq="1D", tz="UTC")
+        return pd.DataFrame({"Close": [300.0, 305.0]}, index=idx)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_position_price_histories((positions, None), trades)
+    assert result["symbols"]["AAPL"]["available"] is False
+    assert "no stock bars" in result["symbols"]["AAPL"]["reason"]
+    assert result["symbols"]["MSFT"]["available"] is True
+    assert len(result["symbols"]["MSFT"]["points"]) == 2

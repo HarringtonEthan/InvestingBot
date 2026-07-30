@@ -318,7 +318,33 @@
           display: meta.forceLegend === true || (meta.series || []).length > 1,
           position: "top",
           align: "start",
-          labels: { color: COLORS.text, usePointStyle: true, pointStyle: "rectRounded", boxWidth: 10, boxHeight: 10, padding: 14, font: { size: 11 } },
+          labels: {
+            color: COLORS.text, usePointStyle: true, pointStyle: "rectRounded", boxWidth: 10, boxHeight: 10, padding: 14, font: { size: 11 },
+            // Chart.js's default usePointStyle swatch reads the dataset's
+            // *point* border/background (pointBorderColor etc.), which
+            // several of our datasets never set explicitly (they only
+            // style the line itself) - Chart.js then falls back to its
+            // own default point border, which showed up as a mismatched
+            // outline around the swatch that had nothing to do with the
+            // line's actual color. Overridden here so the swatch is
+            // always a single solid box in the dataset's own color
+            // (green/red for the equity line, each series' own color
+            // elsewhere) with no border at all.
+            generateLabels(chart) {
+              return chart.data.datasets.map((ds, i) => {
+                const color = ds.backgroundColor || ds.borderColor || COLORS.text;
+                return {
+                  text: ds.label,
+                  fillStyle: color,
+                  strokeStyle: color,
+                  lineWidth: 0,
+                  pointStyle: "rectRounded",
+                  hidden: !chart.isDatasetVisible(i),
+                  datasetIndex: i,
+                };
+              });
+            },
+          },
           // Chart.js's default legend click toggles that dataset's
           // visibility - fine with several series, but on a
           // single-series chart (e.g. the equity line) it hides the
@@ -684,8 +710,12 @@
   function positionCard(p) {
     const pnl = p.unrealized_pl;
     const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
+    // data-symbol/data-is-crypto let assets/position-chart.js (a separate,
+    // shared script) open a "price since purchase" chart for this exact
+    // position on click - same markup contract as index.html's own
+    // positionCard() in dashboard.js, so one shared script handles both.
     return `
-      <div class="position-card ${trend}">
+      <div class="position-card ${trend}" data-symbol="${p.symbol}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="position-card-head">
           <span class="position-card-ticker">${p.symbol}</span>
           <span class="position-card-strategy">${p.strategy || "unknown"}</span>
@@ -695,6 +725,7 @@
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
         <div class="position-card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
         <div class="position-card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPctSigned(p.unrealized_plpc * 100)})</div>
+        <div class="position-card-hint">View price history →</div>
       </div>`;
   }
 
@@ -751,6 +782,16 @@
       if (tooltipLocked && e.target.tagName !== "CANVAS") { tooltipLocked = false; hideTooltip(); }
     });
     window.addEventListener("resize", () => { hideTooltip(); tooltipLocked = false; });
+
+    const backToTop = document.getElementById("back-to-top");
+    if (backToTop) {
+      window.addEventListener("scroll", () => {
+        backToTop.classList.toggle("is-visible", window.scrollY > 600);
+      }, { passive: true });
+      backToTop.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
+      });
+    }
 
     setupScrollReveal();
     load();

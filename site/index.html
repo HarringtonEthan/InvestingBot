@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>InvestingBot — Live Trading Dashboard</title>
 <meta name="description" content="Live performance dashboard for a real automated paper-trading bot.">
-<link rel="stylesheet" href="assets/styles.css?v=0.15.0">
+<link rel="stylesheet" href="assets/styles.css?v=0.16.0">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
 <body class="is-loading">
@@ -16,7 +16,7 @@
 
 <header class="site-header">
   <div class="site-header-inner">
-    <a class="brand" href="index.html"><img class="brand-mark" src="assets/logo.svg" alt="" width="22" height="30">InvestingBot</a>
+    <a class="brand" href="index.html"><img class="brand-mark" src="assets/logo.svg" alt="" width="22" height="30">Investing<span class="brand-accent">Bot</span></a>
     <nav class="main-nav" aria-label="Dashboard sections">
       <button class="main-nav-link content-tab-btn active" data-tab="overview" type="button">Overview</button>
       <button class="main-nav-link content-tab-btn" data-tab="positions" type="button">Positions</button>
@@ -131,7 +131,9 @@
 
 </main>
 
-<script src="assets/background.js?v=0.15.0"></script>
-<script src="assets/dashboard.js?v=0.15.0"></script>
+<script src="assets/background.js?v=0.16.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="assets/position-chart.js?v=0.16.0"></script>
+<script src="assets/dashboard.js?v=0.16.0"></script>
 </body>
 </html>

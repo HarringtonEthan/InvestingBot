@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Performance Charts — InvestingBot</title>
 <meta name="description" content="Interactive trading charts for a real paper-trading bot - net gain/loss, cumulative realized P&L, win/loss per ticker, open positions.">
-<link rel="stylesheet" href="assets/styles.css?v=0.15.0">
+<link rel="stylesheet" href="assets/styles.css?v=0.16.0">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
 <body>
@@ -16,7 +16,7 @@
 
 <header class="site-header">
   <div class="site-header-inner">
-    <a class="brand" href="index.html"><img class="brand-mark" src="assets/logo.svg" alt="" width="22" height="30">InvestingBot</a>
+    <a class="brand" href="index.html"><img class="brand-mark" src="assets/logo.svg" alt="" width="22" height="30">Investing<span class="brand-accent">Bot</span></a>
     <nav class="main-nav" aria-label="Dashboard sections">
       <a class="main-nav-link" href="index.html#overview">Overview</a>
       <a class="main-nav-link" href="index.html#positions">Positions</a>
@@ -117,9 +117,11 @@
 </main>
 
 <div id="chart-tooltip" role="tooltip" aria-hidden="true"></div>
+<button type="button" id="back-to-top" class="back-to-top" aria-label="Back to top">↑</button>
 
-<script src="assets/background.js?v=0.15.0"></script>
+<script src="assets/background.js?v=0.16.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="assets/charts.js?v=0.15.0"></script>
+<script src="assets/position-chart.js?v=0.16.0"></script>
+<script src="assets/charts.js?v=0.16.0"></script>
 </body>
 </html>

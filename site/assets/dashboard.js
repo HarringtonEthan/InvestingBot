@@ -229,8 +229,12 @@
     const pnl = p.unrealized_pl;
     const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
     const strategyLabel = p.strategy || "unknown";
+    // data-symbol/data-is-crypto let assets/position-chart.js (a separate,
+    // shared script - see that file) open a "price since purchase" chart
+    // for this exact position on click, without this render function
+    // needing to know anything about that feature itself.
     return `
-      <div class="position-card ${trend}">
+      <div class="position-card ${trend}" data-symbol="${p.symbol}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="position-card-head">
           <span class="position-card-ticker">${p.symbol}</span>
           <span class="position-card-strategy">${strategyLabel}</span>
@@ -240,6 +244,7 @@
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
         <div class="position-card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
         <div class="position-card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPct(p.unrealized_plpc)})</div>
+        <div class="position-card-hint">View price history →</div>
       </div>`;
   }
 

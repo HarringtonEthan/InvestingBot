@@ -17,6 +17,68 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.0 - 2026-07-30
+
+- **Added per-position "price since purchase" charts**, clickable from
+  any open position card on both the Positions tab (index.html) and the
+  Charts page's positions panels:
+  - `site_data.py` now fetches real historical closing prices (Alpaca's
+    existing `get_crypto_bars_range`/`get_stock_bars_range` - the same
+    functions this project already uses for backtesting, no new data
+    source) for every currently open position, from that position's own
+    entry date through now, and publishes them to a new
+    `site/data/position_history.json`. Entry date is derived from the
+    trade log by the exact same rule `attribute_position_strategy`
+    already uses (the most recent BUY with no later SELL), refactored
+    into a shared `_last_open_buy_row` helper so the two can never
+    disagree about which BUY a position traces back to. A position whose
+    entry date can't be determined falls back to a 90-day lookback
+    window rather than guessing or refusing to show anything; a
+    per-symbol fetch failure is recorded as that symbol's own honest
+    "unavailable" state and never blocks any other position's chart or
+    the rest of the site's data. Bar interval (5m/15m/1h/4h/1d) is picked
+    by how far back the range goes, and points are thinned to a bounded
+    count so the file stays small regardless of interval. Only reachable
+    with `--live-positions` (same opt-in flag positions.json already
+    uses) and only imports alpaca-py then. 21 new tests, all against
+    monkeypatched Alpaca calls - no real network access in CI.
+  - New shared `site/assets/position-chart.js`, loaded by both pages:
+    delegates clicks/Enter/Space on any `.position-card[data-symbol]`
+    (added to both dashboard.js's and charts.js's own `positionCard()`
+    templates) to open a modal with a Chart.js line chart of that
+    symbol's real price history, colored green/red by net direction with
+    the same per-segment coloring and custom crosshair/tooltip treatment
+    the account performance chart already uses (reusing the exact same
+    `#chart-tooltip` element/CSS, created on demand on pages that don't
+    already declare one). Escape/backdrop-click/close-button dismiss it;
+    focus returns to the card that opened it. Honest empty states for
+    "feature not enabled this run," "fetch failed for this symbol," and
+    "not enough points yet" - never a fabricated or interpolated chart.
+- **Fixed the equity chart's legend swatch**: Chart.js's `usePointStyle`
+  legend reads a dataset's *point* border/background styling, which this
+  project's line datasets never set explicitly (only the line itself is
+  styled) - Chart.js then fell back to its own default point border,
+  which showed up as a mismatched outline around the legend's colored
+  square that had nothing to do with the line's actual color. A
+  `generateLabels` override now makes every chart's legend swatch a
+  single solid box in the dataset's own color with no border at all - on
+  the account performance chart this reads as a plain green or red
+  square, matching the line and the account's actual current direction.
+- **Colored "Bot" in the header brand** (`InvestingBot`) in the site's
+  accent green, on both pages.
+- A couple of small additional touches: a "View price history →" hint
+  on every position card (discoverability for the feature above,
+  brightens on hover/focus) and a floating back-to-top button on
+  charts.html once scrolled past the fold.
+- Cache-busting bumped to `?v=0.16.0`. Verified with Playwright
+  (desktop/mobile, reduced-motion, keyboard-only interaction) against
+  real mocked position/price data: opening/closing the modal via mouse
+  and keyboard, focus return, both up and down positions, an
+  intentionally-unavailable symbol's honest error state, and every
+  pre-existing interaction (tabs, period filters, range control,
+  deep links) all still behave identically. Full pytest suite: 180
+  passing (159 before this version, 21 new).
+
 ## Version Richards 0.15.0 - 2026-07-30
 
 - **Second visual-polish pass on the dashboard site**, again presentation-

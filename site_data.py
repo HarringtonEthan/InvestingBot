@@ -10,13 +10,18 @@ richly, instead of a static image. Reads the same logs/*.csv files
 visualize_log.py already reads, so there's exactly one source of truth
 for "what actually happened," not a second copy that could drift.
 
-Writes four files into --out-dir (default site/data/):
+Writes five files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
     every slot-machine reel and stat tile on the page.
   - positions.json: current open positions (crypto + stocks), only
     populated with --live-positions (same opt-in flag visualize_log.py
     already uses) - a read-only Alpaca query, never an order.
+  - position_history.json: real historical closing prices per currently
+    open position, from that position's own entry date (see
+    position_entry_timestamp) through now - only populated with
+    --live-positions, same as positions.json above. Powers each position
+    card's "price since purchase" chart on the website.
   - trades.json: recent individual trade rows, each carrying its own
     order_status (confirmed_fill / submitted_unconfirmed / not_placed -
     see classify_order_status() below for why those are the only three
@@ -463,17 +468,16 @@ def _bucket_summary(sells: pd.DataFrame) -> dict:
     }
 
 
-def attribute_position_strategy(trades_df: pd.DataFrame | None, ticker: str) -> str | None:
+def _last_open_buy_row(trades_df: pd.DataFrame | None, ticker: str) -> pd.Series | None:
     """
-    Best-effort guess at which strategy currently holds a given open
-    position: the most recent BUY logged for this ticker, as long as no
-    SELL has been logged for it since (a SELL after that BUY would mean
-    the position shown live isn't the one that BUY opened - e.g. it was
-    closed and manually re-bought outside the bot). Alpaca's own position
-    data has no concept of "strategy" at all (that's purely this
-    project's own bookkeeping), so None ("unknown") is the honest answer
-    whenever the trade log doesn't clearly support a better one - never
-    guessed from the ticker alone.
+    The most recent BUY logged for this ticker, as long as no SELL has
+    been logged for it since (a SELL after that BUY would mean the
+    position shown live isn't the one that BUY opened - e.g. it was
+    closed and manually re-bought outside the bot). Returns None if the
+    trade log doesn't clearly support one - shared by
+    attribute_position_strategy (which strategy opened this position) and
+    position_entry_timestamp (when it was opened), so the two can never
+    disagree about which BUY row a given open position traces back to.
     """
     if trades_df is None or trades_df.empty:
         return None
@@ -483,11 +487,39 @@ def attribute_position_strategy(trades_df: pd.DataFrame | None, ticker: str) -> 
     last_buy = ticker_rows[ticker_rows["action"] == "BUY"]
     if last_buy.empty:
         return None
-    last_buy_ts = last_buy.iloc[-1]["timestamp_utc"]
-    later_sell = ticker_rows[(ticker_rows["action"] == "SELL") & (ticker_rows["timestamp_utc"] > last_buy_ts)]
+    last_buy_row = last_buy.iloc[-1]
+    later_sell = ticker_rows[(ticker_rows["action"] == "SELL") & (ticker_rows["timestamp_utc"] > last_buy_row["timestamp_utc"])]
     if not later_sell.empty:
         return None
-    return last_buy.iloc[-1]["strategy"]
+    return last_buy_row
+
+
+def attribute_position_strategy(trades_df: pd.DataFrame | None, ticker: str) -> str | None:
+    """
+    Best-effort guess at which strategy currently holds a given open
+    position (see _last_open_buy_row for the exact rule). Alpaca's own
+    position data has no concept of "strategy" at all (that's purely this
+    project's own bookkeeping), so None ("unknown") is the honest answer
+    whenever the trade log doesn't clearly support a better one - never
+    guessed from the ticker alone.
+    """
+    row = _last_open_buy_row(trades_df, ticker)
+    return row["strategy"] if row is not None else None
+
+
+def position_entry_timestamp(trades_df: pd.DataFrame | None, ticker: str) -> pd.Timestamp | None:
+    """
+    When the currently-open position in `ticker` was opened, by the exact
+    same rule attribute_position_strategy uses - so a position card's
+    "since purchase" chart start date can never disagree with the
+    strategy label shown right next to it. None means the trade log
+    doesn't clearly support a single answer (e.g. multiple buy/sell
+    cycles with no unambiguous last opening), not that the position has
+    no history at all - callers should fall back to a fixed recent
+    lookback window rather than guess.
+    """
+    row = _last_open_buy_row(trades_df, ticker)
+    return pd.Timestamp(row["timestamp_utc"]) if row is not None else None
 
 
 def build_positions_payload(live_positions_result: tuple[list[dict], str | None] | None, trades_df: pd.DataFrame | None) -> dict:
@@ -507,6 +539,144 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
     for p in positions:
         enriched.append({**p, "strategy": attribute_position_strategy(trades_df, p["symbol"])})
     return {"available": True, "reason": None, "positions": enriched}
+
+
+# How far back to look when a position's entry date can't be determined
+# from the trade log (see position_entry_timestamp) - a reasonable
+# "recent history" window rather than refusing to show a chart at all.
+FALLBACK_LOOKBACK_DAYS = 90
+# Cap on published points per symbol - keeps position_history.json small
+# regardless of how fine-grained the chosen bar interval is.
+MAX_POINTS_PER_SYMBOL = 300
+
+
+def _pick_bar_interval(span: dt.timedelta) -> str:
+    """
+    Coarser bars for a longer span, so a position held for months doesn't
+    request tens of thousands of 1-minute bars just to end up thinned
+    back down anyway - matches the interval strings src/alpaca_data.py's
+    _INTERVAL_MAP already understands.
+    """
+    days = span.total_seconds() / 86400
+    if days <= 1:
+        return "5m"
+    if days <= 7:
+        return "15m"
+    if days <= 30:
+        return "1h"
+    if days <= 120:
+        return "4h"
+    return "1d"
+
+
+def _thin_points(df: pd.DataFrame, max_points: int = MAX_POINTS_PER_SYMBOL) -> list[dict]:
+    """
+    Downsamples a Close-price DataFrame to at most `max_points` rows for
+    publishing, always keeping the very first and very last real bar
+    (the two points a "since purchase" chart most needs to be honest
+    about: what it was actually worth at entry, and what it's actually
+    worth right now) rather than an even stride that could drop either.
+    """
+    if df is None or df.empty:
+        return []
+    n = len(df)
+    if n > max_points:
+        step = max(1, n // max_points)
+        keep_idx = sorted(set(range(0, n, step)) | {n - 1})
+        df = df.iloc[keep_idx]
+    return [
+        {"t": pd.Timestamp(ts).isoformat(), "price": round(float(row["Close"]), 6)}
+        for ts, row in df.iterrows()
+    ]
+
+
+def _crypto_alpaca_symbol(symbol: str) -> str:
+    """
+    Alpaca's positions endpoint returns crypto symbols without the "/"
+    (e.g. "BTCUSD" - see broker.py's get_all_positions), but its bars
+    endpoint needs the slash form ("BTC/USD"). Every pair this project
+    trades quotes in USD (see src/symbols.py), so reinserting the slash
+    before a trailing "USD" round-trips correctly without needing a
+    hardcoded list of bases.
+    """
+    if "/" in symbol:
+        return symbol
+    if symbol.endswith("USD") and len(symbol) > 3:
+        return f"{symbol[:-3]}/USD"
+    return symbol
+
+
+def build_position_price_histories(
+    live_positions_result: tuple[list[dict], str | None] | None,
+    trades_df: pd.DataFrame | None,
+) -> dict:
+    """
+    For each currently open position, fetches real historical closing
+    prices from Alpaca from the position's entry date (see
+    position_entry_timestamp) through now - the data behind the "price
+    since purchase" chart on a position card. Best-effort per symbol: a
+    fetch failure for one ticker (rate limit, an unsupported/new symbol,
+    a network blip) is recorded as that symbol's own "unavailable" state
+    and never blocks the rest of this function or the rest of site_data's
+    output. Same opt-in reasoning as fetch_live_positions: only reachable
+    when --live-positions was passed, and only imports alpaca-py then.
+    """
+    if live_positions_result is None:
+        return {"available": False, "reason": "live position lookup not requested for this run", "symbols": {}}
+    positions, error = live_positions_result
+    if error is not None:
+        return {"available": False, "reason": error, "symbols": {}}
+    if not positions:
+        return {"available": True, "reason": None, "symbols": {}}
+
+    from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    symbols_payload: dict[str, dict] = {}
+
+    for p in positions:
+        symbol = p["symbol"]
+        is_crypto = p["is_crypto"]
+        entry_ts = position_entry_timestamp(trades_df, symbol)
+        entry_is_estimated = entry_ts is None
+        start_dt = entry_ts.to_pydatetime() if entry_ts is not None else (now_utc - dt.timedelta(days=FALLBACK_LOOKBACK_DAYS))
+        if start_dt.tzinfo is None:
+            start_dt = start_dt.replace(tzinfo=dt.timezone.utc)
+        # A position opened moments ago would otherwise request an
+        # empty/invalid (start == end) range.
+        if (now_utc - start_dt) < dt.timedelta(hours=1):
+            start_dt = now_utc - dt.timedelta(hours=1)
+        interval = _pick_bar_interval(now_utc - start_dt)
+        start_date = start_dt.strftime("%Y-%m-%d")
+
+        try:
+            if is_crypto:
+                df = get_crypto_bars_range(_crypto_alpaca_symbol(symbol), interval, start_date, end_date)
+            else:
+                df = get_stock_bars_range(symbol, interval, start_date, end_date)
+            symbols_payload[symbol] = {
+                "available": True,
+                "reason": None,
+                "entry_utc": entry_ts.isoformat() if entry_ts is not None else None,
+                "entry_is_estimated": entry_is_estimated,
+                "interval": interval,
+                "points": _thin_points(df),
+            }
+        except Exception as e:
+            # A single symbol's history not being fetchable (e.g. Alpaca
+            # has no bars yet for a just-listed ticker) is never a reason
+            # to drop every other position's chart.
+            symbols_payload[symbol] = {
+                "available": False,
+                "reason": f"{type(e).__name__}: {e}",
+                "entry_utc": entry_ts.isoformat() if entry_ts is not None else None,
+                "entry_is_estimated": entry_is_estimated,
+                "interval": None,
+                "points": [],
+            }
+
+    return {"available": True, "reason": None, "symbols": symbols_payload}
 
 
 def fetch_live_positions():
@@ -616,6 +786,9 @@ def main():
     positions_payload = build_positions_payload(live_result, trades_df)
     (out_dir / "positions.json").write_text(json.dumps(positions_payload, indent=2))
 
+    position_history_payload = build_position_price_histories(live_result, trades_df)
+    (out_dir / "position_history.json").write_text(json.dumps(position_history_payload, indent=2))
+
     if trades_df is not None and not trades_df.empty:
         recent = trades_df.sort_values("timestamp_utc", ascending=False).head(MAX_TRADES_PUBLISHED)
         trades_payload = {
@@ -656,7 +829,7 @@ def main():
         equity_payload = {"available": False, "points": []}
     (out_dir / "equity.json").write_text(json.dumps(equity_payload, indent=2))
 
-    print(f"Wrote dashboard/positions/trades/equity JSON to {out_dir}/")
+    print(f"Wrote dashboard/positions/position_history/trades/equity JSON to {out_dir}/")
 
 
 if __name__ == "__main__":

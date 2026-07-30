@@ -163,6 +163,7 @@ body::after {
   color: var(--text);
 }
 .brand:hover { text-decoration: none; color: var(--text); }
+.brand-accent { color: var(--accent); }
 .brand-mark {
   width: 22px;
   height: 30px;
@@ -455,8 +456,12 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 1px 3px rgba(0,0,0,0.3);
   transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   animation: card-in 0.45s ease both;
+  /* Clickable - opens a "price since purchase" chart, see
+     assets/position-chart.js */
+  cursor: pointer;
 }
-.position-card:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 20px rgba(0,0,0,0.35); }
+.position-card:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 20px rgba(0,0,0,0.35); border-color: var(--border-strong); }
+.position-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .position-card.trend-up { border-top-color: var(--win); }
 .position-card.trend-up:hover { box-shadow: 0 8px 20px rgba(52,211,114,0.12); }
 .position-card.trend-down { border-top-color: var(--loss); }
@@ -474,11 +479,104 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-card-pnl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 0.95rem; text-align: right; }
 .position-card-pnl.positive { color: var(--win); }
 .position-card-pnl.negative { color: var(--loss); }
+.position-card-hint {
+  margin-top: 8px;
+  text-align: right;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  transition: color 0.15s ease;
+}
+.position-card:hover .position-card-hint,
+.position-card:focus-visible .position-card-hint { color: var(--accent); }
 
 .empty-state {
   color: var(--text-dim);
   font-size: 0.88rem;
   padding: 14px 0;
+}
+
+/* ==========================================================================
+   Position "price since purchase" modal (assets/position-chart.js) -
+   opened by clicking any position card on either page. Built entirely
+   in JS (one shared DOM instance, reused across opens) so neither
+   index.html nor charts.html needs its own copy of this markup.
+   ========================================================================== */
+
+.position-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5,7,6,0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: modal-fade-in 0.18s ease both;
+}
+.position-modal-backdrop[hidden] { display: none; }
+@keyframes modal-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+.position-modal {
+  position: relative;
+  width: min(640px, 100%);
+  max-height: min(560px, 88vh);
+  overflow-y: auto;
+  background: linear-gradient(165deg, var(--panel-strong), var(--bg-soft));
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 24px 24px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  animation: modal-pop-in 0.22s cubic-bezier(.2,.8,.2,1) both;
+}
+.position-modal.trend-up { border-top-color: var(--win); }
+.position-modal.trend-down { border-top-color: var(--loss); }
+@keyframes modal-pop-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.position-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.position-modal-close:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-strong); }
+.position-modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.position-modal-head { padding-right: 40px; margin-bottom: 16px; }
+.position-modal-title { font-size: 1.3rem; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
+.position-modal-sub { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
+
+.position-modal-canvas-wrap { height: 280px; }
+.position-modal-empty {
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+body.position-modal-open { overflow: hidden; }
+
+@media (max-width: 640px) {
+  .position-modal { padding: 20px 18px 16px; }
+  .position-modal-canvas-wrap { height: 220px; }
 }
 
 /* Loading skeleton - purely CSS, no JS state to manage: these grid
@@ -754,7 +852,7 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
 /* ---- custom chart tooltip (Chart.js external handler renders here) ---- */
 #chart-tooltip {
   position: fixed;
-  z-index: 60;
+  z-index: 110;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.12s ease;
@@ -867,6 +965,31 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
   border-top: 1px solid var(--border);
 }
 .site-footer code { color: var(--text-dim); background: var(--panel); padding: 1px 6px; border-radius: 4px; }
+
+.back-to-top {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 40;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--panel-strong);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.35);
+  opacity: 0;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease, border-color 0.15s ease;
+}
+.back-to-top.is-visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+.back-to-top:hover { border-color: var(--accent-dim); color: var(--accent); }
+.back-to-top:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ==========================================================================
    Responsive
