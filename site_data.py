@@ -21,8 +21,10 @@ Writes eight files into --out-dir (default site/data/):
     "BTCUSD" symbol - see _position_ticker) so the frontend's click-to-
     chart feature can key straight into ticker_charts.json below without
     reimplementing that conversion in JS. Also carries a small "spark"
-    array (~20 sampled recent daily closes, see _sparkline_closes) for
-    the card's own inline sparkline - small enough to publish
+    array (~20 sampled points of the rolling 20-bar/5-minute average over
+    time, see _sparkline_closes - the same average build_position_sma_
+    indicators already reports as a single current reading) for the
+    card's own inline sparkline - small enough to publish
     unconditionally, unlike ticker_charts.json's full range data below.
   - position_indicators.json: for each currently open rule_based/
     ml_filtered position, how far its current price sits above/below its
@@ -55,10 +57,11 @@ Writes eight files into --out-dir (default site/data/):
     trailing 100-day SMA, trailing 20-period/5-minute SMA (the same
     signal rule_based/ml_filtered's own sell rule is measured against,
     computed here for every watched ticker rather than only currently-
-    held ones), a small "spark" array for its own card sparkline (the
-    tail of the same 100-day-SMA fetch above, no second fetch needed),
-    and whether it's currently held (and if so, in profit or at a loss)
-    - see build_ticker_tracker. Only populated with --live-positions,
+    held ones), a small "spark" array plotting that same rolling 20-bar
+    average over time for its own card sparkline (free - no second
+    fetch, reuses the df already fetched for the 20-period reading right
+    above it), and whether it's currently held (and if so, in profit or
+    at a loss) - see build_ticker_tracker. Only populated with --live-positions,
     same as positions.json above.
   - ticker_charts.json: per-ticker price history behind every card's
     click-to-expand chart sitewide - the Ticker Tracker tab AND every
@@ -671,10 +674,16 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
         return {"available": False, "reason": error, "positions": []}
 
     from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+    from src.features import add_features
     from src.symbols import resolve_symbol
 
     now_utc = dt.datetime.now(dt.timezone.utc)
-    start_date = (now_utc - dt.timedelta(days=SPARK_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    # Same interval/lookback as the "vs 20-bar avg" indicator itself (see
+    # SMA_INDICATOR_BAR_INTERVAL/SMA_INDICATOR_LOOKBACK_DAYS below) - the
+    # card sparkline plots that exact rolling average over time, not raw
+    # price, so it needs to be computed from the same bars that single
+    # current-value stat already reads.
+    start_date = (now_utc - dt.timedelta(days=SMA_INDICATOR_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
     enriched = []
@@ -698,10 +707,10 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
         # blocks any other position's card or its own other fields.
         try:
             if p["is_crypto"]:
-                spark_df = get_crypto_bars_range(resolve_symbol(ticker).alpaca, "1d", start_date, end_date)
+                spark_df = get_crypto_bars_range(resolve_symbol(ticker).alpaca, SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
             else:
-                spark_df = get_stock_bars_range(ticker, "1d", start_date, end_date)
-            spark = _sparkline_closes(spark_df)
+                spark_df = get_stock_bars_range(ticker, SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
+            spark = _sparkline_closes(add_features(spark_df)["sma20"])
         except Exception:
             spark = []
         enriched.append({**p, "ticker": ticker, "strategy": attribute_position_strategy(trades_df, ticker), "spark": spark})
@@ -715,31 +724,30 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
 # range data, which is why that file stays fetched on-demand instead).
 SPARK_MAX_POINTS = 20
 
-# Daily-bar lookback for a position card's own sparkline fetch - shorter
-# than ticker_tracker's own 220-day window (TICKER_TRACKER_LOOKBACK_DAYS
-# below) since a sparkline only needs to show recent shape, not enough
-# history to compute a trailing 100-day average.
-SPARK_LOOKBACK_DAYS = 45
 
-
-def _sparkline_closes(df: pd.DataFrame, max_points: int = SPARK_MAX_POINTS) -> list[float]:
+def _sparkline_closes(values: pd.Series | None, max_points: int = SPARK_MAX_POINTS) -> list[float]:
     """
     Same even-stride-plus-keep-the-last-bar downsampling as _thin_points,
-    but returns bare close prices (no timestamps) - a card sparkline only
-    ever draws relative shape, never exact times, so publishing timestamps
+    but returns bare numbers (no timestamps) - a card sparkline only ever
+    draws relative shape, never exact times, so publishing timestamps
     here would just be wasted bytes repeated for every watched ticker.
+    Takes whatever per-bar series a caller wants plotted (build_positions_
+    payload/build_ticker_tracker both feed it a 20-period rolling average
+    - see SMA_INDICATOR_BAR_INTERVAL below - not raw price, since that
+    average is the exact same signal already shown as this card's own
+    "vs 20-bar avg" text stat).
     """
-    if df is None or df.empty or "Close" not in df.columns:
+    if values is None or values.empty:
         return []
-    closes = df["Close"].dropna()
-    n = len(closes)
+    values = values.dropna()
+    n = len(values)
     if n < 2:
         return []
     if n > max_points:
         step = max(1, n // max_points)
         keep_idx = sorted(set(range(0, n, step)) | {n - 1})
-        closes = closes.iloc[keep_idx]
-    return [round(float(v), 6) for v in closes]
+        values = values.iloc[keep_idx]
+    return [round(float(v), 6) for v in values]
 
 
 # Cap on published points per symbol/range - keeps ticker_charts.json
@@ -984,11 +992,6 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
                 df = get_stock_bars_range(ticker, "1d", start_date, end_date)
             sma_series = df["Close"].rolling(TICKER_TRACKER_SMA_PERIODS).mean().dropna()
             current_price = float(df["Close"].iloc[-1])
-            # Card sparkline: the last ~45 daily bars of the same df
-            # already fetched for the 100-day average above - recent
-            # shape, not the full 220-day window compressed down, and
-            # free (no second fetch) since df is already in memory.
-            row["spark"] = _sparkline_closes(df.tail(45))
             if sma_series.empty:
                 row.update(available=False, reason="not enough trailing daily bars yet to compute a 100-day average",
                             last_close=current_price, sma100=None, pct_vs_sma100=None)
@@ -999,7 +1002,7 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
         except Exception as e:
             # Same non-blocking reasoning as build_position_price_histories:
             # one ticker's bars being unfetchable never blocks the rest.
-            row.update(available=False, reason=f"{type(e).__name__}: {e}", last_close=None, sma100=None, pct_vs_sma100=None, spark=[])
+            row.update(available=False, reason=f"{type(e).__name__}: {e}", last_close=None, sma100=None, pct_vs_sma100=None)
 
         # Independent second fetch/metric: the same 20-period/5-minute
         # SMA rule_based/ml_filtered's own sell rule is measured against
@@ -1015,6 +1018,13 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
                 df20 = get_stock_bars_range(ticker, SMA_INDICATOR_BAR_INTERVAL, start_date_20, end_date)
             featured = add_features(df20)
             pct20_series = featured["pct_below_sma20"].dropna()
+            # Card sparkline: this same rolling 20-bar average over time,
+            # not raw price - the exact signal pct_vs_sma20 below is a
+            # single current reading of, so the line and the number next
+            # to it on the card always tell the same story. Free (no
+            # second fetch) since featured is already in memory; empty
+            # rather than a guess if there aren't yet 20 bars to average.
+            row["spark"] = _sparkline_closes(featured["sma20"])
             if pct20_series.empty:
                 row.update(sma20_available=False, sma20_reason="not enough trailing bars yet to compute a 20-period average",
                             sma20=None, pct_vs_sma20=None)
@@ -1022,7 +1032,7 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
                 row.update(sma20_available=True, sma20_reason=None,
                             sma20=float(featured["sma20"].dropna().iloc[-1]), pct_vs_sma20=round(float(pct20_series.iloc[-1]), 6))
         except Exception as e:
-            row.update(sma20_available=False, sma20_reason=f"{type(e).__name__}: {e}", sma20=None, pct_vs_sma20=None)
+            row.update(sma20_available=False, sma20_reason=f"{type(e).__name__}: {e}", sma20=None, pct_vs_sma20=None, spark=[])
 
         return row
 

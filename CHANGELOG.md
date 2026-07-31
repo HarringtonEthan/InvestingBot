@@ -17,6 +17,25 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.21.0 - 2026-07-31
+
+- **The card sparkline now plots the rolling 20-bar/5-minute average
+  over time**, not raw daily price - the same signal already shown as
+  each card's own "vs 20-bar avg" text stat, so the line and the number
+  next to it always tell the same story. Free where possible:
+  `build_ticker_tracker`'s spark reuses the exact same 5-minute-bar
+  fetch already made for that stat's own current reading (no second
+  fetch); `build_positions_payload` now fetches 5-minute bars (same
+  interval/lookback as `SMA_INDICATOR_BAR_INTERVAL`/`_LOOKBACK_DAYS`)
+  instead of the daily bars it fetched before. `_sparkline_closes` now
+  takes a plain Series (whatever per-bar values a caller wants
+  downsampled) instead of an OHLC DataFrame, since it's no longer
+  specifically about close prices.
+- Updated tests for the new spark source (a steadily-rising input's
+  rolling average is itself monotonically non-decreasing, unlike noisy
+  raw price) and the tooltip text on both cards.
+- Cache-busting bumped to `?v=0.21.0`.
+
 ## Version Richards 0.20.0 - 2026-07-31
 
 - **Fixed: a real trade that filled was staying mislabeled "Submitted,

@@ -837,7 +837,7 @@
   }
   // Same "what is this" ambiguity index.html's dashboard.js flags on its
   // own version of this card - see that file's SPARK_TOOLTIP comment.
-  const SPARK_TOOLTIP = "Last ~45 days of daily closes - not since purchase, not an average";
+  const SPARK_TOOLTIP = "Rolling 20-bar/5-min average, not raw price or since-purchase";
   function cardSparkHtml(spark) {
     if (!Array.isArray(spark) || spark.length < 2) return "";
     return `<div class="position-card-spark" data-tooltip="${SPARK_TOOLTIP}" aria-label="${SPARK_TOOLTIP}">${sparkSvg(spark)}</div>`;

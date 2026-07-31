@@ -582,8 +582,8 @@ def test_positions_payload_success_enriches_with_strategy_and_bare_ticker(monkey
     assert result["available"] is True
     assert result["positions"][0]["strategy"] == "rule_based"
     assert result["positions"][0]["ticker"] == "AAPL"
-    # Card sparkline: a real sampled series from the (mocked) bars fetch,
-    # not a fabricated/flat one.
+    # Card sparkline: a real rolling-20-bar-average series computed from
+    # the (mocked) bars fetch, not a fabricated/flat one.
     assert len(result["positions"][0]["spark"]) >= 2
 
 
@@ -675,17 +675,18 @@ def test_thin_points_empty_input():
 
 
 # ---- _sparkline_closes: same keep-first-and-last downsampling as
-# _thin_points, but bare floats (no timestamps) for a card sparkline ----
+# _thin_points, but bare floats (no timestamps) for a card sparkline.
+# Takes a plain Series (build_positions_payload/build_ticker_tracker both
+# feed it a rolling-20-bar-average column, not raw price - see those
+# functions' own docstrings) rather than a whole OHLC DataFrame. ----
 
 def test_sparkline_closes_keeps_all_when_under_the_cap():
-    df = pd.DataFrame({"Close": [1.0, 2.0, 3.0]})
-    values = _sparkline_closes(df, max_points=20)
+    values = _sparkline_closes(pd.Series([1.0, 2.0, 3.0]), max_points=20)
     assert values == [1.0, 2.0, 3.0]
 
 
 def test_sparkline_closes_downsamples_but_keeps_first_and_last():
-    df = pd.DataFrame({"Close": [float(i) for i in range(200)]})
-    values = _sparkline_closes(df, max_points=20)
+    values = _sparkline_closes(pd.Series([float(i) for i in range(200)]), max_points=20)
     assert len(values) <= 21
     assert values[0] == 0.0
     assert values[-1] == 199.0
@@ -693,8 +694,8 @@ def test_sparkline_closes_downsamples_but_keeps_first_and_last():
 
 def test_sparkline_closes_empty_or_too_short_is_honest_not_a_flat_line():
     assert _sparkline_closes(None) == []
-    assert _sparkline_closes(pd.DataFrame()) == []
-    assert _sparkline_closes(pd.DataFrame({"Close": [1.0]})) == []
+    assert _sparkline_closes(pd.Series([], dtype=float)) == []
+    assert _sparkline_closes(pd.Series([1.0])) == []
 
 
 # ---- build_position_sma_indicators ----
@@ -874,24 +875,28 @@ def test_ticker_tracker_computes_sma100_and_pct(monkeypatch):
     assert aapl["last_close"] == 219.0  # 100 + 119*1.0
 
 
-def test_ticker_tracker_spark_reuses_the_same_fetch_no_second_call(monkeypatch):
+def test_ticker_tracker_spark_plots_the_rolling_20_bar_average(monkeypatch):
     # get_stock_bars_range is also called separately (a different
-    # interval, "5m") for the unrelated 20-bar SMA reading below - only
-    # the "1d" call count matters here, to prove the sparkline reuses
-    # the 100-day df already fetched rather than issuing its own second
-    # "1d" fetch per ticker.
-    calls = {"1d": 0}
+    # interval, "1d") for the unrelated 100-day SMA reading above - only
+    # the "5m" call count matters here, to prove the sparkline reuses
+    # the same 20-bar/5-minute df already fetched for pct_vs_sma20 rather
+    # than issuing its own second "5m" fetch per ticker.
+    calls = {"5m": 0}
 
     def counting_bars(ticker, interval, start, end):
-        if interval == "1d":
-            calls["1d"] += 1
+        if interval == "5m":
+            calls["5m"] += 1
         return _daily_bars(120)
 
     monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", counting_bars)
     result = build_ticker_tracker(([], None))
     aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    # A steadily-rising input series' own rolling average is monotonically
+    # non-decreasing - proves this is really the smoothed average, not
+    # raw (noisier) price passed straight through.
     assert len(aapl["spark"]) >= 2
-    assert calls["1d"] == len(WATCHED_STOCK_TICKERS)
+    assert all(b >= a for a, b in zip(aapl["spark"], aapl["spark"][1:]))
+    assert calls["5m"] == len(WATCHED_STOCK_TICKERS)
 
 
 def test_ticker_tracker_spark_empty_on_fetch_failure(monkeypatch):

@@ -198,19 +198,18 @@
     el.innerHTML = series ? sparklineSvg(series) : "";
   }
 
-  // Position/tracker card sparklines - a small "spark" array of sampled
-  // recent closes site_data.py already publishes per ticker (see
-  // build_positions_payload/build_ticker_tracker's own _sparkline_closes
-  // calls: the last ~45 calendar days of daily closes, not since-
-  // purchase and not a rolling average - just recent raw price shape).
-  // Reuses the exact same sparklineSvg() the headline equity card draws
-  // with, just fed a different series - one sparkline renderer for the
-  // whole site, not two. Omitted entirely (not drawn as a flat/
-  // fabricated line) when a ticker's own spark fetch failed. The hover
-  // tooltip/aria-label exists because this had no on-card label at all
-  // before and was genuinely ambiguous with the "vs 100-day avg" text
-  // sitting right next to it on the same card.
-  const SPARK_TOOLTIP = "Last ~45 days of daily closes - not since purchase, not an average";
+  // Position/tracker card sparklines - a small "spark" array site_data.py
+  // already publishes per ticker (see build_positions_payload/
+  // build_ticker_tracker's own _sparkline_closes calls): the rolling
+  // 20-period/5-minute average over time, the exact same signal already
+  // shown as this card's own "vs 20-bar avg" text stat - not raw price,
+  // and not since-purchase. Reuses the exact same sparklineSvg() the
+  // headline equity card draws with, just fed a different series - one
+  // sparkline renderer for the whole site, not two. Omitted entirely
+  // (not drawn as a flat/fabricated line) when a ticker's own spark
+  // fetch failed. The hover tooltip/aria-label exists because this had
+  // no on-card label at all before and was genuinely ambiguous.
+  const SPARK_TOOLTIP = "Rolling 20-bar/5-min average, not raw price or since-purchase";
   function cardSparkHtml(spark, cls) {
     if (!Array.isArray(spark) || spark.length < 2) return "";
     return `<div class="${cls}" data-tooltip="${SPARK_TOOLTIP}" aria-label="${SPARK_TOOLTIP}">${sparklineSvg(spark)}</div>`;
