@@ -83,13 +83,18 @@
 
 * { box-sizing: border-box; }
 
-html, body {
+/* overflow-x lives on html only, not body - setting it on both makes body
+   its own scrolling box distinct from the document's root scroller, which
+   breaks position: sticky (the sticky header would track body's internal
+   scroll offset instead of the page's actual scroll position, so it
+   scrolls away instead of staying pinned). */
+html { overflow-x: hidden; }
+body {
   margin: 0;
   padding: 0;
   background: var(--bg);
   color: var(--text);
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  overflow-x: hidden;
   min-height: 100%;
 }
 
@@ -211,17 +216,28 @@ body::after {
    ========================================================================== */
 
 .site-header {
-  position: relative;
-  z-index: 2;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   border-bottom: 1px solid var(--border);
   background: rgba(10,13,11,0.85);
   backdrop-filter: blur(6px);
+  transition: box-shadow 0.2s ease;
 }
+/* A page tall enough to scroll (the Trades tab, charts.html) otherwise
+   scrolls the nav/theme-toggle away entirely - sticking the header
+   keeps navigation and the light/dark toggle reachable without
+   scrolling back up. The shadow only appears once real content has
+   scrolled underneath it (see the .is-scrolled class assets/dashboard.js/
+   charts.js both toggle) - unstyled at the very top of the page, so it
+   never looks like it's floating over nothing. */
+.site-header.is-scrolled { box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
 /* The dark theme's header is a near-black translucent bar by design -
    on a light background that same bar would sit on the page like a
    leftover dark banner, so light mode swaps it for a translucent white
    one instead. */
 :root[data-theme="light"] .site-header { background: rgba(255,255,255,0.82); }
+:root[data-theme="light"] .site-header.is-scrolled { box-shadow: 0 4px 16px rgba(15,25,20,0.12); }
 .site-header-inner {
   max-width: 1200px;
   margin: 0 auto;
@@ -262,6 +278,7 @@ body::after {
   transition: background 0.15s ease, color 0.15s ease;
 }
 .main-nav-link:hover { color: var(--text); text-decoration: none; background: var(--panel); }
+.main-nav-link:active { transform: scale(0.97); }
 .main-nav-link.active { color: var(--bg); background: var(--accent); font-weight: 600; box-shadow: 0 0 0 1px rgba(52,211,114,0.35), 0 2px 10px rgba(52,211,114,0.25); }
 .main-nav-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; text-decoration: none; }
 
@@ -285,6 +302,7 @@ body::after {
   transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
 }
 .theme-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.theme-toggle:active { transform: scale(0.97); }
 .theme-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .theme-toggle-icon { width: 17px; height: 17px; }
 .theme-toggle-icon-sun { display: none; }

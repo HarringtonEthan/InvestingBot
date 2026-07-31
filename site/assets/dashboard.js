@@ -829,6 +829,27 @@
       ledgerFilterInput.addEventListener("input", applyLedgerFilter);
     }
 
+    const backToTop = document.getElementById("back-to-top");
+    if (backToTop) {
+      window.addEventListener("scroll", () => {
+        backToTop.classList.toggle("is-visible", window.scrollY > 600);
+      }, { passive: true });
+      backToTop.addEventListener("click", () => {
+        window.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
+      });
+    }
+
+    // Sticky header (see .site-header/.is-scrolled in styles.css) only
+    // grows a shadow once real content has actually scrolled underneath
+    // it, so it never looks like it's floating over nothing at the very
+    // top of the page.
+    const siteHeader = document.querySelector(".site-header");
+    if (siteHeader) {
+      window.addEventListener("scroll", () => {
+        siteHeader.classList.toggle("is-scrolled", window.scrollY > 4);
+      }, { passive: true });
+    }
+
     // A nav link from charts.html points here with a hash (e.g.
     // index.html#positions) so a single click lands on the right tab -
     // without this, every such link always opened the default Overview

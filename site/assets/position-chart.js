@@ -306,7 +306,7 @@
       if (!yScale || !xScale || !area || !currentReferenceLines.length) return;
       const c = chartInstance.ctx;
       currentReferenceLines.forEach((line) => {
-        if (!isNum(line.value)) return;
+        if (!isNum(line.value) || line.suppress) return;
         const py = yScale.getPixelForValue(line.value);
         if (py < area.top - 1 || py > area.bottom + 1) return;
         let xStart = area.left;
@@ -608,11 +608,19 @@
     // clip the entry line to start exactly there instead of at the left
     // edge. No startAt (unknown/estimated entry) or an entry that
     // predates every point in view both mean "draw across the whole
-    // chart" - startIndex stays null.
+    // chart" - startIndex stays null. An entry that's more recent than
+    // this range's own LAST point (findIndex finds nothing, idx === -1 -
+    // e.g. bought today, but the 100-day view's last daily bar is only
+    // as fresh as yesterday's close) is the opposite case: the position
+    // wasn't held for any part of what's currently plotted, so the line
+    // is suppressed entirely rather than falling into the same "draw
+    // across the whole chart" bucket, which used to draw it across data
+    // that predates the position ever being opened.
     currentReferenceLines.forEach((line) => {
       if (!line.startAt) { line.startIndex = null; return; }
       const startMs = new Date(line.startAt).getTime();
       const idx = points.findIndex((p) => new Date(p.t).getTime() >= startMs);
+      line.suppress = idx === -1;
       line.startIndex = idx > 0 ? idx : null;
     });
 

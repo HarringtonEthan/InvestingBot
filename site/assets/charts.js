@@ -933,6 +933,17 @@
       });
     }
 
+    // Sticky header (see .site-header/.is-scrolled in styles.css) only
+    // grows a shadow once real content has actually scrolled underneath
+    // it, so it never looks like it's floating over nothing at the very
+    // top of the page.
+    const siteHeader = document.querySelector(".site-header");
+    if (siteHeader) {
+      window.addEventListener("scroll", () => {
+        siteHeader.classList.toggle("is-scrolled", window.scrollY > 4);
+      }, { passive: true });
+    }
+
     setupScrollReveal();
     load();
 

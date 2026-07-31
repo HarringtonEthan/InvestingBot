@@ -17,6 +17,37 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.22.0 - 2026-07-31
+
+- **Fixed the entry-line reference dash drawing across the entire chart**
+  on ranges like 100D for recently-bought positions (XOM, AAPL). The
+  chart maps a position's real entry timestamp to a point index in the
+  currently-displayed range; when the entry is *more recent* than every
+  point in that range (e.g. bought today, but the 100-day view's last
+  daily bar is only as fresh as yesterday's close), `findIndex` returns
+  `-1` - previously treated the same as "entry predates the whole
+  chart," which draws the line across everything. That's backwards: the
+  position wasn't held during any of what's currently plotted. Added a
+  `line.suppress` flag so `referenceLinePlugin` omits the line (and its
+  start-point dot) entirely in that case, while the legend chip still
+  shows the real entry price/percentage as text.
+- **Sticky header** on both pages - it now stays pinned while scrolling
+  long content (the Trades tab, charts.html), with a subtle shadow that
+  only appears once real content has scrolled underneath it. Fixing
+  this surfaced a real cross-browser CSS bug: `overflow-x: hidden` had
+  been set on *both* `html` and `body`, which makes `body` its own
+  scrolling box distinct from the page's root scroller - `position:
+  sticky` elements inside it then track `body`'s internal scroll offset
+  instead of the visible page scroll, so they silently scroll away
+  instead of sticking. Moved `overflow-x: hidden` onto `html` alone.
+- **Back-to-top button** added to `index.html` (previously only on
+  `charts.html`) - same fade-in-after-scrolling behavior, respects
+  reduced-motion.
+- **Press feedback** (`transform: scale(0.97)` on click, matching the
+  existing convention on tab/segmented/ghost buttons) added to the main
+  nav links, content tab buttons, and the light/dark theme toggle.
+- Cache-busting bumped to `?v=0.22.0`.
+
 ## Version Richards 0.21.0 - 2026-07-31
 
 - **The card sparkline now plots the rolling 20-bar/5-minute average
