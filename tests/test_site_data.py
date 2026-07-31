@@ -14,6 +14,8 @@ import pytest
 
 from site_data import (
     ET,
+    DAY_TRADING_DIP_THRESHOLD,
+    RULE_BASED_DIP_THRESHOLD,
     RULE_BASED_EXIT_THRESHOLD,
     TICKER_CHART_RANGES,
     TRADE_ROW_COLUMNS,
@@ -948,6 +950,20 @@ def test_ticker_tracker_matches_a_held_crypto_position_by_bare_ticker(monkeypatc
     btc = next(row for row in result["categories"]["crypto"] if row["ticker"] == "BTC")
     assert btc["held"] is True
     assert btc["position_state"] == "profit"
+
+
+def test_ticker_tracker_thresholds_differ_by_asset_class(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(120))
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda *a, **k: _daily_bars(120, start_price=60000.0, step=50.0))
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    btc = next(row for row in result["categories"]["crypto"] if row["ticker"] == "BTC")
+    assert aapl["dip_threshold"] == RULE_BASED_DIP_THRESHOLD
+    assert aapl["exit_threshold"] == RULE_BASED_EXIT_THRESHOLD
+    # Crypto's day_trading strategy exits on profit-target/stop-loss
+    # against its own entry price, not an SMA20 recovery - no exit_threshold.
+    assert btc["dip_threshold"] == DAY_TRADING_DIP_THRESHOLD
+    assert btc["exit_threshold"] is None
 
 
 def test_ticker_tracker_per_ticker_failure_does_not_block_others(monkeypatch):

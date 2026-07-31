@@ -17,6 +17,36 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.23.0 - 2026-07-31
+
+- **Reorganized position/tracker cards into two clearly-labeled, clearly-
+  colored zones** to fix a real point of confusion: a card could show a
+  green (profitable) P&L line right next to a red sparkline or a red
+  "vs 20-bar avg" reading, because those numbers measure genuinely
+  different things (since-purchase gain vs. the strategy's own
+  mean-reversion signal) that can legitimately disagree in sign - it
+  just looked like a contradiction.
+  - "Your Position" (Qty/Entry/Current/Value + the bold P&L line) stays
+    win/loss green/red throughout, as before.
+  - "Strategy Signal" (the card sparkline, and the "vs 20-bar avg"
+    reading) is now always one neutral blue (new `--signal-accent` CSS
+    var), under its own small uppercase label with a divider - never
+    win/loss green/red, so it can never visually contradict the P&L
+    above it. Applies to both `index.html`'s position/tracker cards and
+    `charts.html`'s position cards.
+- **Ticker Tracker cards now show the actual buy/sell threshold**, not
+  just the raw "vs 20-bar avg" percentage: a not-yet-held ticker reads
+  e.g. "-1.17% (buys at -1.50%)", a held one "-0.80% (sells at
+  +2.00%)" - the same threshold annotation position cards already had,
+  extended to every watched ticker so it's clear at a glance how close
+  something is to actually triggering a trade. New `site_data.py`
+  constants `RULE_BASED_DIP_THRESHOLD` (-1.5%, stocks) and
+  `DAY_TRADING_DIP_THRESHOLD` (-4%, crypto), matching the live
+  workflows' own `--dip-threshold` values; crypto has no sell-threshold
+  equivalent since day_trading exits on profit-target/stop-loss against
+  entry price, not an SMA20 recovery - already covered by its own P&L.
+- Cache-busting bumped to `?v=0.23.0`.
+
 ## Version Richards 0.22.0 - 2026-07-31
 
 - **Fixed the entry-line reference dash drawing across the entire chart**

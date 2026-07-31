@@ -159,6 +159,13 @@
   // ---------------------------------------------------------------------
   const SPARK_WIN = "#34d372";
   const SPARK_LOSS = "#f0554a";
+  // Position/tracker card sparklines plot the rolling 20-bar average, not
+  // money - always this one neutral "signal" blue, never win/loss green/
+  // red, so it can never visually contradict the card's own P&L color
+  // (which is a completely different comparison: since-purchase gain,
+  // not this average's own trend). Same blue already used for the
+  // rule_based strategy badge elsewhere.
+  const SPARK_SIGNAL = "#6aa6ff";
 
   function periodEquitySeries(p) {
     if (!equity || !equity.available || !Array.isArray(equity.points) || !equity.points.length) return null;
@@ -174,7 +181,7 @@
     return vals.length >= 2 ? vals : null;
   }
 
-  function sparklineSvg(values) {
+  function sparklineSvg(values, forceColor) {
     const w = 100, h = 28, pad = 2;
     const min = Math.min(...values);
     const max = Math.max(...values);
@@ -185,7 +192,7 @@
       const y = pad + (1 - (v - min) / span) * (h - pad * 2);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
-    const color = values[values.length - 1] >= values[0] ? SPARK_WIN : SPARK_LOSS;
+    const color = forceColor || (values[values.length - 1] >= values[0] ? SPARK_WIN : SPARK_LOSS);
     const area = `${pad},${h - pad} ${pts.join(" ")} ${w - pad},${h - pad}`;
     return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
       `<polyline points="${area}" fill="${color}" fill-opacity="0.1" stroke="none"></polyline>` +
@@ -204,15 +211,16 @@
   // 20-period/5-minute average over time, the exact same signal already
   // shown as this card's own "vs 20-bar avg" text stat - not raw price,
   // and not since-purchase. Reuses the exact same sparklineSvg() the
-  // headline equity card draws with, just fed a different series - one
-  // sparkline renderer for the whole site, not two. Omitted entirely
+  // headline equity card draws with, just fed a different series and
+  // forced to the neutral SPARK_SIGNAL blue (see that constant above) -
+  // one sparkline renderer for the whole site, not two. Omitted entirely
   // (not drawn as a flat/fabricated line) when a ticker's own spark
   // fetch failed. The hover tooltip/aria-label exists because this had
   // no on-card label at all before and was genuinely ambiguous.
   const SPARK_TOOLTIP = "Rolling 20-bar/5-min average, not raw price or since-purchase";
   function cardSparkHtml(spark, cls) {
     if (!Array.isArray(spark) || spark.length < 2) return "";
-    return `<div class="${cls}" data-tooltip="${SPARK_TOOLTIP}" aria-label="${SPARK_TOOLTIP}">${sparklineSvg(spark)}</div>`;
+    return `<div class="${cls}" data-tooltip="${SPARK_TOOLTIP}" aria-label="${SPARK_TOOLTIP}">${sparklineSvg(spark, SPARK_SIGNAL)}</div>`;
   }
 
   // Hovering the headline Win Rate card reveals the real win/loss count
@@ -322,15 +330,27 @@
   // ---------------------------------------------------------------------
   // Open positions
   // ---------------------------------------------------------------------
-  // rule_based/ml_filtered positions sell on a mean-reversion recovery
-  // vs. their own 20-period SMA (see site_data.py's
-  // build_position_sma_indicators) rather than vs. entry price - that's
-  // a different number than the unrealized P&L row above, and the one
-  // this project's live logs never otherwise surface for a held stock
-  // position. day_trading (crypto) positions sell on gain-vs-entry
-  // instead, which the unrealized P&L row already shows, so this row is
-  // deliberately omitted for them rather than showing a second,
-  // unrelated number.
+  // Every card below is split into two clearly separated, differently
+  // colored zones so the two questions "how is my trade doing" and
+  // "what does the strategy see right now" never blur into one another:
+  //   - "Your Position" (untitled - it's the card's default content):
+  //     qty/entry/current/value and the bold P&L line, colored win/loss
+  //     green/red throughout (card border included) - always measured
+  //     against your own entry price.
+  //   - "Strategy Signal" (explicitly labeled, always the neutral
+  //     SPARK_SIGNAL blue, never green/red): the live reading
+  //     rule_based/ml_filtered's own sell rule is measured against -
+  //     price vs. the trailing 20-bar average - which can, completely
+  //     legitimately, disagree in sign with the P&L above (e.g. a
+  //     position bought mid-dip can be up overall while the average
+  //     itself is still recovering, or vice versa). Giving it its own
+  //     label and color is what makes that not look like a bug.
+  // rule_based/ml_filtered sell on this mean-reversion recovery vs.
+  // their own 20-period SMA (see site_data.py's
+  // build_position_sma_indicators) rather than vs. entry price.
+  // day_trading (crypto) positions sell on gain-vs-entry instead, which
+  // the P&L line already shows, so this section is omitted for them
+  // rather than showing a second, unrelated number.
   function positionSmaRow(p) {
     if (p.strategy !== "rule_based" && p.strategy !== "ml_filtered") return "";
     if (!positionIndicators || !positionIndicators.available) return "";
@@ -338,12 +358,12 @@
     if (!ind) return "";
     const threshold = ind.exit_threshold;
     if (!ind.available || ind.pct_vs_sma20 === null || ind.pct_vs_sma20 === undefined) {
-      return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span>—</span></div>`;
+      return `<div class="card-signal"><div class="card-signal-label">Strategy Signal</div><div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span>—</span></div></div>`;
     }
     const label = threshold !== null && threshold !== undefined
       ? `${fmtPct(ind.pct_vs_sma20)} (sells at ${fmtPct(threshold)})`
       : fmtPct(ind.pct_vs_sma20);
-    return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span class="${signClass(ind.pct_vs_sma20)}">${label}</span></div>`;
+    return `<div class="card-signal"><div class="card-signal-label">Strategy Signal</div><div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span class="signal-value">${label}</span></div></div>`;
   }
 
   function positionCard(p) {
@@ -367,8 +387,8 @@
         <div class="position-card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
         <div class="position-card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
-        ${positionSmaRow(p)}
         <div class="position-card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPct(p.unrealized_plpc)})</div>
+        ${positionSmaRow(p)}
         <div class="position-card-hint">View price history →</div>
       </div>`;
   }
@@ -417,9 +437,21 @@
       const deltaClass = row.pct_vs_sma100 >= 0 ? "positive" : "negative";
       body += `<div class="tracker-card-delta ${deltaClass}">${fmtPct(row.pct_vs_sma100)} vs 100-day avg</div>`;
     }
+    // "Strategy Signal": the live reading a not-yet-held ticker's own
+    // entry decision (or a held one's exit decision) is measured
+    // against - see the matching block comment on positionSmaRow above
+    // for why this always gets its own label and neutral blue rather
+    // than reusing the 100-day trend's win/loss green/red above. A
+    // not-held ticker is annotated with its buy trigger; a held one
+    // (rule_based/ml_filtered only - day_trading/crypto sells on
+    // gain-vs-entry instead, which position cards already cover) with
+    // its sell trigger.
     if (row.sma20_available) {
-      const deltaClass20 = row.pct_vs_sma20 >= 0 ? "positive" : "negative";
-      body += `<div class="tracker-card-delta ${deltaClass20}">${fmtPct(row.pct_vs_sma20)} vs 20-bar avg</div>`;
+      const thresholdLabel = row.held
+        ? (row.exit_threshold !== null && row.exit_threshold !== undefined ? `sells at ${fmtPct(row.exit_threshold)}` : null)
+        : (row.dip_threshold !== null && row.dip_threshold !== undefined ? `buys at ${fmtPct(row.dip_threshold)}` : null);
+      const signalLabel = thresholdLabel ? `${fmtPct(row.pct_vs_sma20)} (${thresholdLabel})` : fmtPct(row.pct_vs_sma20);
+      body += `<div class="card-signal"><div class="card-signal-label">Strategy Signal</div><div class="tracker-card-delta signal">${signalLabel} vs 20-bar avg</div></div>`;
     }
     if (!row.available && !row.sma20_available) {
       body = `<p class="tracker-card-unavailable">${row.reason || row.sma20_reason || "Price data unavailable."}</p>`;

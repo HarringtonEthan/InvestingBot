@@ -68,6 +68,10 @@
     green: "#34d372",
     red: "#f0554a",
     gray: "#6b7280",
+    // Position/tracker card sparklines and their "Strategy Signal" text
+    // are always this one neutral blue, never green/red - see
+    // dashboard.js's matching SPARK_SIGNAL comment for why.
+    signal: "#6aa6ff",
     get text() { return isLightTheme() ? "#4c5852" : "#9aa5a0"; },
     get grid() { return isLightTheme() ? "rgba(15,25,20,0.07)" : "rgba(255,255,255,0.06)"; },
   };
@@ -792,9 +796,14 @@
   // Same reasoning as dashboard.js's positionSmaRow: rule_based/
   // ml_filtered positions sell on a mean-reversion recovery vs. their
   // own 20-period SMA, not vs. entry price - a number the unrealized
-  // P&L row below doesn't capture. day_trading (crypto) positions sell
-  // on gain-vs-entry instead, already shown by that row, so this stays
-  // empty for them rather than showing a second, unrelated number.
+  // P&L row below doesn't capture, and one that can legitimately
+  // disagree in sign with it (a position bought mid-dip can be up
+  // overall while the average itself is still recovering, or vice
+  // versa). Its own "Strategy Signal" label and neutral COLORS.signal
+  // blue (never win/loss green/red) is what keeps that from reading as
+  // a bug. day_trading (crypto) positions sell on gain-vs-entry
+  // instead, already shown by the P&L row, so this stays empty for
+  // them rather than showing a second, unrelated number.
   function positionSmaRow(p) {
     if (p.strategy !== "rule_based" && p.strategy !== "ml_filtered") return "";
     if (!positionIndicators || !positionIndicators.available) return "";
@@ -802,21 +811,24 @@
     if (!ind) return "";
     const threshold = ind.exit_threshold;
     if (!ind.available || ind.pct_vs_sma20 === null || ind.pct_vs_sma20 === undefined) {
-      return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span>—</span></div>`;
+      return `<div class="card-signal"><div class="card-signal-label">Strategy Signal</div><div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span>—</span></div></div>`;
     }
-    const cls = ind.pct_vs_sma20 >= 0 ? "positive" : "negative";
     const label = isNum(threshold)
       ? `${fmtPctSigned(ind.pct_vs_sma20 * 100)} (sells at ${fmtPctSigned(threshold * 100)})`
       : fmtPctSigned(ind.pct_vs_sma20 * 100);
-    return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span class="${cls}">${label}</span></div>`;
+    return `<div class="card-signal"><div class="card-signal-label">Strategy Signal</div><div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span class="signal-value">${label}</span></div></div>`;
   }
 
   // Same small sparkline renderer index.html's dashboard.js draws its
   // own position/tracker cards with (see that file's sparklineSvg) -
   // duplicated here rather than shared since these two pages already
-  // each build their own independent positionCard(). Omitted entirely
-  // when a ticker's own spark fetch failed server-side, never drawn as
-  // a fabricated flat line.
+  // each build their own independent positionCard(). Always the
+  // neutral COLORS.signal blue, never win/loss green/red - this plots
+  // the rolling 20-bar average's own trend, not money, and reusing
+  // green/red here previously made it look like it was contradicting
+  // the card's P&L when the two are actually unrelated comparisons.
+  // Omitted entirely when a ticker's own spark fetch failed
+  // server-side, never drawn as a fabricated flat line.
   function sparkSvg(values) {
     const w = 100, h = 28, pad = 2;
     const min = Math.min(...values);
@@ -828,7 +840,7 @@
       const y = pad + (1 - (v - min) / span) * (h - pad * 2);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     });
-    const color = values[values.length - 1] >= values[0] ? COLORS.green : COLORS.red;
+    const color = COLORS.signal;
     const area = `${pad},${h - pad} ${pts.join(" ")} ${w - pad},${h - pad}`;
     return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
       `<polyline points="${area}" fill="${color}" fill-opacity="0.1" stroke="none"></polyline>` +
@@ -863,8 +875,8 @@
         <div class="position-card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
         <div class="position-card-row"><span>Mkt Value</span><span>${fmtUsd(p.market_value)}</span></div>
-        ${positionSmaRow(p)}
         <div class="position-card-pnl ${pnl >= 0 ? "positive" : "negative"}">${fmtUsdSigned(pnl)} (${fmtPctSigned(p.unrealized_plpc * 100)})</div>
+        ${positionSmaRow(p)}
         <div class="position-card-hint">View price history →</div>
       </div>`;
   }

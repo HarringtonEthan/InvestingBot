@@ -786,6 +786,19 @@ def _thin_points(df: pd.DataFrame, max_points: int = MAX_POINTS_PER_SYMBOL) -> l
 # in this file already require.
 RULE_BASED_EXIT_THRESHOLD = 0.02
 
+# Buy-side dip thresholds - the same pct_below_sma20 reading, but the
+# level a *not-yet-held* ticker's entry decision is measured against
+# (see paper-trade-stocks.yml/paper-trade-crypto.yml's own
+# --dip-threshold). Stocks and crypto use different values; crypto's
+# day_trading strategy also exits on profit-target/stop-loss against its
+# own entry price rather than this SMA recovering, so unlike
+# RULE_BASED_EXIT_THRESHOLD there is no crypto equivalent of that one -
+# a held crypto position's own unrealized P&L already covers "how close
+# to selling" for that case. Same manual-sync caveat as
+# RULE_BASED_EXIT_THRESHOLD above.
+RULE_BASED_DIP_THRESHOLD = -0.015
+DAY_TRADING_DIP_THRESHOLD = -0.04
+
 # Bar interval and lookback window used only to compute the *current*
 # pct_below_sma20 reading below - deliberately short and always ending
 # "now," unlike build_position_price_histories's since-entry fetch.
@@ -984,6 +997,11 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
             "held": held,
             "position_state": position_state,
             "unrealized_plpc": unrealized_plpc,
+            # Static workflow constants, not fetched - always present so the
+            # card can label pct_vs_sma20 below with "buys at"/"sells at"
+            # context regardless of whether that fetch itself succeeds.
+            "dip_threshold": DAY_TRADING_DIP_THRESHOLD if is_crypto else RULE_BASED_DIP_THRESHOLD,
+            "exit_threshold": None if is_crypto else RULE_BASED_EXIT_THRESHOLD,
         }
         try:
             if is_crypto:

@@ -22,6 +22,13 @@
   --accent-soft: rgba(52,211,114,0.12);
   --win: #34d372;
   --loss: #f0554a;
+  /* Position/tracker cards split into two zones: money (win/loss above)
+     and "Strategy Signal" (this blue) - the live reading a strategy's
+     own buy/sell rule is measured against, which can legitimately
+     disagree in sign with win/loss (see .card-signal below). Giving it
+     a color that's never win/loss green/red is what keeps that from
+     reading as a bug. */
+  --signal-accent: #6aa6ff;
   /* One consistent accent per strategy, reused everywhere a strategy
      name appears (Trade History, the trade detail modal, position/
      tracker cards, the Strategies tab) so the eye learns to tell them
@@ -72,6 +79,7 @@
   --accent-soft: rgba(23,168,84,0.12);
   --win: #178f4d;
   --loss: #c7362b;
+  --signal-accent: #2f6fd6;
   /* Same reasoning as --win/--loss above: deepened for text contrast
      against a white background - the soft tinted backgrounds stay the
      same across both themes since they're low-alpha enough to read
@@ -660,12 +668,28 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-card-pnl { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 0.95rem; text-align: right; }
 .position-card-pnl.positive { color: var(--win); }
 .position-card-pnl.negative { color: var(--loss); }
-/* rule_based/ml_filtered "how close to selling" reading - visually set
-   apart from the plain Qty/Entry/Current/Value rows with a dashed
-   divider, since it's a derived signal rather than a raw account fact. */
-.position-card-sma { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 5px; }
-.position-card-sma span.positive { color: var(--win); }
-.position-card-sma span.negative { color: var(--loss); }
+/* "Strategy Signal" zone - the live reading a strategy's own buy/sell
+   rule is measured against (rule_based/ml_filtered's price-vs-20-bar-
+   average recovery/dip, surfaced on both position and tracker cards).
+   Set apart from the money zone above (P&L, card border, tracker-card-
+   delta's win/loss reading) by a labeled divider and its own neutral
+   --signal-accent blue, never win/loss green/red - this number can
+   legitimately disagree in sign with your P&L (a position bought
+   mid-dip can be up overall while the average itself is still
+   recovering), and a shared color language would make that look like a
+   bug instead of two different, both-correct comparisons. */
+.card-signal { border-top: 1px dashed var(--border); margin-top: 8px; padding-top: 6px; }
+.card-signal-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--signal-accent);
+  margin-bottom: 2px;
+}
+.position-card-sma { margin-top: 0; padding-top: 0; border-top: none; }
+.position-card-row span.signal-value { color: var(--signal-accent); }
+.tracker-card-delta.signal { color: var(--signal-accent); }
 .position-card-hint {
   margin-top: 8px;
   text-align: right;
@@ -732,6 +756,11 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .tracker-card-delta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; text-align: right; }
 .tracker-card-delta.positive { color: var(--win); }
 .tracker-card-delta.negative { color: var(--loss); }
+/* Inside .card-signal (see that block's own comment above), which
+   already supplies its own labeled divider - avoids stacking a second
+   one from this element's own border-top/margin-top/padding-top. */
+.card-signal .tracker-card-delta { margin-top: 0; padding-top: 0; border-top: none; text-align: left; }
+.tracker-card-delta.signal { color: var(--signal-accent); }
 .tracker-card-unavailable { color: var(--text-faint); font-size: 0.78rem; margin: 0; }
 .tracker-card-hint {
   margin-top: 8px;
