@@ -10,7 +10,7 @@ richly, instead of a static image. Reads the same logs/*.csv files
 visualize_log.py already reads, so there's exactly one source of truth
 for "what actually happened," not a second copy that could drift.
 
-Writes seven files into --out-dir (default site/data/):
+Writes eight files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
     every slot-machine reel and stat tile on the page.
@@ -63,6 +63,15 @@ Writes seven files into --out-dir (default site/data/):
     stale the currently-selected range's last historical bar is
     (see build_ticker_charts). Only populated with --live-positions, same
     as positions.json above.
+  - backtest_comparison.json: real walk-forward validation results (see
+    results/walk_forward/) for each asset class's exact currently-live
+    config - win rate, avg return per window, and how many real windows
+    that covers - the actual evidence behind README.md's own "Current
+    live status" claim, published so the site can show it next to the
+    account's real live-trading numbers (see build_strategy_backtest_
+    comparison). Always populated - unlike every file above, this is a
+    plain CSV parse of already-committed validation artifacts, needing
+    neither --live-positions nor network access.
 
 Every number here is derived from real logged/live data - nothing is
 fabricated, and a missing/empty log produces an honest "no data yet"
@@ -1038,6 +1047,86 @@ def build_ticker_charts(
     return {"available": True, "reason": None, "symbols": symbols_payload}
 
 
+# Which committed walk-forward validation CSV backs each asset class's
+# exact currently-live config - see results/walk_forward/README.md,
+# which documents this same mapping in prose ("Which files back the
+# ACTIVE live config"). If either live config ever changes, whoever
+# changes it needs to update this too (same manual-sync tradeoff as
+# RULE_BASED_EXIT_THRESHOLD/WATCHED_STOCK_TICKERS above), and re-run
+# walk_forward.py to regenerate the CSV itself.
+BACKTEST_WALK_FORWARD_FILES = {
+    "crypto": {"path": "results/walk_forward/walk_forward.csv", "strategy": "day_trading"},
+    "stock": {"path": "results/walk_forward/walk_forward_stocks_5m_best.csv", "strategy": "rule_based"},
+}
+
+
+def build_strategy_backtest_comparison() -> dict:
+    """
+    Real walk-forward validation results for each asset class's exact
+    currently-live config (see BACKTEST_WALK_FORWARD_FILES above) - the
+    actual evidence behind this project's own "Current live status"
+    claim in README.md, published here so the website can show it next
+    to the account's own real live-trading numbers (dashboard.json's
+    periods[period].stocks_vs_crypto already has those) instead of only
+    in a static markdown file. Never runs a fresh backtest itself -
+    these CSVs are already-committed validation artifacts written by
+    walk_forward.py, not live-refetched - so reading them is just a
+    parse: no Alpaca credentials or network access needed, and this is
+    always available regardless of whether --live-positions was passed.
+
+    Only counts a window toward the win rate if the strategy actually
+    traded in it (trades > 0) - a window with zero trades means "no
+    signal fired that window," not "the strategy lost," and folding it
+    into a literal win/loss tally would understate how often the
+    strategy is actually right on the windows it does act in.
+
+    Best-effort per asset class: one class's CSV being missing or
+    malformed (e.g. before a first walk_forward.py run) never blocks
+    the other's real numbers from showing.
+    """
+    classes: dict[str, dict] = {}
+    for asset_class, cfg in BACKTEST_WALK_FORWARD_FILES.items():
+        try:
+            df = pd.read_csv(cfg["path"])
+            if df.empty:
+                raise ValueError("walk-forward CSV has no rows")
+            traded = df[df["trades"] > 0]
+            num_traded_windows = int(len(traded))
+            num_profitable_windows = int((traded["total_return"] > 0).sum()) if num_traded_windows else 0
+            win_rate = (num_profitable_windows / num_traded_windows) if num_traded_windows else None
+
+            # A human-readable config label built entirely from the
+            # CSV's own columns (never a hardcoded number living a
+            # second place it could quietly drift from) - whichever of
+            # these threshold columns this particular file actually has.
+            config_bits = []
+            for col, label in (("dip_threshold", "dip"), ("profit_target", "profit"), ("exit_threshold", "exit"), ("stop_loss", "stop")):
+                if col in df.columns:
+                    config_bits.append(f"{label} {float(df[col].iloc[0]) * 100:.1f}%")
+
+            classes[asset_class] = {
+                "available": True,
+                "reason": None,
+                "strategy": cfg["strategy"],
+                "config_label": ", ".join(config_bits),
+                "num_windows": int(len(df)),
+                "num_traded_windows": num_traded_windows,
+                "num_profitable_windows": num_profitable_windows,
+                "win_rate": win_rate,
+                "avg_return_per_window": round(float(df["total_return"].mean()), 6),
+                "num_tickers": int(df["ticker"].nunique()) if "ticker" in df.columns else None,
+                "window_start": str(df["window_start"].min()) if "window_start" in df.columns else None,
+                "window_end": str(df["window_end"].max()) if "window_end" in df.columns else None,
+            }
+        except Exception as e:
+            # Same non-blocking reasoning as every other Alpaca-backed
+            # builder in this file: one class's own data being
+            # unreadable never blocks the other's.
+            classes[asset_class] = {"available": False, "reason": f"{type(e).__name__}: {e}", "strategy": cfg["strategy"]}
+
+    return {"available": True, "reason": None, "classes": classes}
+
+
 def fetch_live_positions():
     """
     Returns (positions, error, cash, equity, buying_power) - error is
@@ -1154,6 +1243,9 @@ def main():
     ticker_charts_payload = build_ticker_charts(live_result, trades_df)
     (out_dir / "ticker_charts.json").write_text(json.dumps(ticker_charts_payload, indent=2))
 
+    backtest_comparison_payload = build_strategy_backtest_comparison()
+    (out_dir / "backtest_comparison.json").write_text(json.dumps(backtest_comparison_payload, indent=2))
+
     if trades_df is not None and not trades_df.empty:
         recent = trades_df.sort_values("timestamp_utc", ascending=False).head(MAX_TRADES_PUBLISHED)
         trades_payload = {
@@ -1194,7 +1286,7 @@ def main():
         equity_payload = {"available": False, "points": []}
     (out_dir / "equity.json").write_text(json.dumps(equity_payload, indent=2))
 
-    print(f"Wrote dashboard/positions/position_indicators/trades/equity/ticker_tracker/ticker_charts JSON to {out_dir}/")
+    print(f"Wrote dashboard/positions/position_indicators/trades/equity/ticker_tracker/ticker_charts/backtest_comparison JSON to {out_dir}/")
 
 
 if __name__ == "__main__":

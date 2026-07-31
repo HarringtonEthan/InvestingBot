@@ -99,6 +99,14 @@
   let currentRangeKey = null;
   let currentTickerRanges = null;
   let currentTicker = "";
+  // True only for the very first chart drawn after opening the modal -
+  // that one gets a slightly longer, eased-in draw so the line visibly
+  // sweeps in rather than just appearing. Every subsequent render in the
+  // same modal session (switching ranges) resets this to false first,
+  // so range-switching itself always stays snappy - the whole point of
+  // "subtle," per this file's own module docstring, is never making the
+  // user wait on an animation to see the data they just asked for.
+  let isFirstRenderThisOpen = true;
 
   const RANGE_ORDER = ["1d", "1w", "1m", "100d"];
   const RANGE_LABELS = { "1d": "1 Day", "1w": "1 Week", "1m": "1 Month", "100d": "100 Day" };
@@ -395,6 +403,7 @@
     currentTicker = ticker;
     currentRangeKey = null;
     currentTickerRanges = null;
+    isFirstRenderThisOpen = true;
     lastFocused = triggerEl || document.activeElement;
     ensureModal();
     const backdrop = document.getElementById("position-modal-backdrop");
@@ -638,7 +647,13 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: REDUCED_MOTION ? false : { duration: 220 },
+        // The very first chart drawn after opening the modal eases its
+        // line in a bit more noticeably (longer duration, an easing
+        // curve) - every later render in the same session (switching
+        // ranges) drops straight back to a quick, near-instant redraw,
+        // so flipping between 1D/1W/1M/100D never feels like it's
+        // making anyone wait on an animation.
+        animation: REDUCED_MOTION ? false : (isFirstRenderThisOpen ? { duration: 420, easing: "easeOutQuart" } : { duration: 150 }),
         interaction: { mode: "index", intersect: false, axis: "x" },
         plugins: {
           legend: { display: false },
@@ -668,6 +683,7 @@
       },
       plugins: [crosshairPlugin, referenceLinePlugin],
     });
+    isFirstRenderThisOpen = false;
 
     buildLegend(currentReferenceLines, last);
 

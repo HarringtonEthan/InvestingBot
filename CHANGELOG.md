@@ -17,6 +17,76 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.17.0 - 2026-07-31
+
+- **Trade History rows are now clickable** - opens a detail modal with
+  every field this project's trade log actually records for that row
+  (full mode/notes text, cost basis, whether the fill was confirmed,
+  realized P&L), plus a plain-language description of that row's own
+  strategy rule. Deliberately does NOT show "indicator values at
+  decision time" (the exact SMA/dip % the bot saw when it traded) -
+  live_trade.py's own trade log never records those (its own
+  `TRADE_LOG_FIELDS` comment says outright that "notes" is only ever a
+  fill-confirmation status string, never decision reasoning), so
+  inventing that number here would be exactly the kind of fabrication
+  this site otherwise never does. The modal says so explicitly instead
+  of pretending to a richer log this project doesn't actually have yet.
+- **A search box above Trade History** filters the already-loaded (max
+  200-row) table client-side by ticker, strategy, side, asset class, or
+  note text as you type - no page reload, no server round trip.
+- **New "Strategies" tab**: `rule_based` vs. `ml_filtered` vs.
+  `day_trading`, reactive to the same Today/Week/Month/All Time
+  selector Overview already uses. The underlying data
+  (`dashboard.json`'s `periods[period].by_strategy`) was already being
+  computed server-side by `summarize_period` - it just had never been
+  rendered anywhere until now, so this shipped with zero backend
+  changes, "which strategy is actually carrying the account" answered
+  from data that already existed.
+- **New "Backtest vs. Live" tab**: each asset class's exact currently-
+  live config's own real walk-forward validation (`results/
+  walk_forward/walk_forward.csv` for crypto, `walk_forward_stocks_5m_
+  best.csv` for stocks - the same files `results/walk_forward/README.md`
+  already documents as backing "Current live status") shown next to
+  this account's own real all-time trading numbers. New `site_data.py`
+  function `build_strategy_backtest_comparison()` parses those already-
+  committed CSVs (no Alpaca credentials or network access needed,
+  unlike every other Alpaca-backed file this script writes) into a new
+  `backtest_comparison.json`. Deliberately NOT a literal overlaid
+  equity curve - no per-day backtest equity series exists anywhere to
+  overlay against the live one, and fabricating one would break this
+  site's own "nothing here is simulated after the fact" promise - this
+  is instead a direct, honest stat comparison (win rate, avg return per
+  window, trade count) using exactly the real numbers that exist. A
+  window only counts toward the backtested win rate if the strategy
+  actually traded in it - a zero-trade window means "no signal fired,"
+  not "the strategy lost."
+- **Richer empty states**: every "no data yet" panel (positions, ticker
+  tracker, trade history, the two new tabs above) now shows a small
+  inline-SVG sparkline glyph above the message - a `background-image`
+  data: URI, so this adds zero extra network requests and stays exactly
+  as fast as the plain text it replaces.
+- **The chart modal's line now eases in on first draw** - a slightly
+  longer, curved-easing animation the very first time a chart renders
+  after opening the modal. Switching ranges afterward (1D/1W/1M/100D)
+  drops straight back to a near-instant redraw, so flipping between
+  ranges never feels like it's making anyone wait on an animation - the
+  entrance flourish is a first-impression thing, not a tax on every
+  click.
+- 5 new tests (`build_strategy_backtest_comparison`'s win-rate-only-
+  over-traded-windows logic, honest `None` win rate when nothing
+  traded, missing-CSV and per-class-isolated failure handling) - 217
+  tests total, all passing. Verified end-to-end with Playwright: the
+  trade detail modal renders every real field correctly and states its
+  own honesty caveat, the filter narrows 11 rows down to 1 exact match
+  and shows a real "no matches" state for a nonsense query, the
+  Strategies tab correctly shows real rule_based numbers for All Time
+  and an honest "nothing yet" message for Today (genuinely different
+  underlying data, not a bug), and the Backtest vs. Live tab renders
+  real validation numbers (88% win rate / 42 traded windows for crypto,
+  76% / 51 windows for stocks) next to the account's own real live
+  figures for both asset classes.
+- Cache-busting bumped to `?v=0.17.0`.
+
 ## Version Richards 0.16.10 - 2026-07-31
 
 - **Removed the on-canvas text labels from every chart's dashed

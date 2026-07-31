@@ -577,15 +577,41 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 }
 /* Positions/trade-history empty states get a bit more visual weight -
    a deliberately-designed placeholder rather than plain unstyled text
-   that could read as broken. */
+   that could read as broken. A small inline-SVG glyph (a flat
+   sparkline, `background-image` as a data: URI - zero extra network
+   requests, so this stays as fast as plain text) reinforces "nothing
+   here yet" is a real, deliberate state rather than a rendering gap.
+   Color is hardcoded to --text-faint's own hex value (#6b756f):
+   CSS custom properties don't resolve inside a data: URI. */
 .positions-board .empty-state,
 .tracker-board .empty-state,
-#ledger-empty {
+.strategy-board .empty-state,
+.backtest-board .empty-state,
+.backtest-card .empty-state,
+#ledger-empty,
+#ledger-filter-empty {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
   padding: 28px 16px;
   text-align: center;
   background: var(--panel);
+}
+.positions-board .empty-state::before,
+.tracker-board .empty-state::before,
+.strategy-board .empty-state::before,
+.backtest-board .empty-state::before,
+.backtest-card .empty-state::before,
+#ledger-empty::before,
+#ledger-filter-empty::before {
+  content: "";
+  display: block;
+  width: 30px;
+  height: 30px;
+  margin: 0 auto 10px;
+  opacity: 0.6;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b756f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,15 8,10 12,13 21,5'/%3E%3Ccircle cx='21' cy='5' r='1.4' fill='%236b756f'/%3E%3Cline x1='3' y1='20' x2='21' y2='20' opacity='0.5'/%3E%3C/svg%3E");
 }
 
 /* ==========================================================================
@@ -912,6 +938,20 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
 .chart-canvas-wrap[hidden] { display: none !important; }
 .chart-card-wide .chart-empty-state { min-height: 260px; }
 .chart-empty-state p { margin: 0; }
+/* Same reasoning/icon as the positions/trade-history empty states
+   above - a bare "no data" panel next to cards that DO have real
+   charts read as unfinished; a small glyph makes it read as a
+   deliberate state instead. */
+.chart-empty-state::before {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 26px;
+  opacity: 0.5;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236b756f' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,15 8,10 12,13 21,5'/%3E%3Ccircle cx='21' cy='5' r='1.4' fill='%236b756f'/%3E%3Cline x1='3' y1='20' x2='21' y2='20' opacity='0.5'/%3E%3C/svg%3E");
+}
 .chart-empty-note { font-weight: 700; font-size: 0.95rem; }
 .chart-empty-note.positive { color: var(--win); }
 .chart-empty-note.negative { color: var(--loss); }
@@ -1037,6 +1077,25 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
 
 .table-note { font-size: 0.82rem; color: var(--text-faint); margin: -8px 0 14px; }
 .table-legend { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+/* Filters the already-loaded (max 200-row) table entirely client-side
+   as you type - see assets/dashboard.js's applyLedgerFilter. */
+.table-filter { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.table-filter[hidden] { display: none; }
+.table-filter-input {
+  flex: 1 1 320px;
+  max-width: 420px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.table-filter-input::placeholder { color: var(--text-faint); }
+.table-filter-input:hover { border-color: var(--border-strong); }
+.table-filter-input:focus-visible { outline: none; border-color: var(--accent); background: var(--panel-strong); }
+.table-filter-count { font-size: 0.78rem; color: var(--text-faint); white-space: nowrap; }
 .badge {
   display: inline-block;
   font-size: 0.68rem;
@@ -1088,6 +1147,11 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
 .data-table tbody tr { animation: card-in 0.4s ease both; transition: background 0.12s ease; }
 .data-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.028); }
 .data-table tbody tr:hover { background: var(--panel); }
+/* Every row opens the trade detail modal (assets/dashboard.js's
+   openTradeModal) on click or Enter/Space - the same cursor/focus
+   language every other clickable card sitewide already uses. */
+.data-table tbody tr[data-trade-idx] { cursor: pointer; }
+.data-table tbody tr[data-trade-idx]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .data-table td.pnl-positive { color: var(--win); font-weight: 600; }
 .data-table td.pnl-negative { color: var(--loss); font-weight: 600; }
 /* Price / Qty-Notional / Realized are the numeric columns (see the
@@ -1097,6 +1161,147 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
 .data-table tbody td:nth-child(8) {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Trade detail modal (assets/dashboard.js) - opened by clicking any row
+   in Trade History. Same backdrop/pop-in language as the shared price-
+   chart modal above, but its own lightweight DOM (no chart, no range
+   selector) since it's a single trade record, not a time series.
+   ========================================================================== */
+
+.trade-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(5,7,6,0.72);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  animation: modal-fade-in 0.18s ease both;
+}
+.trade-modal-backdrop[hidden] { display: none; }
+.trade-modal {
+  position: relative;
+  width: min(480px, 100%);
+  max-height: min(560px, 88vh);
+  overflow-y: auto;
+  background: linear-gradient(165deg, var(--panel-strong), var(--bg-soft));
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 24px 24px 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  animation: modal-pop-in 0.22s cubic-bezier(.2,.8,.2,1) both;
+}
+.trade-modal-close {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  line-height: 1;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.trade-modal-close:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-strong); }
+.trade-modal-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trade-modal-head { padding-right: 40px; margin-bottom: 16px; }
+.trade-modal-title { font-size: 1.2rem; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
+.trade-modal-sub { color: var(--text-dim); font-size: 0.82rem; margin: 0; }
+.trade-modal-rows { border-top: 1px solid var(--border); padding-top: 12px; }
+.trade-modal-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: 0.85rem;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+.trade-modal-row:last-child { border-bottom: none; }
+.trade-modal-row > span:first-child { color: var(--text-dim); }
+.trade-modal-row > span:last-child { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+.trade-modal-rule {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  background: var(--panel);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.trade-modal-rule[hidden] { display: none; }
+.trade-modal-honesty { margin: 10px 0 0; font-size: 0.72rem; color: var(--text-faint); line-height: 1.5; }
+body.trade-modal-open { overflow: hidden; }
+
+/* ==========================================================================
+   Strategy Performance tab (assets/dashboard.js's renderStrategies) -
+   dashboard.json's periods[period].by_strategy, reactive to the same
+   Today/Week/Month/All Time selector the Overview tab already uses.
+   ========================================================================== */
+
+.strategy-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+.strategy-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 16px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.strategy-card:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,0.3); border-color: var(--border-strong); }
+.strategy-card-head { margin-bottom: 10px; }
+.strategy-card-name { font-size: 0.95rem; font-weight: 700; }
+.strategy-card-row { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-dim); padding: 3px 0; }
+.strategy-card-row span:last-child { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.strategy-card-pnl {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.strategy-card-pnl.positive { color: var(--win); }
+.strategy-card-pnl.negative { color: var(--loss); }
+
+/* ==========================================================================
+   Backtest vs. Live tab (assets/dashboard.js's renderBacktestComparison) -
+   real walk-forward validation numbers next to the account's own real
+   live-trading numbers, side by side within each card.
+   ========================================================================== */
+
+.backtest-cards { display: flex; flex-direction: column; gap: 16px; }
+.backtest-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+}
+.backtest-card-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.backtest-card-name { font-size: 1rem; font-weight: 700; }
+.backtest-card-config { font-size: 0.78rem; color: var(--text-faint); font-family: var(--font-mono); }
+.backtest-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.backtest-col { background: var(--bg-soft); border-radius: var(--radius-sm); padding: 12px 14px; }
+.backtest-col h4 { margin: 0 0 8px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); display: flex; flex-direction: column; gap: 2px; }
+.backtest-col-window { font-size: 0.68rem; text-transform: none; letter-spacing: 0; color: var(--text-faint); font-weight: 400; }
+.backtest-col-row { display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--text-dim); padding: 4px 0; }
+.backtest-col-row span:last-child { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+@media (max-width: 640px) {
+  .backtest-compare { grid-template-columns: 1fr; }
+  .trade-modal { padding: 20px 18px 16px; }
 }
 
 /* ==========================================================================

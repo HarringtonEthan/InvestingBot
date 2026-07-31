@@ -21,7 +21,14 @@
   let tickerTracker = null;
   let trades = null;
   let equity = null;
+  let backtestComparison = null;
   let currentPeriod = "today";  // controls the metric row + performance summary (period selector)
+  // The full, unfiltered trade rows currently loaded, each stamped with
+  // its own stable index (__idx) into trades.trades - the trade detail
+  // modal looks a row up by this index, so it always finds the exact
+  // same record clicked regardless of whatever the search filter above
+  // the table currently has typed into it.
+  let currentLedgerRows = [];
 
   // ---------------------------------------------------------------------
   // Safe fetch: never throws, never lets one bad file break the others.
@@ -377,21 +384,13 @@
     not_placed: "badge-notplaced",
   };
 
-  function renderLedger() {
-    const body = document.getElementById("ledger-body");
-    const empty = document.getElementById("ledger-empty");
-    if (!trades || !trades.available || !trades.trades.length) {
-      body.innerHTML = "";
-      empty.hidden = false;
-      empty.textContent = "No trades logged yet.";
-      return;
-    }
-    const rows = trades.trades; // already newest-first, capped server-side (site_data.py's MAX_TRADES_PUBLISHED)
-    empty.hidden = true;
-    body.innerHTML = rows.map((t) => {
-      const pnlCls = t.realized_pnl_usd === null ? "" : (t.realized_pnl_usd >= 0 ? "pnl-positive" : "pnl-negative");
-      const qtyOrNotional = t.notional_usd !== null ? fmtUsd(t.notional_usd) : fmtQty(t.position_qty_before);
-      return `<tr>
+  function ledgerRowHtml(t) {
+    const pnlCls = t.realized_pnl_usd === null ? "" : (t.realized_pnl_usd >= 0 ? "pnl-positive" : "pnl-negative");
+    const qtyOrNotional = t.notional_usd !== null ? fmtUsd(t.notional_usd) : fmtQty(t.position_qty_before);
+    // data-trade-idx lets the click/keyboard handlers below (wired once,
+    // in boot()) open the trade detail modal for this exact row without
+    // needing to re-derive which trade it is from displayed text.
+    return `<tr data-trade-idx="${t.__idx}" tabindex="0" role="button" aria-haspopup="dialog">
         <td>${fmtEt(t.timestamp_utc)}</td>
         <td>${t.asset_class}</td>
         <td>${t.ticker}</td>
@@ -403,7 +402,259 @@
         <td><span class="badge ${STATUS_BADGE_CLASS[t.order_status] || ""}">${STATUS_LABEL[t.order_status] || t.order_status}</span></td>
         <td>${t.notes || ""}</td>
       </tr>`;
-    }).join("");
+  }
+
+  // A trade matches the filter if the typed text appears in any of its
+  // own real fields - never a fuzzy/guessed match, just a plain
+  // case-insensitive substring search across exactly what's displayed
+  // (or, for notes, the same text the detail modal also shows in full).
+  function tradeMatchesFilter(t, needle) {
+    if (!needle) return true;
+    const haystack = [t.ticker, t.strategy, t.action, t.asset_class, t.order_status, t.notes]
+      .filter(Boolean).join(" ").toLowerCase();
+    return haystack.includes(needle);
+  }
+
+  function applyLedgerFilter() {
+    const filterInput = document.getElementById("ledger-filter");
+    const filterEmpty = document.getElementById("ledger-filter-empty");
+    const countEl = document.getElementById("ledger-filter-count");
+    const scrollEl = document.querySelector("#ledger-table")?.closest(".table-scroll");
+    const needle = ((filterInput && filterInput.value) || "").trim().toLowerCase();
+    const rows = currentLedgerRows.filter((t) => tradeMatchesFilter(t, needle));
+    document.getElementById("ledger-body").innerHTML = rows.map(ledgerRowHtml).join("");
+    const noMatches = needle && rows.length === 0;
+    if (filterEmpty) filterEmpty.hidden = !noMatches;
+    if (scrollEl) scrollEl.hidden = noMatches;
+    if (countEl) countEl.textContent = needle ? `${rows.length} of ${currentLedgerRows.length} shown` : "";
+  }
+
+  function renderLedger() {
+    const body = document.getElementById("ledger-body");
+    const empty = document.getElementById("ledger-empty");
+    const filterEl = document.querySelector(".table-filter");
+    if (!trades || !trades.available || !trades.trades.length) {
+      body.innerHTML = "";
+      currentLedgerRows = [];
+      empty.hidden = false;
+      empty.textContent = "No trades logged yet.";
+      if (filterEl) filterEl.hidden = true;
+      return;
+    }
+    empty.hidden = true;
+    if (filterEl) filterEl.hidden = false;
+    // Already newest-first, capped server-side (site_data.py's
+    // MAX_TRADES_PUBLISHED) - stamped with a stable index here so the
+    // detail modal and the filter above can both reference the exact
+    // same underlying record.
+    currentLedgerRows = trades.trades.map((t, i) => Object.assign({}, t, { __idx: i }));
+    applyLedgerFilter();
+  }
+
+  // ---------------------------------------------------------------------
+  // Trade detail modal - opened by clicking (or Enter/Space-selecting)
+  // any row in Trade History. Shows every field this project's trade
+  // log actually records for that row - richer than the table's own
+  // abbreviated columns (full mode/notes text, cost basis, whether the
+  // fill was confirmed) - plus a plain description of that strategy's
+  // real, already-documented rule.
+  //
+  // Deliberately does NOT show "indicator values at decision time" (the
+  // exact SMA/dip % the bot saw when it traded): live_trade.py's own
+  // trade log never records those - TRADE_LOG_FIELDS's own comment says
+  // outright that "notes" is only ever a fill-confirmation status
+  // string, never decision reasoning. Showing invented numbers here
+  // would be exactly the kind of fabrication every other panel on this
+  // site goes out of its way never to do, so the honest version of this
+  // feature is "every real field, clearly labeled" plus one sentence
+  // explaining that gap - not a richer chart this project's own logs
+  // don't actually support yet.
+  // ---------------------------------------------------------------------
+  const STRATEGY_RULE_TEXT = {
+    rule_based: "Buys a stock after a dip at least its configured threshold below a short moving average, then sells once price recovers to a set percentage above its own 20-period average.",
+    ml_filtered: "Same dip-and-recovery rule as rule_based, but a trained model also has to agree the dip looks like a real buying opportunity before the trade is placed.",
+    day_trading: "Crypto-only: buys after a dip of its configured threshold, then sells on either a fixed profit target or a stop-loss, whichever comes first - never held overnight.",
+  };
+
+  let lastTradeFocused = null;
+
+  function ensureTradeModal() {
+    if (document.getElementById("trade-modal-backdrop")) return;
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `
+      <div class="trade-modal-backdrop" id="trade-modal-backdrop" hidden>
+        <div class="trade-modal" id="trade-modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
+          <button type="button" class="trade-modal-close" id="trade-modal-close" aria-label="Close trade detail">&times;</button>
+          <div class="trade-modal-head">
+            <h2 class="trade-modal-title" id="trade-modal-title">—</h2>
+            <p class="trade-modal-sub" id="trade-modal-sub"></p>
+          </div>
+          <div class="trade-modal-rows" id="trade-modal-rows"></div>
+          <p class="trade-modal-rule" id="trade-modal-rule" hidden></p>
+          <p class="trade-modal-honesty">Decision-time indicator values (the exact SMA/dip % the bot saw) aren't recorded in the trade log - only the fields above are actually logged.</p>
+        </div>
+      </div>`;
+    document.body.appendChild(wrap.firstElementChild);
+    document.getElementById("trade-modal-close").addEventListener("click", closeTradeModal);
+    document.getElementById("trade-modal-backdrop").addEventListener("click", (e) => {
+      if (e.target.id === "trade-modal-backdrop") closeTradeModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      const backdrop = document.getElementById("trade-modal-backdrop");
+      if (!backdrop || backdrop.hidden) return;
+      if (e.key === "Escape") closeTradeModal();
+    });
+  }
+
+  function tradeDetailRow(label, value, cls) {
+    return `<div class="trade-modal-row"><span>${label}</span><span class="${cls || ""}">${value}</span></div>`;
+  }
+
+  function openTradeModal(idx) {
+    const t = currentLedgerRows.find((r) => r.__idx === idx);
+    if (!t) return;
+    lastTradeFocused = document.activeElement;
+    ensureTradeModal();
+    const backdrop = document.getElementById("trade-modal-backdrop");
+    const pnlCls = t.realized_pnl_usd === null ? "" : signClass(t.realized_pnl_usd);
+
+    document.getElementById("trade-modal-title").textContent = `${t.ticker} — ${t.action}`;
+    document.getElementById("trade-modal-sub").textContent = `${fmtEt(t.timestamp_utc)} · ${t.mode || "—"} · ${t.asset_class}`;
+
+    const rows = [
+      tradeDetailRow("Strategy", t.strategy || "unknown"),
+      tradeDetailRow("Status", `<span class="badge ${STATUS_BADGE_CLASS[t.order_status] || ""}">${STATUS_LABEL[t.order_status] || t.order_status}</span>`),
+      tradeDetailRow("Price", `${fmtUsd(t.price_usd)}${t.price_is_confirmed_fill ? " (confirmed fill)" : " (decision-time estimate - fill not confirmed)"}`),
+      t.notional_usd !== null ? tradeDetailRow("Notional", fmtUsd(t.notional_usd)) : tradeDetailRow("Qty held before this trade", fmtQty(t.position_qty_before)),
+      t.avg_entry_price_usd !== null ? tradeDetailRow("Avg Entry (cost basis)", fmtUsd(t.avg_entry_price_usd)) : "",
+      t.realized_pnl_usd !== null ? tradeDetailRow("Realized P&amp;L", fmtUsdSigned(t.realized_pnl_usd), pnlCls) : "",
+      t.notes ? tradeDetailRow("System Note", t.notes) : "",
+    ].filter(Boolean).join("");
+    document.getElementById("trade-modal-rows").innerHTML = rows;
+
+    const ruleEl = document.getElementById("trade-modal-rule");
+    const ruleText = STRATEGY_RULE_TEXT[t.strategy];
+    ruleEl.hidden = !ruleText;
+    if (ruleText) ruleEl.textContent = `${t.strategy}'s rule: ${ruleText}`;
+
+    backdrop.hidden = false;
+    document.body.classList.add("trade-modal-open");
+    document.getElementById("trade-modal-close").focus();
+  }
+
+  function closeTradeModal() {
+    const backdrop = document.getElementById("trade-modal-backdrop");
+    if (!backdrop || backdrop.hidden) return;
+    backdrop.hidden = true;
+    document.body.classList.remove("trade-modal-open");
+    if (lastTradeFocused && typeof lastTradeFocused.focus === "function") lastTradeFocused.focus();
+  }
+
+  // ---------------------------------------------------------------------
+  // Per-strategy performance - dashboard.json's periods[period].by_strategy
+  // is computed server-side (site_data.py's summarize_period, from the
+  // exact same confirmed-fill-sell definition every other number on this
+  // page already uses) - this data existed already and simply had never
+  // been rendered anywhere until now.
+  // ---------------------------------------------------------------------
+  const STRATEGY_LABELS = {
+    rule_based: "Rule-Based (Stocks)",
+    ml_filtered: "ML-Filtered (Stocks)",
+    day_trading: "Day Trading (Crypto)",
+  };
+
+  function strategyCard(strategyKey, stats) {
+    const label = STRATEGY_LABELS[strategyKey] || strategyKey;
+    const avgPerTrade = stats.num_trades ? stats.realized_pnl_usd / stats.num_trades : null;
+    return `
+      <div class="strategy-card">
+        <div class="strategy-card-head"><span class="strategy-card-name">${label}</span></div>
+        <div class="strategy-card-row"><span>Trades</span><span>${stats.num_trades}</span></div>
+        <div class="strategy-card-row"><span>Win Rate</span><span>${stats.win_rate === null ? "—" : (stats.win_rate * 100).toFixed(0) + "%"}</span></div>
+        <div class="strategy-card-row"><span>Avg P&amp;L / Trade</span><span class="${signClass(avgPerTrade)}">${avgPerTrade === null ? "—" : fmtUsdSigned(avgPerTrade)}</span></div>
+        <div class="strategy-card-pnl ${signClass(stats.realized_pnl_usd)}">${fmtUsdSigned(stats.realized_pnl_usd)}</div>
+      </div>`;
+  }
+
+  function renderStrategies(period) {
+    const el = document.getElementById("strategy-cards");
+    const labelEl = document.getElementById("strategy-period-label");
+    if (!el || !dashboard) return;
+    const p = dashboard.periods[period];
+    if (labelEl) labelEl.textContent = p.label;
+    const byStrategy = p.by_strategy || {};
+    const keys = Object.keys(byStrategy);
+    if (!keys.length) {
+      el.innerHTML = '<p class="empty-state">No confirmed-fill sells in this period to attribute to a strategy yet.</p>';
+      return;
+    }
+    // Ranked by realized P&L, highest first - "which strategy is
+    // actually carrying the account" is a direct comparison, so lead
+    // with the answer rather than a fixed/alphabetical order.
+    keys.sort((a, b) => byStrategy[b].realized_pnl_usd - byStrategy[a].realized_pnl_usd);
+    el.innerHTML = keys.map((k) => strategyCard(k, byStrategy[k])).join("");
+  }
+
+  // ---------------------------------------------------------------------
+  // Backtest vs. Live - real walk-forward validation results
+  // (site_data.py's build_strategy_backtest_comparison, reading
+  // results/walk_forward/*.csv) compared against this account's own
+  // real all-time trading numbers (dashboard.json's
+  // periods.all_time.stocks_vs_crypto, computed the exact same way
+  // every other number on this page already is). Deliberately NOT a
+  // literal overlaid equity curve: no per-day backtest equity series is
+  // stored anywhere to overlay against the live one, and fabricating
+  // one would violate this whole site's own "nothing here is
+  // simulated after the fact" promise (see the page's own subtitle).
+  // This is instead a direct, honest stat comparison - the same real
+  // evidence README.md's own "Current live status" section already
+  // cites, shown next to what the account has actually done since its
+  // last relaunch.
+  // ---------------------------------------------------------------------
+  const BACKTEST_ASSET_LABELS = { crypto: "Crypto — Day Trading", stock: "Stocks — Rule-Based" };
+
+  function backtestCard(assetClass, bt, live) {
+    const label = BACKTEST_ASSET_LABELS[assetClass] || assetClass;
+    if (!bt || bt.available === false) {
+      return `<div class="backtest-card"><div class="backtest-card-head"><span class="backtest-card-name">${label}</span></div><p class="empty-state">${(bt && bt.reason) || "Backtest validation data unavailable."}</p></div>`;
+    }
+    const liveRows = live
+      ? `<div class="backtest-col-row"><span>Trades</span><span>${live.num_trades}</span></div>
+         <div class="backtest-col-row"><span>Win Rate</span><span>${live.win_rate === null ? "—" : (live.win_rate * 100).toFixed(0) + "%"}</span></div>
+         <div class="backtest-col-row"><span>Realized P&amp;L</span><span class="${signClass(live.realized_pnl_usd)}">${fmtUsdSigned(live.realized_pnl_usd)}</span></div>`
+      : `<p class="empty-state">No confirmed live trades yet for this account.</p>`;
+    return `
+      <div class="backtest-card">
+        <div class="backtest-card-head">
+          <span class="backtest-card-name">${label}</span>
+          <span class="backtest-card-config">${bt.config_label}</span>
+        </div>
+        <div class="backtest-compare">
+          <div class="backtest-col">
+            <h4>Backtested <span class="backtest-col-window">${bt.window_start} → ${bt.window_end}</span></h4>
+            <div class="backtest-col-row"><span>Windows</span><span>${bt.num_traded_windows} traded of ${bt.num_windows} (${bt.num_tickers} tickers)</span></div>
+            <div class="backtest-col-row"><span>Win Rate</span><span>${bt.win_rate === null ? "—" : (bt.win_rate * 100).toFixed(0) + "%"}</span></div>
+            <div class="backtest-col-row"><span>Avg Return / Window</span><span class="${signClass(bt.avg_return_per_window)}">${fmtPct(bt.avg_return_per_window)}</span></div>
+          </div>
+          <div class="backtest-col">
+            <h4>Live <span class="backtest-col-window">since last relaunch</span></h4>
+            ${liveRows}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderBacktestComparison() {
+    const el = document.getElementById("backtest-cards");
+    if (!el) return;
+    if (!backtestComparison || !backtestComparison.available) {
+      el.innerHTML = `<p class="empty-state">${(backtestComparison && backtestComparison.reason) || "Backtest comparison data wasn't generated for this run."}</p>`;
+      return;
+    }
+    const allTime = dashboard && dashboard.periods && dashboard.periods.all_time;
+    const liveByClass = (allTime && allTime.stocks_vs_crypto) || {};
+    const classes = backtestComparison.classes || {};
+    el.innerHTML = Object.keys(classes).map((k) => backtestCard(k, classes[k], liveByClass[k])).join("");
   }
 
   // ---------------------------------------------------------------------
@@ -419,6 +670,7 @@
     });
     renderMetricRow(period);
     renderStatsGrid(period);
+    safely("strategy breakdown", () => renderStrategies(period));
   }
 
   function switchContentTab(tab) {
@@ -456,22 +708,46 @@
       btn.addEventListener("click", () => switchContentTab(btn.dataset.tab));
     });
 
+    // Trade History row clicks/keyboard-selects open the detail modal;
+    // the filter box re-renders the table as the user types. Both wired
+    // once here (the elements exist statically in the page markup) so
+    // neither depends on trades.json having loaded yet.
+    const ledgerBody = document.getElementById("ledger-body");
+    if (ledgerBody) {
+      ledgerBody.addEventListener("click", (e) => {
+        const tr = e.target.closest("tr[data-trade-idx]");
+        if (tr) openTradeModal(Number(tr.dataset.tradeIdx));
+      });
+      ledgerBody.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        const tr = e.target.closest("tr[data-trade-idx]");
+        if (!tr || tr !== document.activeElement) return;
+        e.preventDefault();
+        openTradeModal(Number(tr.dataset.tradeIdx));
+      });
+    }
+    const ledgerFilterInput = document.getElementById("ledger-filter");
+    if (ledgerFilterInput) {
+      ledgerFilterInput.addEventListener("input", applyLedgerFilter);
+    }
+
     // A nav link from charts.html points here with a hash (e.g.
     // index.html#positions) so a single click lands on the right tab -
     // without this, every such link always opened the default Overview
     // tab first, requiring a second click once already on this page.
     const hashTab = location.hash.slice(1);
-    if (["overview", "positions", "tracker", "trades"].includes(hashTab)) {
+    if (["overview", "positions", "tracker", "strategies", "backtest", "trades"].includes(hashTab)) {
       switchContentTab(hashTab);
     }
 
-    [dashboard, positions, positionIndicators, tickerTracker, trades, equity] = await Promise.all([
+    [dashboard, positions, positionIndicators, tickerTracker, trades, equity, backtestComparison] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
       loadJson("position_indicators.json", { available: false, symbols: {} }),
       loadJson("ticker_tracker.json", { available: false, reason: "ticker_tracker.json not found", categories: { stocks: [], crypto: [] } }),
       loadJson("trades.json", { available: false, trades: [] }),
       loadJson("equity.json", { available: false, points: [] }),
+      loadJson("backtest_comparison.json", { available: false, reason: "backtest_comparison.json not found", classes: {} }),
     ]);
 
     // Whatever happened above, the page is done with its initial load -
@@ -491,6 +767,7 @@
     safely("positions", renderPositions);
     safely("ticker tracker", renderTickerTracker);
     safely("trade history", renderLedger);
+    safely("backtest comparison", renderBacktestComparison);
     safely("period metrics", () => renderPeriod(currentPeriod));
   }
 

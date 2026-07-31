@@ -26,6 +26,7 @@ from site_data import (
     attribute_position_strategy,
     build_position_sma_indicators,
     build_positions_payload,
+    build_strategy_backtest_comparison,
     build_ticker_charts,
     build_ticker_tracker,
     classify_order_status,
@@ -1101,3 +1102,78 @@ def test_ticker_charts_crypto_entry_timestamp_matches_by_bare_ticker(monkeypatch
     btc = result["symbols"]["BTC"]
     assert btc["entry_utc"] == "2026-07-25T09:00:00+00:00"
     assert btc["entry_is_estimated"] is False
+
+
+# ---- build_strategy_backtest_comparison: real walk-forward validation
+# CSVs (results/walk_forward/) parsed and compared against the live
+# account elsewhere on the site - never a live Alpaca fetch, just a
+# CSV read, so tests point BACKTEST_WALK_FORWARD_FILES at temp files
+# instead of hitting the real committed ones ----
+
+def _write_csv(path, rows, columns):
+    df = pd.DataFrame(rows, columns=columns)
+    df.to_csv(path, index=False)
+
+
+def test_backtest_comparison_computes_win_rate_only_over_traded_windows(tmp_path, monkeypatch):
+    path = tmp_path / "crypto.csv"
+    _write_csv(path, [
+        ["BTC-USD", "2025-08-01", "2025-09-30", -0.04, 0.01, 0.05, 0.05, 2],   # win
+        ["BTC-USD", "2025-09-30", "2025-11-29", -0.04, 0.01, 0.05, -0.02, 1],  # loss
+        ["BTC-USD", "2025-11-29", "2026-01-28", -0.04, 0.01, 0.05, 0.0, 0],    # no signal - excluded from win rate
+    ], columns=["ticker", "window_start", "window_end", "dip_threshold", "profit_target", "stop_loss", "total_return", "trades"])
+    monkeypatch.setattr("site_data.BACKTEST_WALK_FORWARD_FILES", {
+        "crypto": {"path": str(path), "strategy": "day_trading"},
+    })
+    result = build_strategy_backtest_comparison()
+    crypto = result["classes"]["crypto"]
+    assert crypto["available"] is True
+    assert crypto["num_windows"] == 3
+    assert crypto["num_traded_windows"] == 2
+    assert crypto["num_profitable_windows"] == 1
+    assert crypto["win_rate"] == 0.5
+    assert crypto["window_start"] == "2025-08-01"
+    assert crypto["window_end"] == "2026-01-28"
+    assert "dip -4.0%" in crypto["config_label"]
+
+
+def test_backtest_comparison_no_traded_windows_reports_none_win_rate(tmp_path, monkeypatch):
+    path = tmp_path / "crypto.csv"
+    _write_csv(path, [
+        ["BTC-USD", "2025-08-01", "2025-09-30", -0.04, 0.01, 0.05, 0.0, 0],
+    ], columns=["ticker", "window_start", "window_end", "dip_threshold", "profit_target", "stop_loss", "total_return", "trades"])
+    monkeypatch.setattr("site_data.BACKTEST_WALK_FORWARD_FILES", {
+        "crypto": {"path": str(path), "strategy": "day_trading"},
+    })
+    result = build_strategy_backtest_comparison()
+    crypto = result["classes"]["crypto"]
+    assert crypto["num_traded_windows"] == 0
+    assert crypto["win_rate"] is None
+
+
+def test_backtest_comparison_missing_csv_surfaces_reason_not_crash(tmp_path, monkeypatch):
+    monkeypatch.setattr("site_data.BACKTEST_WALK_FORWARD_FILES", {
+        "crypto": {"path": str(tmp_path / "does_not_exist.csv"), "strategy": "day_trading"},
+    })
+    result = build_strategy_backtest_comparison()
+    crypto = result["classes"]["crypto"]
+    assert crypto["available"] is False
+    assert crypto["strategy"] == "day_trading"
+
+
+def test_backtest_comparison_one_class_failure_does_not_block_the_other(tmp_path, monkeypatch):
+    good_path = tmp_path / "stock.csv"
+    _write_csv(good_path, [
+        ["AAPL", -0.015, 0.02, "2025-08-01", "2025-09-30", 0.03, 3],
+    ], columns=["ticker", "dip_threshold", "exit_threshold", "window_start", "window_end", "total_return", "trades"])
+    monkeypatch.setattr("site_data.BACKTEST_WALK_FORWARD_FILES", {
+        "crypto": {"path": str(tmp_path / "missing.csv"), "strategy": "day_trading"},
+        "stock": {"path": str(good_path), "strategy": "rule_based"},
+    })
+    result = build_strategy_backtest_comparison()
+    assert result["classes"]["crypto"]["available"] is False
+    stock = result["classes"]["stock"]
+    assert stock["available"] is True
+    assert stock["win_rate"] == 1.0
+    assert "dip -1.5%" in stock["config_label"]
+    assert "exit 2.0%" in stock["config_label"]

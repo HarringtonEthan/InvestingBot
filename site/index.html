@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>InvestingBot — Live Trading Dashboard</title>
 <meta name="description" content="Live performance dashboard for a real automated paper-trading bot.">
-<link rel="stylesheet" href="assets/styles.css?v=0.16.10">
+<link rel="stylesheet" href="assets/styles.css?v=0.17.0">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
 <body class="is-loading">
@@ -21,6 +21,8 @@
       <button class="main-nav-link content-tab-btn active" data-tab="overview" type="button">Overview</button>
       <button class="main-nav-link content-tab-btn" data-tab="positions" type="button">Positions</button>
       <button class="main-nav-link content-tab-btn" data-tab="tracker" type="button">Ticker Tracker</button>
+      <button class="main-nav-link content-tab-btn" data-tab="strategies" type="button">Strategies</button>
+      <button class="main-nav-link content-tab-btn" data-tab="backtest" type="button">Backtest vs. Live</button>
       <button class="main-nav-link content-tab-btn" data-tab="trades" type="button">Trades</button>
       <a class="main-nav-link" href="charts.html">Charts</a>
     </nav>
@@ -114,14 +116,34 @@
     </section>
   </div>
 
+  <div class="content-tab-panel" data-tab-panel="strategies">
+    <section class="strategy-board" aria-label="Per-strategy performance">
+      <h2 class="section-title">Strategy Performance — <span id="strategy-period-label">Today</span></h2>
+      <p class="table-note">Which strategy is actually carrying the account - uses the same period selector above (Today/This Week/This Month/All Time) and the same "confirmed-fill sell = a trade" definition as every other number on this page, just sliced by strategy instead of by period or asset class.</p>
+      <div class="strategy-cards" id="strategy-cards"></div>
+    </section>
+  </div>
+
+  <div class="content-tab-panel" data-tab-panel="backtest">
+    <section class="backtest-board" aria-label="Backtest vs live comparison">
+      <h2 class="section-title">Backtest vs. Live</h2>
+      <p class="table-note" id="backtest-note">This project's whole premise is validating a strategy before trusting it - this compares each currently-live config's own real walk-forward validation (the exact evidence behind "Current live status" in the README) against this account's actual real trading since its last relaunch.</p>
+      <div class="backtest-cards" id="backtest-cards"></div>
+    </section>
+  </div>
+
   <div class="content-tab-panel" data-tab-panel="trades">
     <section aria-label="Trade history">
       <h2 class="section-title">Trade History</h2>
-      <p class="table-note">Always shows the most recent trades regardless of the period selector above - not filtered to Today/Week/Month.</p>
+      <p class="table-note">Always shows the most recent trades regardless of the period selector above - not filtered to Today/Week/Month. Click any row for its full logged detail.</p>
       <div class="table-legend">
         <span class="badge badge-confirmed">Confirmed Fill</span>
         <span class="badge badge-unconfirmed">Submitted, Unconfirmed</span>
         <span class="badge badge-notplaced">Not Placed</span>
+      </div>
+      <div class="table-filter">
+        <input type="search" id="ledger-filter" class="table-filter-input" placeholder="Filter by ticker, strategy, side, or note…" aria-label="Filter trade history">
+        <span class="table-filter-count" id="ledger-filter-count"></span>
       </div>
       <div class="table-scroll">
         <table class="data-table" id="ledger-table">
@@ -135,6 +157,7 @@
         </table>
       </div>
       <p class="empty-state" id="ledger-empty" hidden>No trades logged yet.</p>
+      <p class="empty-state" id="ledger-filter-empty" hidden>No trades match this filter.</p>
     </section>
   </div>
 
@@ -147,9 +170,9 @@
 
 </main>
 
-<script src="assets/background.js?v=0.16.10"></script>
+<script src="assets/background.js?v=0.17.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="assets/position-chart.js?v=0.16.10"></script>
-<script src="assets/dashboard.js?v=0.16.10"></script>
+<script src="assets/position-chart.js?v=0.17.0"></script>
+<script src="assets/dashboard.js?v=0.17.0"></script>
 </body>
 </html>
