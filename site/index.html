@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>InvestingBot — Live Trading Dashboard</title>
 <meta name="description" content="Live performance dashboard for a real automated paper-trading bot.">
-<link rel="stylesheet" href="assets/styles.css?v=0.16.4">
+<link rel="stylesheet" href="assets/styles.css?v=0.16.6">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
 <body class="is-loading">
@@ -20,6 +20,7 @@
     <nav class="main-nav" aria-label="Dashboard sections">
       <button class="main-nav-link content-tab-btn active" data-tab="overview" type="button">Overview</button>
       <button class="main-nav-link content-tab-btn" data-tab="positions" type="button">Positions</button>
+      <button class="main-nav-link content-tab-btn" data-tab="tracker" type="button">Ticker Tracker</button>
       <button class="main-nav-link content-tab-btn" data-tab="trades" type="button">Trades</button>
       <a class="main-nav-link" href="charts.html">Charts</a>
     </nav>
@@ -98,6 +99,21 @@
     </section>
   </div>
 
+  <div class="content-tab-panel" data-tab-panel="tracker">
+    <section class="tracker-board" aria-label="Ticker tracker">
+      <h2 class="section-title">Ticker Tracker</h2>
+      <p class="table-note">Every ticker either strategy watches, whether the bot is holding it right now or not - green means it's currently held and in profit, red means held and at a loss, grey means it's just being watched. Last Close and the 100-Day Avg both come from the same daily bar series.</p>
+      <div class="position-group position-group-stocks">
+        <h3 class="position-group-title"><span class="dot" aria-hidden="true"></span>Stocks</h3>
+        <div class="tracker-cards" id="tracker-stocks"></div>
+      </div>
+      <div class="position-group position-group-crypto">
+        <h3 class="position-group-title"><span class="dot" aria-hidden="true"></span>Crypto</h3>
+        <div class="tracker-cards" id="tracker-crypto"></div>
+      </div>
+    </section>
+  </div>
+
   <div class="content-tab-panel" data-tab-panel="trades">
     <section aria-label="Trade history">
       <h2 class="section-title">Trade History</h2>
@@ -131,9 +147,9 @@
 
 </main>
 
-<script src="assets/background.js?v=0.16.4"></script>
+<script src="assets/background.js?v=0.16.6"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="assets/position-chart.js?v=0.16.4"></script>
-<script src="assets/dashboard.js?v=0.16.4"></script>
+<script src="assets/position-chart.js?v=0.16.6"></script>
+<script src="assets/dashboard.js?v=0.16.6"></script>
 </body>
 </html>

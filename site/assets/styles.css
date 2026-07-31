@@ -503,6 +503,56 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-card:hover .position-card-hint,
 .position-card:focus-visible .position-card-hint { color: var(--accent); }
 
+/* Ticker Tracker - every watched ticker, not just currently-held ones.
+   Same card language as .position-card above (grid, gradient panel,
+   colored top border) but never clickable - there's no "since purchase"
+   chart for a ticker that isn't a real position. */
+.tracker-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+.tracker-card {
+  background: linear-gradient(165deg, var(--panel-strong), var(--panel));
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 16px;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 1px 3px rgba(0,0,0,0.3);
+  animation: card-in 0.45s ease both;
+}
+/* Grey = watched but not currently held - a deliberate, visible state of
+   its own rather than the absence of one. */
+.tracker-card.tracker-state-not-held { border-top-color: var(--text-faint); }
+.tracker-card.tracker-state-profit { border-top-color: var(--win); }
+.tracker-card.tracker-state-loss { border-top-color: var(--loss); }
+.tracker-card.tracker-state-flat { border-top-color: var(--border-strong); }
+.tracker-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+.tracker-card-ticker { font-size: 1.05rem; font-weight: 700; }
+.tracker-card-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.tracker-card-row { display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--text-dim); padding: 3px 0; }
+.tracker-card-row span:last-child { color: var(--text); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tracker-card-delta { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-family: var(--font-mono); font-weight: 700; font-size: 0.85rem; text-align: right; }
+.tracker-card-delta.positive { color: var(--win); }
+.tracker-card-delta.negative { color: var(--loss); }
+.tracker-card-unavailable { color: var(--text-faint); font-size: 0.78rem; margin: 0; }
+
 .empty-state {
   color: var(--text-dim);
   font-size: 0.88rem;
@@ -512,6 +562,7 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
    a deliberately-designed placeholder rather than plain unstyled text
    that could read as broken. */
 .positions-board .empty-state,
+.tracker-board .empty-state,
 #ledger-empty {
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius);
@@ -1026,6 +1077,7 @@ body.reveal-ready .chart-section-group.is-visible { opacity: 1; transform: trans
   .site-header-inner { flex-wrap: wrap; }
   .main-nav { order: 3; width: 100%; justify-content: flex-start; gap: 2px; }
   .position-cards { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+  .tracker-cards { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   .data-table { font-size: 0.75rem; }
 }
 

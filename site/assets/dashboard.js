@@ -18,6 +18,7 @@
   let dashboard = null;
   let positions = null;
   let positionIndicators = null;
+  let tickerTracker = null;
   let trades = null;
   let equity = null;
   let currentPeriod = "today";  // controls the metric row + performance summary (period selector)
@@ -290,6 +291,53 @@
   }
 
   // ---------------------------------------------------------------------
+  // Ticker Tracker - every ticker either live workflow watches, not just
+  // the ones currently held (see site_data.py's build_ticker_tracker).
+  // A held ticker's card is outlined green (in profit) or red (at a
+  // loss) - the same signal a position card's own trend-up/trend-down
+  // border already gives; a watched-but-not-held ticker gets a neutral
+  // grey outline instead of no outline at all, so "not held" reads as a
+  // deliberate state rather than a rendering gap.
+  // ---------------------------------------------------------------------
+  function trackerCard(row) {
+    const stateClass = "tracker-state-" + row.position_state.replace("_", "-");
+    const heldBadge = row.held ? '<span class="tracker-card-badge">Held</span>' : "";
+    let body;
+    if (!row.available) {
+      body = `<p class="tracker-card-unavailable">${row.reason || "Price data unavailable."}</p>`;
+    } else {
+      const deltaClass = row.pct_vs_sma100 >= 0 ? "positive" : "negative";
+      body = `
+        <div class="tracker-card-row"><span>Last Close</span><span>${fmtUsd(row.last_close)}</span></div>
+        <div class="tracker-card-row"><span>100-Day Avg</span><span>${fmtUsd(row.sma100)}</span></div>
+        <div class="tracker-card-delta ${deltaClass}">${fmtPct(row.pct_vs_sma100)} vs 100-day avg</div>`;
+    }
+    return `
+      <div class="tracker-card ${stateClass}">
+        <div class="tracker-card-head">
+          <span class="tracker-card-ticker">${row.ticker}</span>
+          ${heldBadge}
+        </div>
+        ${body}
+      </div>`;
+  }
+
+  function renderTickerTracker() {
+    const stockEl = document.getElementById("tracker-stocks");
+    const cryptoEl = document.getElementById("tracker-crypto");
+    if (!tickerTracker || !tickerTracker.available) {
+      const msg = `<p class="empty-state">${(tickerTracker && tickerTracker.reason) || "Ticker tracker data wasn't fetched for this run."}</p>`;
+      stockEl.innerHTML = msg;
+      cryptoEl.innerHTML = msg;
+      return;
+    }
+    const stocks = tickerTracker.categories.stocks || [];
+    const cryptos = tickerTracker.categories.crypto || [];
+    stockEl.innerHTML = stocks.length ? stocks.map(trackerCard).join("") : '<p class="empty-state">No watched stock tickers configured.</p>';
+    cryptoEl.innerHTML = cryptos.length ? cryptos.map(trackerCard).join("") : '<p class="empty-state">No watched crypto tickers configured.</p>';
+  }
+
+  // ---------------------------------------------------------------------
   // Trade history - deliberately NOT filtered by the period selector
   // above (or by the charts page's own period dropdown, which lives
   // entirely on charts.html): this section always shows the most recent
@@ -391,14 +439,15 @@
     // without this, every such link always opened the default Overview
     // tab first, requiring a second click once already on this page.
     const hashTab = location.hash.slice(1);
-    if (["overview", "positions", "trades"].includes(hashTab)) {
+    if (["overview", "positions", "tracker", "trades"].includes(hashTab)) {
       switchContentTab(hashTab);
     }
 
-    [dashboard, positions, positionIndicators, trades, equity] = await Promise.all([
+    [dashboard, positions, positionIndicators, tickerTracker, trades, equity] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
       loadJson("position_indicators.json", { available: false, symbols: {} }),
+      loadJson("ticker_tracker.json", { available: false, reason: "ticker_tracker.json not found", categories: { stocks: [], crypto: [] } }),
       loadJson("trades.json", { available: false, trades: [] }),
       loadJson("equity.json", { available: false, points: [] }),
     ]);
@@ -418,6 +467,7 @@
 
     safely("account strip", renderAccountStrip);
     safely("positions", renderPositions);
+    safely("ticker tracker", renderTickerTracker);
     safely("trade history", renderLedger);
     safely("period metrics", () => renderPeriod(currentPeriod));
   }

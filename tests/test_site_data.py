@@ -15,15 +15,20 @@ import pytest
 from site_data import (
     ET,
     RULE_BASED_EXIT_THRESHOLD,
+    TICKER_TRACKER_SMA_PERIODS,
+    WATCHED_CRYPTO_TICKERS,
+    WATCHED_STOCK_TICKERS,
     _crypto_alpaca_symbol,
     _equity_value_asof,
     _max_drawdown,
     _pick_bar_interval,
+    _position_ticker,
     _thin_points,
     attribute_position_strategy,
     build_position_price_histories,
     build_position_sma_indicators,
     build_positions_payload,
+    build_ticker_tracker,
     classify_order_status,
     dedupe_trades,
     find_account_relaunch,
@@ -877,3 +882,113 @@ def test_sma_indicators_per_symbol_failure_does_not_block_others(monkeypatch):
     assert result["symbols"]["AAPL"]["available"] is False
     assert "no stock bars" in result["symbols"]["AAPL"]["reason"]
     assert result["symbols"]["MSFT"]["available"] is True
+
+
+# ---- _position_ticker ----
+
+def test_position_ticker_stock_passes_through_unchanged():
+    assert _position_ticker("AAPL", is_crypto=False) == "AAPL"
+
+
+def test_position_ticker_crypto_strips_quote_currency():
+    # Alpaca's positions endpoint returns crypto symbols without the "/"
+    # (e.g. "BTCUSD") - must become the bare "BTC" live_trade.py actually
+    # logs as its ticker, or every trade-log/watched-ticker lookup keyed
+    # off a live crypto position would silently and permanently miss.
+    assert _position_ticker("BTCUSD", is_crypto=True) == "BTC"
+
+
+# ---- build_ticker_tracker ----
+
+def _daily_bars(n: int, start_price: float = 100.0, step: float = 1.0) -> pd.DataFrame:
+    idx = pd.date_range("2026-01-01", periods=n, freq="1D", tz="UTC")
+    closes = [start_price + i * step for i in range(n)]
+    return pd.DataFrame({"Close": closes}, index=idx)
+
+
+def test_ticker_tracker_not_requested():
+    result = build_ticker_tracker(None)
+    assert result["available"] is False
+    assert result["categories"] == {"stocks": [], "crypto": []}
+
+
+def test_ticker_tracker_alpaca_error_surfaces_reason_not_crash():
+    result = build_ticker_tracker(([], "RuntimeError: no network access"))
+    assert result["available"] is False
+    assert "no network access" in result["reason"]
+
+
+def test_ticker_tracker_covers_the_full_watched_universe(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(120))
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda *a, **k: _daily_bars(120, start_price=60000.0, step=50.0))
+    result = build_ticker_tracker(([], None))
+    stock_tickers = [row["ticker"] for row in result["categories"]["stocks"]]
+    crypto_tickers = [row["ticker"] for row in result["categories"]["crypto"]]
+    assert stock_tickers == WATCHED_STOCK_TICKERS
+    assert crypto_tickers == WATCHED_CRYPTO_TICKERS
+
+
+def test_ticker_tracker_computes_sma100_and_pct(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(120))
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert aapl["available"] is True
+    assert aapl["reason"] is None
+    # A steadily rising series sits *above* its own trailing average.
+    assert aapl["pct_vs_sma100"] > 0
+    assert aapl["last_close"] == 219.0  # 100 + 119*1.0
+
+
+def test_ticker_tracker_not_enough_history_is_honest_not_a_guess(monkeypatch):
+    # Fewer than TICKER_TRACKER_SMA_PERIODS bars - rolling(100).mean() is
+    # NaN for every row.
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(TICKER_TRACKER_SMA_PERIODS - 1))
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert aapl["available"] is False
+    assert aapl["sma100"] is None
+    assert aapl["pct_vs_sma100"] is None
+    assert "not enough" in aapl["reason"]
+
+
+def test_ticker_tracker_marks_a_held_stock_as_profit_or_loss(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(120))
+    positions = [
+        {"symbol": "AAPL", "is_crypto": False, "unrealized_plpc": 0.05},
+        {"symbol": "DIS", "is_crypto": False, "unrealized_plpc": -0.02},
+    ]
+    result = build_ticker_tracker((positions, None))
+    by_ticker = {row["ticker"]: row for row in result["categories"]["stocks"]}
+    assert by_ticker["AAPL"]["held"] is True
+    assert by_ticker["AAPL"]["position_state"] == "profit"
+    assert by_ticker["DIS"]["held"] is True
+    assert by_ticker["DIS"]["position_state"] == "loss"
+    # Every other watched stock isn't held at all.
+    assert by_ticker["QQQ"]["held"] is False
+    assert by_ticker["QQQ"]["position_state"] == "not_held"
+    assert by_ticker["QQQ"]["unrealized_plpc"] is None
+
+
+def test_ticker_tracker_matches_a_held_crypto_position_by_bare_ticker(monkeypatch):
+    # Positions endpoint returns "BTCUSD" (no slash) - must still match
+    # the watched "BTC" row, not silently show it as not held.
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda *a, **k: _daily_bars(120, start_price=60000.0, step=50.0))
+    positions = [{"symbol": "BTCUSD", "is_crypto": True, "unrealized_plpc": 0.03}]
+    result = build_ticker_tracker((positions, None))
+    btc = next(row for row in result["categories"]["crypto"] if row["ticker"] == "BTC")
+    assert btc["held"] is True
+    assert btc["position_state"] == "profit"
+
+
+def test_ticker_tracker_per_ticker_failure_does_not_block_others(monkeypatch):
+    def fake_stock_bars(symbol, interval, start, end):
+        if symbol == "AAPL":
+            raise RuntimeError("Alpaca returned no stock bars for AAPL")
+        return _daily_bars(120)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_ticker_tracker(([], None))
+    by_ticker = {row["ticker"]: row for row in result["categories"]["stocks"]}
+    assert by_ticker["AAPL"]["available"] is False
+    assert "no stock bars" in by_ticker["AAPL"]["reason"]
+    assert by_ticker["QQQ"]["available"] is True

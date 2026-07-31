@@ -10,7 +10,7 @@ richly, instead of a static image. Reads the same logs/*.csv files
 visualize_log.py already reads, so there's exactly one source of truth
 for "what actually happened," not a second copy that could drift.
 
-Writes six files into --out-dir (default site/data/):
+Writes seven files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
     every slot-machine reel and stat tile on the page.
@@ -37,6 +37,12 @@ Writes six files into --out-dir (default site/data/):
     honest categories this project's logs can actually support).
   - equity.json: the raw combined equity timeline, for the equity-curve
     chart.
+  - ticker_tracker.json: every ticker either live workflow watches (see
+    WATCHED_STOCK_TICKERS/WATCHED_CRYPTO_TICKERS), not just the ones
+    currently held - each with its last daily close, trailing 100-day
+    SMA, and whether it's currently held (and if so, in profit or at a
+    loss) - see build_ticker_tracker. Only populated with
+    --live-positions, same as positions.json above.
 
 Every number here is derived from real logged/live data - nothing is
 fabricated, and a missing/empty log produces an honest "no data yet"
@@ -797,6 +803,138 @@ def build_position_sma_indicators(
     return {"available": True, "reason": None, "symbols": symbols_payload}
 
 
+# The full universe of tickers each live workflow currently watches -
+# kept in sync by hand with .github/workflows/paper-trade-stocks.yml and
+# paper-trade-crypto.yml's own --ticker lists (same manual-sync tradeoff
+# as RULE_BASED_EXIT_THRESHOLD above: whoever changes a workflow's
+# --ticker list needs to update this too). Order here is preserved as
+# published, matching the order each workflow already watches them in.
+WATCHED_STOCK_TICKERS = ["SPY", "AAPL", "QQQ", "JPM", "XOM", "JNJ", "KO", "CAT", "DIS"]
+WATCHED_CRYPTO_TICKERS = ["BTC", "ETH", "SOL", "DOGE", "LTC", "AVAX", "LINK", "XRP", "DOT"]
+
+# A classic, widely-recognized trend window - deliberately longer than
+# RULE_BASED_EXIT_THRESHOLD's 20-bar/5-minute window above, which is
+# specific to that one strategy's own sell rule. This is a general "how
+# is this ticker doing lately" reading for the whole watched universe,
+# not tied to any particular strategy's decision - daily bars, not
+# intraday, since a 100-bar trend is normally read as ~100 trading days,
+# not 100 five-minute ticks.
+TICKER_TRACKER_SMA_PERIODS = 100
+# Calendar days of daily bars to request - comfortably more than 100
+# *trading* days once weekends/holidays are accounted for (stocks only;
+# crypto trades every day so needs far less, but requesting the same
+# window for both keeps this simple and the extra crypto history is cheap).
+TICKER_TRACKER_LOOKBACK_DAYS = 220
+
+
+def _position_ticker(symbol: str, is_crypto: bool) -> str:
+    """
+    The bare ticker string live_trade.py actually logs (its own --ticker
+    CLI arg verbatim, e.g. "BTC") and that WATCHED_STOCK_TICKERS/
+    WATCHED_CRYPTO_TICKERS above use - needed to match a live position
+    (keyed by Alpaca's own positions-endpoint symbol, e.g. "BTCUSD" for
+    crypto, no slash - see broker.py's get_all_positions) back against
+    one of those watched tickers. Stock symbols already match as-is;
+    crypto's slash-less "BTCUSD" needs its quote currency stripped first.
+    """
+    if not is_crypto:
+        return symbol
+    if symbol.endswith("USD") and len(symbol) > 3:
+        return symbol[:-3]
+    return symbol
+
+
+def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | None) -> dict:
+    """
+    Every ticker either live workflow watches - not just the ones
+    currently held - each with its last daily close, its trailing
+    100-day SMA, and how far apart those two are, so it's visible at a
+    glance whether a *watched* ticker is trending above or below its own
+    longer-run average, independent of whether the bot happens to be
+    holding it right now. A held ticker also gets its live unrealized
+    P&L sign attached (see position_state below), the same information
+    the Positions tab's card outline already conveys - this reuses that
+    same "held right now" signal rather than recomputing whether a
+    position is open by some second method.
+
+    current_price/sma100/pct_vs_sma100 all come from the same daily-bar
+    series for a given ticker (never mixed with a position's own live,
+    intraday current_price) - comparing a stale end-of-day average
+    against a live intraday quote would be internally inconsistent, and
+    "last close" is honestly labeled as such rather than implied to be
+    "right now".
+
+    Same opt-in/best-effort contract as build_position_price_histories
+    and build_position_sma_indicators: unavailable (not just unfetched)
+    when --live-positions wasn't passed or failed, and one ticker's own
+    bars fetch failing never blocks any other ticker's row.
+    """
+    if live_positions_result is None:
+        return {"available": False, "reason": "live position lookup not requested for this run", "categories": {"stocks": [], "crypto": []}}
+    positions, error = live_positions_result
+    if error is not None:
+        return {"available": False, "reason": error, "categories": {"stocks": [], "crypto": []}}
+
+    from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+    from src.symbols import resolve_symbol
+
+    held_by_ticker = {_position_ticker(p["symbol"], p["is_crypto"]): p for p in positions}
+
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    start_date = (now_utc - dt.timedelta(days=TICKER_TRACKER_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def build_row(ticker: str, is_crypto: bool) -> dict:
+        held_position = held_by_ticker.get(ticker)
+        held = held_position is not None
+        unrealized_plpc = held_position["unrealized_plpc"] if held else None
+        if not held:
+            position_state = "not_held"
+        elif unrealized_plpc > 0:
+            position_state = "profit"
+        elif unrealized_plpc < 0:
+            position_state = "loss"
+        else:
+            position_state = "flat"
+
+        row = {
+            "ticker": ticker,
+            "is_crypto": is_crypto,
+            "held": held,
+            "position_state": position_state,
+            "unrealized_plpc": unrealized_plpc,
+        }
+        try:
+            if is_crypto:
+                df = get_crypto_bars_range(resolve_symbol(ticker).alpaca, "1d", start_date, end_date)
+            else:
+                df = get_stock_bars_range(ticker, "1d", start_date, end_date)
+            sma_series = df["Close"].rolling(TICKER_TRACKER_SMA_PERIODS).mean().dropna()
+            current_price = float(df["Close"].iloc[-1])
+            if sma_series.empty:
+                row.update(available=False, reason="not enough trailing daily bars yet to compute a 100-day average",
+                            last_close=current_price, sma100=None, pct_vs_sma100=None)
+            else:
+                sma100 = float(sma_series.iloc[-1])
+                row.update(available=True, reason=None,
+                            last_close=current_price, sma100=sma100, pct_vs_sma100=(current_price - sma100) / sma100)
+        except Exception as e:
+            # Same non-blocking reasoning as build_position_price_histories:
+            # one ticker's bars being unfetchable never blocks the rest.
+            row.update(available=False, reason=f"{type(e).__name__}: {e}", last_close=None, sma100=None, pct_vs_sma100=None)
+        return row
+
+    return {
+        "available": True,
+        "reason": None,
+        "as_of_utc": now_utc.isoformat(),
+        "categories": {
+            "stocks": [build_row(t, False) for t in WATCHED_STOCK_TICKERS],
+            "crypto": [build_row(t, True) for t in WATCHED_CRYPTO_TICKERS],
+        },
+    }
+
+
 def fetch_live_positions():
     """
     Returns (positions, error, cash, equity, buying_power) - error is
@@ -910,6 +1048,9 @@ def main():
     position_indicators_payload = build_position_sma_indicators(live_result, trades_df)
     (out_dir / "position_indicators.json").write_text(json.dumps(position_indicators_payload, indent=2))
 
+    ticker_tracker_payload = build_ticker_tracker(live_result)
+    (out_dir / "ticker_tracker.json").write_text(json.dumps(ticker_tracker_payload, indent=2))
+
     if trades_df is not None and not trades_df.empty:
         recent = trades_df.sort_values("timestamp_utc", ascending=False).head(MAX_TRADES_PUBLISHED)
         trades_payload = {
@@ -950,7 +1091,7 @@ def main():
         equity_payload = {"available": False, "points": []}
     (out_dir / "equity.json").write_text(json.dumps(equity_payload, indent=2))
 
-    print(f"Wrote dashboard/positions/position_history/position_indicators/trades/equity JSON to {out_dir}/")
+    print(f"Wrote dashboard/positions/position_history/position_indicators/trades/equity/ticker_tracker JSON to {out_dir}/")
 
 
 if __name__ == "__main__":

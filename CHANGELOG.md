@@ -17,6 +17,46 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.6 - 2026-07-30
+
+- **Added a Ticker Tracker tab** to the Positions area of the dashboard:
+  every ticker either live workflow watches - not just the ones
+  currently held - split into Stocks and Crypto, each showing its last
+  daily close, its trailing 100-day SMA, and how far apart those two
+  are. A held ticker's card is outlined green (currently in profit) or
+  red (currently at a loss) - the same signal a position card's own
+  border already gives; a watched-but-not-held ticker gets a neutral
+  grey outline instead of no outline at all, so "not held" reads as a
+  deliberate state, not a rendering gap.
+- New `site_data.py` function `build_ticker_tracker()` fetches its own
+  daily-bar series per ticker (`WATCHED_STOCK_TICKERS`/
+  `WATCHED_CRYPTO_TICKERS`, kept in sync by hand with the two live
+  workflows' own `--ticker` lists) and computes each one's 100-day SMA -
+  a longer, more standard trend window than the 20-bar/5-minute one the
+  rule_based exit signal uses, since this is a general "how's this
+  ticker doing" reading across the whole watched universe, not a
+  strategy-specific one. Same best-effort, never-crashes, per-ticker-
+  isolated contract as the other Alpaca-backed builders in this file.
+  Written to a new `ticker_tracker.json`.
+- **Fixed a real symbol-matching bug found while building this**:
+  Alpaca's positions endpoint returns crypto symbols without the "/"
+  (e.g. "BTCUSD"), but live_trade.py logs the bare ticker ("BTC") to
+  the trade log - `build_ticker_tracker`'s "is this currently held"
+  check needed the two forms reconciled to match a live crypto position
+  back to its watched ticker at all, which the new `_position_ticker()`
+  helper now does. (Note: this specific fix only covers the new
+  ticker-tracker code path - `attribute_position_strategy` and
+  `position_entry_timestamp` still key off a live position's raw Alpaca
+  symbol elsewhere in this file, so a held crypto position's strategy
+  label and "since entry" chart start date remain affected by the same
+  underlying mismatch; flagged for a follow-up, not fixed here.)
+- Cache-busting bumped to `?v=0.16.6`. 10 new tests (8 for
+  `build_ticker_tracker`, 2 for `_position_ticker`) - 209 tests total,
+  all passing. Verified with Playwright against synthetic fixture data
+  covering every card state (held+profit, held+loss, not-held, and the
+  honest "not enough history yet" state): all four render with the
+  correct outline color/badge and no console errors.
+
 ## Version Richards 0.16.5 - 2026-07-30
 
 - **Fixed trade-log spam from a repeated "not placed" signal**: a real
