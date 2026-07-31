@@ -521,13 +521,21 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 1px 3px rgba(0,0,0,0.3);
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
   animation: card-in 0.45s ease both;
+  /* Clickable - opens a range-selectable price chart, see
+     assets/position-chart.js's tracker mode. */
+  cursor: pointer;
 }
+.tracker-card:hover { transform: translateY(-2px); box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 8px 20px rgba(0,0,0,0.35); border-color: var(--border-strong); }
+.tracker-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Grey = watched but not currently held - a deliberate, visible state of
    its own rather than the absence of one. */
 .tracker-card.tracker-state-not-held { border-top-color: var(--text-faint); }
 .tracker-card.tracker-state-profit { border-top-color: var(--win); }
+.tracker-card.tracker-state-profit:hover { box-shadow: 0 8px 20px rgba(52,211,114,0.12); }
 .tracker-card.tracker-state-loss { border-top-color: var(--loss); }
+.tracker-card.tracker-state-loss:hover { box-shadow: 0 8px 20px rgba(240,85,74,0.12); }
 .tracker-card.tracker-state-flat { border-top-color: var(--border-strong); }
 .tracker-card-head {
   display: flex;
@@ -552,6 +560,15 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .tracker-card-delta.positive { color: var(--win); }
 .tracker-card-delta.negative { color: var(--loss); }
 .tracker-card-unavailable { color: var(--text-faint); font-size: 0.78rem; margin: 0; }
+.tracker-card-hint {
+  margin-top: 8px;
+  text-align: right;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  transition: color 0.15s ease;
+}
+.tracker-card:hover .tracker-card-hint,
+.tracker-card:focus-visible .tracker-card-hint { color: var(--accent); }
 
 .empty-state {
   color: var(--text-dim);
@@ -638,6 +655,11 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-modal-head { padding-right: 40px; margin-bottom: 16px; }
 .position-modal-title { font-size: 1.3rem; font-weight: 800; margin: 0 0 4px; letter-spacing: -0.01em; }
 .position-modal-sub { color: var(--text-dim); font-size: 0.85rem; margin: 0; }
+/* Tracker-mode-only range picker (1D/1W/1M/100D) - reuses .segmented,
+   the same look charts.html's own range control already uses. Hidden
+   entirely in position mode (see position-chart.js's openModal). */
+.position-modal-ranges { margin-bottom: 16px; }
+.position-modal-ranges[hidden] { display: none; }
 
 .position-modal-canvas-wrap { height: 280px; }
 .position-modal-empty {

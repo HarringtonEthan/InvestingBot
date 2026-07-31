@@ -15,6 +15,7 @@ import pytest
 from site_data import (
     ET,
     RULE_BASED_EXIT_THRESHOLD,
+    TICKER_CHART_RANGES,
     TICKER_TRACKER_SMA_PERIODS,
     WATCHED_CRYPTO_TICKERS,
     WATCHED_STOCK_TICKERS,
@@ -28,6 +29,7 @@ from site_data import (
     build_position_price_histories,
     build_position_sma_indicators,
     build_positions_payload,
+    build_ticker_charts,
     build_ticker_tracker,
     classify_order_status,
     dedupe_trades,
@@ -992,3 +994,107 @@ def test_ticker_tracker_per_ticker_failure_does_not_block_others(monkeypatch):
     assert by_ticker["AAPL"]["available"] is False
     assert "no stock bars" in by_ticker["AAPL"]["reason"]
     assert by_ticker["QQQ"]["available"] is True
+
+
+# ---- build_ticker_charts ----
+
+_INTERVAL_FREQ = {"5m": "5min", "15m": "15min", "1h": "1h", "1d": "1D"}
+
+
+def _bars_for_interval(interval, start, end):
+    """
+    A realistic fake bars fetch: builds bars at the *requested* interval
+    spanning [start, end], clipped to "now" - close enough to Alpaca's
+    real behavior that build_ticker_charts's per-range date-window
+    slicing (the part actually under test here) has something real to
+    slice against, unlike a fixed-shape fixture that would pass no
+    matter what window was requested.
+    """
+    now = pd.Timestamp.now(tz="UTC")
+    idx = pd.date_range(pd.Timestamp(start, tz="UTC"), pd.Timestamp(end, tz="UTC"), freq=_INTERVAL_FREQ[interval], tz="UTC")
+    idx = idx[idx <= now]
+    return pd.DataFrame({"Close": [100.0 + i * 0.01 for i in range(len(idx))]}, index=idx)
+
+
+def test_ticker_charts_not_requested():
+    result = build_ticker_charts(None)
+    assert result["available"] is False
+    assert result["symbols"] == {}
+
+
+def test_ticker_charts_alpaca_error_surfaces_reason_not_crash():
+    result = build_ticker_charts(([], "RuntimeError: no network access"))
+    assert result["available"] is False
+    assert "no network access" in result["reason"]
+
+
+def test_ticker_charts_covers_the_full_watched_universe(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    result = build_ticker_charts(([], None))
+    assert set(result["symbols"].keys()) == set(WATCHED_STOCK_TICKERS) | set(WATCHED_CRYPTO_TICKERS)
+
+
+def test_ticker_charts_each_range_uses_its_configured_interval(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    result = build_ticker_charts(([], None))
+    aapl = result["symbols"]["AAPL"]
+    for range_key, cfg in TICKER_CHART_RANGES.items():
+        assert aapl["ranges"][range_key]["interval"] == cfg["interval"]
+
+
+def test_ticker_charts_100d_range_keeps_exactly_the_sma_window(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    result = build_ticker_charts(([], None))
+    aapl = result["symbols"]["AAPL"]
+    assert len(aapl["ranges"]["100d"]["points"]) == TICKER_TRACKER_SMA_PERIODS
+    assert aapl["sma100"] is not None
+
+
+def test_ticker_charts_1d_range_excludes_bars_older_than_a_day(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    result = build_ticker_charts(([], None))
+    points = result["symbols"]["AAPL"]["ranges"]["1d"]["points"]
+    assert points  # the 5-day fetch buffer comfortably covers "the last day"
+    oldest = pd.Timestamp(points[0]["t"])
+    assert (pd.Timestamp.now(tz="UTC") - oldest) <= pd.Timedelta(days=1, hours=1)
+
+
+def test_ticker_charts_crypto_symbol_conversion(monkeypatch):
+    seen_symbols = set()
+
+    def fake_crypto_bars(symbol, interval, start, end):
+        seen_symbols.add(symbol)
+        return _bars_for_interval(interval, start, end)
+
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", fake_crypto_bars)
+    result = build_ticker_charts(([], None))
+    assert result["symbols"]["BTC"]["available"] is True
+    assert "BTC/USD" in seen_symbols
+
+
+def test_ticker_charts_per_range_failure_does_not_block_other_ranges(monkeypatch):
+    def fake_stock_bars(symbol, interval, start, end):
+        if interval == "5m":
+            raise RuntimeError("no 5-minute bars available")
+        return _bars_for_interval(interval, start, end)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_ticker_charts(([], None))
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["available"] is True  # other ranges still came through
+    assert aapl["ranges"]["1d"]["available"] is False
+    assert "no 5-minute bars" in aapl["ranges"]["1d"]["reason"]
+    assert aapl["ranges"]["100d"]["available"] is True
+
+
+def test_ticker_charts_per_ticker_failure_does_not_block_others(monkeypatch):
+    def fake_stock_bars(symbol, interval, start, end):
+        if symbol == "AAPL":
+            raise RuntimeError("Alpaca returned no bars for AAPL")
+        return _bars_for_interval(interval, start, end)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_ticker_charts(([], None))
+    assert result["symbols"]["AAPL"]["available"] is False
+    assert result["symbols"]["QQQ"]["available"] is True

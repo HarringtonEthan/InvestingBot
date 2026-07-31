@@ -17,6 +17,44 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.7 - 2026-07-31
+
+- **Every Ticker Tracker card is now clickable**, on both index.html and
+  charts.html (which didn't have a Ticker Tracker section at all until
+  this release - added one, matching how Positions already exists on
+  both pages): opens a price chart with a 1 Day/1 Week/1 Month/100 Day
+  range selector, defaulting to 100 Day, plus a dashed reference line at
+  the ticker's current 100-day SMA (the same number the card's own text
+  already shows). All four ranges are fetched server-side up front, so
+  switching ranges in the modal is instant with no extra network
+  request. Added the same hover glow every other card on the site
+  already gets (green-tinted for a held/profitable ticker, red-tinted
+  for held/at-a-loss, neutral for not-held), plus full keyboard access
+  (Tab/Enter/Escape).
+- `site/assets/position-chart.js` (the shared price-chart modal
+  position cards already used) now serves both position cards and
+  Ticker Tracker cards from one implementation instead of two - a
+  `data-tracker="true"` attribute picks tracker mode (ticker_charts.json,
+  range-selectable) vs. position mode (position_history.json, fixed
+  "since purchase" span). Found and fixed a real bug in the process:
+  switching ranges wasn't tearing down the previous Chart.js instance
+  first, so a range switch silently kept showing the old range's data
+  (fixed by having renderChart() always destroy any existing chart
+  before drawing).
+- New `site_data.py` function `build_ticker_charts()` fetches each of
+  the four ranges per watched ticker at its own fixed bar interval (5m/
+  15m/1h/1d) and window, publishing points plus each ticker's 100-day
+  SMA to a new `ticker_charts.json`. Same best-effort, per-range-and-
+  per-ticker-isolated contract as this file's other Alpaca-backed
+  builders - one range or ticker failing never blocks the rest.
+- 9 new tests for `build_ticker_charts` - 218 tests total, all passing.
+  Verified with Playwright end-to-end on both pages: card hover glow,
+  modal open/range-switch/close, correct chart data per range, honest
+  empty state for a ticker with insufficient history, keyboard open,
+  and confirmed no regression to the existing position-card "since
+  purchase" flow (range selector correctly stays hidden there).
+- Cache-busting bumped to `?v=0.16.7`.
+
 ## Version Richards 0.16.6 - 2026-07-30
 
 - **Added a Ticker Tracker tab** to the Positions area of the dashboard:

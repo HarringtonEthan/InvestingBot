@@ -312,13 +312,20 @@
         <div class="tracker-card-row"><span>100-Day Avg</span><span>${fmtUsd(row.sma100)}</span></div>
         <div class="tracker-card-delta ${deltaClass}">${fmtPct(row.pct_vs_sma100)} vs 100-day avg</div>`;
     }
+    // data-symbol/data-is-crypto/data-tracker let assets/position-chart.js
+    // (a separate, shared script) open this ticker's range-selectable
+    // price chart on click - same click-delegation contract as
+    // positionCard() above, distinguished by data-tracker="true" so that
+    // shared script knows to load ticker_charts.json instead of
+    // position_history.json.
     return `
-      <div class="tracker-card ${stateClass}">
+      <div class="tracker-card ${stateClass}" data-symbol="${row.ticker}" data-is-crypto="${row.is_crypto}" data-tracker="true" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="tracker-card-head">
           <span class="tracker-card-ticker">${row.ticker}</span>
           ${heldBadge}
         </div>
         ${body}
+        <div class="tracker-card-hint">View chart →</div>
       </div>`;
   }
 

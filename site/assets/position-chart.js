@@ -1,17 +1,32 @@
 /*
- * Shared "price since purchase" modal for position cards - loaded by
- * both index.html (Positions tab) and charts.html (positions panels).
+ * Shared price-chart modal for both position cards (Positions tab) and
+ * Ticker Tracker cards - loaded by both index.html and charts.html.
  * Listens for clicks/keypresses on any element carrying a data-symbol
  * attribute via delegation on `document`, so it works regardless of
  * whether dashboard.js or charts.js rendered the card, and regardless of
  * when (asynchronously, via innerHTML) that card was inserted - no need
  * to coordinate boot order with either page's own renderer.
  *
- * Reads site/data/position_history.json - real Alpaca historical prices
- * this project's own site_data.py already fetched server-side, never
- * fabricated here. A symbol with no data yet (feature not enabled for
- * this run, a per-symbol fetch failure, too few points) shows an honest
- * message instead of a chart - see the state handling in openModal().
+ * Two modes share one modal/chart implementation (same DOM, same
+ * tooltip/crosshair/reference-line plugins) rather than two near-
+ * duplicate copies:
+ *   - Position mode (data-tracker unset): reads site/data/
+ *     position_history.json, always shows the single "since purchase"
+ *     span, and draws a dashed reference line at the entry price.
+ *   - Tracker mode (data-tracker="true"): reads site/data/
+ *     ticker_charts.json, shows a 1 Day/1 Week/1 Month/100 Day range
+ *     selector (all four already fetched server-side, so switching is
+ *     instant with no extra network call), and draws a dashed reference
+ *     line at the ticker's current 100-day SMA instead of an entry price
+ *     - every watched ticker has one of those regardless of whether it's
+ *     currently held, unlike an entry price.
+ *
+ * Both JSON files are real Alpaca historical prices this project's own
+ * site_data.py already fetched server-side, never fabricated here. A
+ * symbol/range with no data yet (feature not enabled for this run, a
+ * per-symbol fetch failure, too few points) shows an honest message
+ * instead of a chart - see the state handling in openModal()/
+ * openTrackerModal().
  */
 
 (function () {
@@ -31,11 +46,24 @@
 
   let historyData = null;
   let historyPromise = null;
+  let tickerChartsData = null;
+  let tickerChartsPromise = null;
   let chart = null;
   let lastFocused = null;
-  let currentEntryPrice = null;
+  let currentReferenceValue = null;
+  let currentReferenceLabel = "";
   let currentSymbolLabel = "";
   let currentSeries = [];
+  // Tracker-mode-only state - all null/unset in position mode.
+  let currentMode = "position";
+  let currentRangeKey = null;
+  let currentTickerRanges = null;
+  let currentTrackerTicker = "";
+
+  const RANGE_ORDER = ["1d", "1w", "1m", "100d"];
+  const RANGE_LABELS = { "1d": "1 Day", "1w": "1 Week", "1m": "1 Month", "100d": "100 Day" };
+  const RANGE_BTN_LABELS = { "1d": "1D", "1w": "1W", "1m": "1M", "100d": "100D" };
+  const INTERVAL_LABELS = { "5m": "5-minute bars", "15m": "15-minute bars", "1h": "hourly bars", "1d": "daily bars" };
 
   // ---------------------------------------------------------------------
   // Data loading - independent of dashboard.js/charts.js's own fetches,
@@ -59,6 +87,25 @@
         return data;
       });
     return historyPromise;
+  }
+  function loadTickerCharts() {
+    if (tickerChartsPromise) return tickerChartsPromise;
+    tickerChartsPromise = fetch("data/ticker_charts.json", { cache: "no-store" })
+      .then((res) => (res.ok ? res.text() : ""))
+      .then((text) => {
+        if (!text || !text.trim()) return { available: false, symbols: {} };
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          return { available: false, symbols: {} };
+        }
+      })
+      .catch(() => ({ available: false, symbols: {} }))
+      .then((data) => {
+        tickerChartsData = data;
+        return data;
+      });
+    return tickerChartsPromise;
   }
 
   // ---------------------------------------------------------------------
@@ -87,6 +134,17 @@
     const d = new Date(iso);
     if (Number.isNaN(d.getTime())) return "";
     return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" }).format(d);
+  }
+  function fmtAxisTime(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+  }
+  // 1-day range gets intraday time labels (a date label would repeat
+  // the same day across nearly every tick) - every other range keeps
+  // the plain month/day label, same as position mode always used.
+  function fmtAxisLabel(iso, rangeKey) {
+    return rangeKey === "1d" ? fmtAxisTime(iso) : fmtAxisDate(iso);
   }
 
   // ---------------------------------------------------------------------
@@ -121,14 +179,14 @@
     if (idx === null || idx === undefined) return;
     const point = currentSeries[idx];
     if (!point) return;
-    const pct = currentEntryPrice ? ((point.price / currentEntryPrice) - 1) * 100 : null;
+    const pct = currentReferenceValue ? ((point.price / currentReferenceValue) - 1) * 100 : null;
 
     let html = `<div class="tt-title">${currentSymbolLabel}</div>`;
     html += `<div class="tt-time">${fmtDateTimeET(point.t)}</div>`;
     html += `<div class="tt-rows">`;
     html += `<div class="tt-row"><span class="tt-label">Price</span><span class="tt-val">${fmtPrice(point.price)}</span></div>`;
     if (isNum(pct)) {
-      html += `<div class="tt-row"><span class="tt-label">Since purchase</span><span class="tt-val ${pct >= 0 ? "positive" : "negative"}">${(pct >= 0 ? "+" : "") + pct.toFixed(2)}%</span></div>`;
+      html += `<div class="tt-row"><span class="tt-label">${currentReferenceLabel}</span><span class="tt-val ${pct >= 0 ? "positive" : "negative"}">${(pct >= 0 ? "+" : "") + pct.toFixed(2)}%</span></div>`;
     }
     html += `</div>`;
     el.innerHTML = html;
@@ -166,16 +224,17 @@
     },
   };
 
-  // A faint dashed reference line at the entry price - the level this
-  // chart's whole "since purchase" framing is measured against, made
-  // explicit instead of left for the eye to find on the y-axis.
-  const entryLinePlugin = {
-    id: "positionEntryLine",
+  // A faint dashed reference line at whichever value this chart's
+  // framing is measured against - the entry price in position mode, or
+  // the ticker's current 100-day SMA in tracker mode - made explicit
+  // instead of left for the eye to find on the y-axis.
+  const referenceLinePlugin = {
+    id: "chartReferenceLine",
     beforeDatasetsDraw(chartInstance) {
       const yScale = chartInstance.scales.y;
       const area = chartInstance.chartArea;
-      if (!yScale || !area || !isNum(currentEntryPrice)) return;
-      const py = yScale.getPixelForValue(currentEntryPrice);
+      if (!yScale || !area || !isNum(currentReferenceValue)) return;
+      const py = yScale.getPixelForValue(currentReferenceValue);
       if (py < area.top || py > area.bottom) return;
       const c = chartInstance.ctx;
       c.save();
@@ -204,6 +263,9 @@
             <h2 class="position-modal-title" id="position-modal-title">—</h2>
             <p class="position-modal-sub" id="position-modal-sub"></p>
           </div>
+          <div class="segmented position-modal-ranges" id="position-modal-ranges" role="group" aria-label="Chart range" hidden>
+            ${RANGE_ORDER.map((key) => `<button type="button" data-range-key="${key}">${RANGE_BTN_LABELS[key]}</button>`).join("")}
+          </div>
           <div class="chart-canvas-wrap position-modal-canvas-wrap" id="position-modal-canvas-wrap">
             <canvas id="position-modal-canvas"></canvas>
           </div>
@@ -217,16 +279,29 @@
     document.getElementById("position-modal-backdrop").addEventListener("click", (e) => {
       if (e.target.id === "position-modal-backdrop") closeModal();
     });
+    document.getElementById("position-modal-ranges").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-range-key]");
+      if (btn) selectRange(btn.dataset.rangeKey);
+    });
     document.addEventListener("keydown", (e) => {
       const backdrop = document.getElementById("position-modal-backdrop");
       if (!backdrop || backdrop.hidden) return;
       if (e.key === "Escape") { closeModal(); return; }
-      // Minimal focus trap: this modal has exactly one focusable
-      // control (the close button), so Tab/Shift+Tab just keeps focus
-      // on it rather than escaping to the page underneath.
+      // Minimal focus trap: this modal's only focusable controls are the
+      // close button and (in tracker mode) the range buttons - Tab/
+      // Shift+Tab cycles among whichever of those are currently visible
+      // rather than escaping to the page underneath.
       if (e.key === "Tab") {
         e.preventDefault();
-        document.getElementById("position-modal-close").focus();
+        const focusable = [document.getElementById("position-modal-close")];
+        if (currentMode === "tracker") {
+          focusable.push(...document.querySelectorAll("#position-modal-ranges button"));
+        }
+        const idx = focusable.indexOf(document.activeElement);
+        const next = e.shiftKey
+          ? focusable[(idx <= 0 ? focusable.length : idx) - 1]
+          : focusable[(idx + 1) % focusable.length];
+        (next || focusable[0]).focus();
       }
     });
   }
@@ -242,7 +317,10 @@
     wrap.hidden = true;
   }
 
-  async function openModal(symbol, triggerEl) {
+  // Shared setup for both openModal (position) and openTrackerModal:
+  // resets the modal chrome to its "loading" state and shows the
+  // backdrop, before either mode's own data-specific logic takes over.
+  function openModalShell(symbol, triggerEl, loadingText) {
     lastFocused = triggerEl || document.activeElement;
     ensureModal();
     const backdrop = document.getElementById("position-modal-backdrop");
@@ -252,17 +330,28 @@
     const wrapEl = document.getElementById("position-modal-canvas-wrap");
     const summaryEl = document.getElementById("position-modal-summary");
     const modalEl = document.getElementById("position-modal");
+    const rangesEl = document.getElementById("position-modal-ranges");
 
     titleEl.textContent = symbol;
-    subEl.textContent = "Loading price history…";
+    subEl.textContent = loadingText;
     emptyEl.hidden = true;
     wrapEl.hidden = false;
     summaryEl.textContent = "";
     modalEl.classList.remove("trend-up", "trend-down");
+    rangesEl.hidden = true;
+    rangesEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
     destroyChart();
     backdrop.hidden = false;
     document.body.classList.add("position-modal-open");
     document.getElementById("position-modal-close").focus();
+  }
+
+  async function openModal(symbol, triggerEl) {
+    currentMode = "position";
+    currentRangeKey = null;
+    currentTickerRanges = null;
+    openModalShell(symbol, triggerEl, "Loading price history…");
+    const subEl = document.getElementById("position-modal-sub");
 
     const data = historyData || (await loadHistory());
 
@@ -293,7 +382,62 @@
       ? "Recent price history (exact purchase date not clearly determined from the trade log)"
       : `Since purchase · ${fmtDateET(sym.entry_utc)}`;
 
-    renderChart(points, symbol);
+    renderChart(points, symbol, points[0].price, "Since purchase");
+  }
+
+  async function openTrackerModal(ticker, triggerEl) {
+    currentMode = "tracker";
+    currentTrackerTicker = ticker;
+    openModalShell(ticker, triggerEl, "Loading price history…");
+    const rangesEl = document.getElementById("position-modal-ranges");
+    rangesEl.hidden = false;
+
+    const data = tickerChartsData || (await loadTickerCharts());
+
+    if (!data || data.available === false) {
+      const subEl = document.getElementById("position-modal-sub");
+      subEl.textContent = "";
+      rangesEl.hidden = true;
+      showEmpty((data && data.reason) || "Live ticker chart data wasn't fetched for this run.");
+      return;
+    }
+    const sym = (data.symbols || {})[ticker];
+    if (!sym || sym.available === false) {
+      const subEl = document.getElementById("position-modal-sub");
+      subEl.textContent = "";
+      rangesEl.hidden = true;
+      showEmpty((sym && sym.reason) || "No chart data recorded yet for this ticker.");
+      return;
+    }
+
+    currentTickerRanges = sym;
+    // "100d" is the default view - see position-chart.js's module
+    // docstring for why: the 100-day range is what the Ticker Tracker
+    // card itself already summarizes as text, so opening on it keeps
+    // the chart's first view consistent with what was just clicked.
+    selectRange("100d");
+  }
+
+  function selectRange(rangeKey) {
+    if (!currentTickerRanges) return;
+    currentRangeKey = rangeKey;
+    document.querySelectorAll("#position-modal-ranges button").forEach((b) => {
+      b.classList.toggle("active", b.dataset.rangeKey === rangeKey);
+    });
+
+    const range = currentTickerRanges.ranges[rangeKey];
+    const subEl = document.getElementById("position-modal-sub");
+    const intervalLabel = range && range.interval ? INTERVAL_LABELS[range.interval] || range.interval : "";
+    subEl.textContent = intervalLabel ? `${RANGE_LABELS[rangeKey]} · ${intervalLabel}` : RANGE_LABELS[rangeKey];
+
+    if (!range || range.available === false || !range.points || range.points.length < 2) {
+      destroyChart();
+      showEmpty((range && range.reason) || "Not enough recorded price history yet for this range.");
+      return;
+    }
+    document.getElementById("position-modal-empty").hidden = true;
+    document.getElementById("position-modal-canvas-wrap").hidden = false;
+    renderChart(range.points, currentTrackerTicker, currentTickerRanges.sma100, "vs 100-day avg");
   }
 
   function closeModal() {
@@ -303,16 +447,27 @@
     document.body.classList.remove("position-modal-open");
     destroyChart();
     hideTooltip();
+    currentMode = "position";
+    currentRangeKey = null;
+    currentTickerRanges = null;
+    currentTrackerTicker = "";
     if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
   }
 
-  function renderChart(points, symbol) {
+  function renderChart(points, symbol, referenceValue, referenceLabel) {
     if (typeof Chart === "undefined") {
       showEmpty("Charting library failed to load.");
       return;
     }
+    // Tracker mode can call this more than once per modal session (each
+    // range switch re-renders) - always tear down the previous Chart.js
+    // instance first, the same way openModalShell already does for the
+    // very first render, or Chart.js would either throw ("Canvas is
+    // already in use") or silently leave the old chart's data on screen.
+    destroyChart();
     currentSeries = points;
-    currentEntryPrice = points[0].price;
+    currentReferenceValue = isNum(referenceValue) ? referenceValue : null;
+    currentReferenceLabel = referenceLabel || "";
     currentSymbolLabel = symbol;
 
     const first = points[0].price;
@@ -358,7 +513,7 @@
               color: COLORS.text, maxTicksLimit: 6, autoSkip: true, maxRotation: 0, minRotation: 0, font: { size: 10 },
               callback(value) {
                 const p = points[value];
-                return p ? fmtAxisDate(p.t) : "";
+                return p ? fmtAxisLabel(p.t, currentRangeKey) : "";
               },
             },
             grid: { color: COLORS.grid, drawTicks: false },
@@ -372,7 +527,7 @@
           },
         },
       },
-      plugins: [crosshairPlugin, entryLinePlugin],
+      plugins: [crosshairPlugin, referenceLinePlugin],
     });
 
     const changePct = first ? ((last / first) - 1) * 100 : null;
@@ -387,23 +542,32 @@
   }
 
   // ---------------------------------------------------------------------
-  // Click/keyboard delegation - works on any .position-card[data-symbol]
-  // anywhere in the document, however and whenever it was inserted.
+  // Click/keyboard delegation - works on any [data-symbol] card anywhere
+  // in the document, however and whenever it was inserted. data-tracker
+  // distinguishes a Ticker Tracker card (range-selectable chart) from a
+  // position card (single "since purchase" span).
   // ---------------------------------------------------------------------
   function findCard(target) {
     return target && target.closest ? target.closest("[data-symbol]") : null;
   }
+  function openCard(card) {
+    if (card.dataset.tracker === "true") {
+      openTrackerModal(card.dataset.symbol, card);
+    } else {
+      openModal(card.dataset.symbol, card);
+    }
+  }
   document.addEventListener("click", (e) => {
     const card = findCard(e.target);
     if (!card || !card.dataset.symbol) return;
-    openModal(card.dataset.symbol, card);
+    openCard(card);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     const card = findCard(e.target);
     if (!card || card !== document.activeElement || !card.dataset.symbol) return;
     e.preventDefault();
-    openModal(card.dataset.symbol, card);
+    openCard(card);
   });
 
   document.addEventListener("DOMContentLoaded", () => {

@@ -10,7 +10,7 @@ richly, instead of a static image. Reads the same logs/*.csv files
 visualize_log.py already reads, so there's exactly one source of truth
 for "what actually happened," not a second copy that could drift.
 
-Writes seven files into --out-dir (default site/data/):
+Writes eight files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
     every slot-machine reel and stat tile on the page.
@@ -43,6 +43,12 @@ Writes seven files into --out-dir (default site/data/):
     SMA, and whether it's currently held (and if so, in profit or at a
     loss) - see build_ticker_tracker. Only populated with
     --live-positions, same as positions.json above.
+  - ticker_charts.json: per-ticker price history behind the Ticker
+    Tracker's click-to-expand chart, at four selectable ranges (1 Day/
+    1 Week/1 Month/100 Day - see TICKER_CHART_RANGES) plus each
+    ticker's current 100-day SMA for the chart's reference line (see
+    build_ticker_charts). Only populated with --live-positions, same as
+    positions.json above.
 
 Every number here is derived from real logged/live data - nothing is
 fabricated, and a missing/empty log produces an honest "no data yet"
@@ -935,6 +941,99 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
     }
 
 
+# The four ranges the Ticker Tracker's click-to-expand chart lets you
+# switch between - each gets its own fixed bar interval (what "1 Day"
+# actually means is 5-minute bars, not a zoomed-in slice of daily ones)
+# and its own fetch buffer (generous enough to cover a weekend/holiday
+# gap before slicing down to the real display window below).
+# window_days is the real display window for every range except "100d",
+# which instead keeps exactly the last TICKER_TRACKER_SMA_PERIODS daily
+# bars - the same 100 bars its own SMA is computed from, not a separate
+# 100-*calendar*-day slice that could disagree with it.
+TICKER_CHART_RANGES = {
+    "1d": {"interval": "5m", "fetch_lookback_days": 5, "window_days": 1},
+    "1w": {"interval": "15m", "fetch_lookback_days": 10, "window_days": 7},
+    "1m": {"interval": "1h", "fetch_lookback_days": 45, "window_days": 30},
+    "100d": {"interval": "1d", "fetch_lookback_days": TICKER_TRACKER_LOOKBACK_DAYS, "window_days": None},
+}
+
+
+def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | None) -> dict:
+    """
+    Per-ticker price history behind the Ticker Tracker's click-to-expand
+    chart, at each of the four TICKER_CHART_RANGES above - covers every
+    ticker build_ticker_tracker does (not just held positions), so any
+    watched ticker can be inspected regardless of whether the bot
+    happens to be holding it right now.
+
+    Also publishes each ticker's current 100-day SMA (computed from the
+    exact same 100 daily bars as the "100d" range's own points, not a
+    second, potentially-drifting calculation) so the chart can draw it
+    as a reference line - the same number build_ticker_tracker already
+    shows as text on the card.
+
+    Best-effort per range, not just per ticker: one range failing for a
+    ticker (e.g. Alpaca has no 5-minute bars for a thinly-traded name)
+    never blocks that ticker's other ranges or any other ticker.
+
+    Same opt-in contract as build_ticker_tracker: unavailable (not just
+    unfetched) when --live-positions wasn't passed or failed - this
+    function doesn't itself need live position data, but sharing one
+    opt-in gate across every Alpaca-backed JSON file is simpler than a
+    second flag for a feature that already only matters alongside it.
+    """
+    if live_positions_result is None:
+        return {"available": False, "reason": "live position lookup not requested for this run", "symbols": {}}
+    _, error = live_positions_result
+    if error is not None:
+        return {"available": False, "reason": error, "symbols": {}}
+
+    from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+    from src.symbols import resolve_symbol
+
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+
+    def build_symbol(ticker: str, is_crypto: bool) -> dict:
+        ranges_payload: dict[str, dict] = {}
+        sma100 = None
+        for range_key, cfg in TICKER_CHART_RANGES.items():
+            try:
+                start_date = (now_utc - dt.timedelta(days=cfg["fetch_lookback_days"])).strftime("%Y-%m-%d")
+                if is_crypto:
+                    df = get_crypto_bars_range(resolve_symbol(ticker).alpaca, cfg["interval"], start_date, end_date)
+                else:
+                    df = get_stock_bars_range(ticker, cfg["interval"], start_date, end_date)
+                if cfg["window_days"] is None:
+                    sma_series = df["Close"].rolling(TICKER_TRACKER_SMA_PERIODS).mean().dropna()
+                    if not sma_series.empty:
+                        sma100 = float(sma_series.iloc[-1])
+                    df = df.tail(TICKER_TRACKER_SMA_PERIODS)
+                else:
+                    window_start = now_utc - dt.timedelta(days=cfg["window_days"])
+                    df = df[df.index >= window_start]
+                ranges_payload[range_key] = {"available": True, "reason": None, "interval": cfg["interval"], "points": _thin_points(df)}
+            except Exception as e:
+                # Same non-blocking reasoning as build_ticker_tracker: one
+                # range's bars being unfetchable never blocks the rest.
+                ranges_payload[range_key] = {"available": False, "reason": f"{type(e).__name__}: {e}", "interval": None, "points": []}
+        available = any(r["available"] for r in ranges_payload.values())
+        return {
+            "available": available,
+            "reason": None if available else "none of this ticker's chart ranges could be fetched",
+            "sma100": sma100,
+            "ranges": ranges_payload,
+        }
+
+    symbols_payload: dict[str, dict] = {}
+    for ticker in WATCHED_STOCK_TICKERS:
+        symbols_payload[ticker] = build_symbol(ticker, False)
+    for ticker in WATCHED_CRYPTO_TICKERS:
+        symbols_payload[ticker] = build_symbol(ticker, True)
+
+    return {"available": True, "reason": None, "symbols": symbols_payload}
+
+
 def fetch_live_positions():
     """
     Returns (positions, error, cash, equity, buying_power) - error is
@@ -1051,6 +1150,9 @@ def main():
     ticker_tracker_payload = build_ticker_tracker(live_result)
     (out_dir / "ticker_tracker.json").write_text(json.dumps(ticker_tracker_payload, indent=2))
 
+    ticker_charts_payload = build_ticker_charts(live_result)
+    (out_dir / "ticker_charts.json").write_text(json.dumps(ticker_charts_payload, indent=2))
+
     if trades_df is not None and not trades_df.empty:
         recent = trades_df.sort_values("timestamp_utc", ascending=False).head(MAX_TRADES_PUBLISHED)
         trades_payload = {
@@ -1091,7 +1193,7 @@ def main():
         equity_payload = {"available": False, "points": []}
     (out_dir / "equity.json").write_text(json.dumps(equity_payload, indent=2))
 
-    print(f"Wrote dashboard/positions/position_history/position_indicators/trades/equity/ticker_tracker JSON to {out_dir}/")
+    print(f"Wrote dashboard/positions/position_history/position_indicators/trades/equity/ticker_tracker/ticker_charts JSON to {out_dir}/")
 
 
 if __name__ == "__main__":

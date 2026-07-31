@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Performance Charts — InvestingBot</title>
 <meta name="description" content="Interactive trading charts for a real paper-trading bot - net gain/loss, cumulative realized P&L, win/loss per ticker, open positions.">
-<link rel="stylesheet" href="assets/styles.css?v=0.16.6">
+<link rel="stylesheet" href="assets/styles.css?v=0.16.7">
 <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
 </head>
 <body>
@@ -83,6 +83,10 @@
       <h3 class="positions-panel-title">Crypto — Current Open Positions</h3>
       <div class="position-cards" id="positions-crypto"></div>
     </div>
+    <div class="positions-panel">
+      <h3 class="positions-panel-title">Crypto — Ticker Tracker</h3>
+      <div class="tracker-cards" id="tracker-crypto"></div>
+    </div>
   </section>
 
   <section class="chart-section-group chart-section-stocks" aria-label="Stocks">
@@ -105,6 +109,10 @@
       <h3 class="positions-panel-title">Stocks — Current Open Positions</h3>
       <div class="position-cards" id="positions-stock"></div>
     </div>
+    <div class="positions-panel">
+      <h3 class="positions-panel-title">Stocks — Ticker Tracker</h3>
+      <div class="tracker-cards" id="tracker-stock"></div>
+    </div>
   </section>
 
   <footer class="site-footer">
@@ -119,9 +127,9 @@
 <div id="chart-tooltip" role="tooltip" aria-hidden="true"></div>
 <button type="button" id="back-to-top" class="back-to-top" aria-label="Back to top">↑</button>
 
-<script src="assets/background.js?v=0.16.6"></script>
+<script src="assets/background.js?v=0.16.7"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-<script src="assets/position-chart.js?v=0.16.6"></script>
-<script src="assets/charts.js?v=0.16.6"></script>
+<script src="assets/position-chart.js?v=0.16.7"></script>
+<script src="assets/charts.js?v=0.16.7"></script>
 </body>
 </html>
