@@ -299,18 +299,32 @@
   // grey outline instead of no outline at all, so "not held" reads as a
   // deliberate state rather than a rendering gap.
   // ---------------------------------------------------------------------
+  // Each of the two SMA readings (100-day, 20-bar/5-minute) has its own
+  // independent available/reason pair (see site_data.py's
+  // build_ticker_tracker) - one failing to fetch never hides the other,
+  // so each gets rendered separately rather than one all-or-nothing gate.
   function trackerCard(row) {
     const stateClass = "tracker-state-" + row.position_state.replace("_", "-");
     const heldBadge = row.held ? '<span class="tracker-card-badge">Held</span>' : "";
-    let body;
-    if (!row.available) {
-      body = `<p class="tracker-card-unavailable">${row.reason || "Price data unavailable."}</p>`;
-    } else {
+    const rows = [];
+    if (row.available) {
+      rows.push(`<div class="tracker-card-row"><span>Last Close</span><span>${fmtUsd(row.last_close)}</span></div>`);
+      rows.push(`<div class="tracker-card-row"><span>100-Day Avg</span><span>${fmtUsd(row.sma100)}</span></div>`);
+    }
+    if (row.sma20_available) {
+      rows.push(`<div class="tracker-card-row"><span>20-Bar Avg</span><span>${fmtUsd(row.sma20)}</span></div>`);
+    }
+    let body = rows.join("");
+    if (row.available) {
       const deltaClass = row.pct_vs_sma100 >= 0 ? "positive" : "negative";
-      body = `
-        <div class="tracker-card-row"><span>Last Close</span><span>${fmtUsd(row.last_close)}</span></div>
-        <div class="tracker-card-row"><span>100-Day Avg</span><span>${fmtUsd(row.sma100)}</span></div>
-        <div class="tracker-card-delta ${deltaClass}">${fmtPct(row.pct_vs_sma100)} vs 100-day avg</div>`;
+      body += `<div class="tracker-card-delta ${deltaClass}">${fmtPct(row.pct_vs_sma100)} vs 100-day avg</div>`;
+    }
+    if (row.sma20_available) {
+      const deltaClass20 = row.pct_vs_sma20 >= 0 ? "positive" : "negative";
+      body += `<div class="tracker-card-delta ${deltaClass20}">${fmtPct(row.pct_vs_sma20)} vs 20-bar avg</div>`;
+    }
+    if (!row.available && !row.sma20_available) {
+      body = `<p class="tracker-card-unavailable">${row.reason || row.sma20_reason || "Price data unavailable."}</p>`;
     }
     // data-symbol/data-is-crypto/data-tracker let assets/position-chart.js
     // (a separate, shared script) open this ticker's range-selectable

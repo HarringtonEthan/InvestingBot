@@ -17,6 +17,58 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.8 - 2026-07-31
+
+- **Removed the duplicated Ticker Tracker panels from charts.html** - the
+  dedicated Ticker Tracker tab on index.html is the one place the full
+  watched universe (held or not) is meant to show; charts.html's
+  Positions panels correctly stay limited to currently-held positions
+  only. The real bug behind "still can't hit the tab" turned out to be
+  that charts.html's nav bar never had a Ticker Tracker link at all -
+  added `<a href="index.html#tracker">Ticker Tracker</a>` alongside the
+  other section links.
+- **Every Ticker Tracker card now shows its 20-bar (5-minute) average**,
+  not just the existing 100-day one, whether the bot currently holds
+  that ticker or not - `build_ticker_tracker()` runs a second, separate
+  bars fetch and reuses `add_features()` from `src/features.py` so the
+  number is bit-for-bit the same `pct_below_sma20`/`sma20` the live
+  `rule_based`/`ml_filtered` sell rule itself computes, not a
+  reimplementation. Fails independently of the 100-day metric - a
+  ticker with too little 5-minute history still shows its 100-day
+  average, and vice versa.
+- **Ticker Tracker cards are now sorted alphabetically by ticker**,
+  stocks and crypto each in their own group, instead of the incidental
+  order of the `--ticker` CLI list the live workflows happen to use.
+- **Fixed the missing dashed reference line on the 1 Day range** in the
+  Ticker Tracker chart modal. Root cause: Chart.js auto-scales the
+  y-axis to fit only the visible price series, so a short 1-day range
+  often sits far from a longer-term reference value and silently clips
+  the line out of the drawable area. `renderChart()` in
+  `position-chart.js` now explicitly computes y-axis min/max to always
+  include every active reference line (8% padding), across all four
+  ranges.
+- **Reference lines are now self-explanatory** - each dashed line draws
+  its own on-canvas label ("100-Day Avg", "Entry") next to the line
+  itself, in a distinct color, instead of only being describable via
+  hover tooltip.
+- **Currently-held tickers now show a second reference line at their
+  real entry price** - pulled straight from the live Alpaca position's
+  `avg_entry_price` (not re-derived from the trade log), via the same
+  `_position_ticker()` matching `build_position_sma_indicators` already
+  used. `currentReferenceLines` is now an array so any number of lines
+  can be drawn/labeled at once; today that's up to two (100-day SMA,
+  entry price).
+- 5 new tests covering the 20-bar SMA (available, insufficient-history,
+  and independent-of-100-day-failure cases) and the held/entry-price
+  matching for both stock and crypto positions - 223 tests total, all
+  passing. Verified end-to-end with Playwright: charts.html has zero
+  `.tracker-card` elements left, the new nav link correctly routes to
+  the tracker tab, cards render in alphabetical order with both
+  averages, and the 1-day chart for a held ticker shows both labeled
+  lines fully visible despite sitting well outside the 1-day price
+  range.
+- Cache-busting bumped to `?v=0.16.8`.
+
 ## Version Richards 0.16.7 - 2026-07-31
 
 - **Every Ticker Tracker card is now clickable**, on both index.html and

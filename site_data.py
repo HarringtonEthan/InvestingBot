@@ -38,15 +38,19 @@ Writes eight files into --out-dir (default site/data/):
   - equity.json: the raw combined equity timeline, for the equity-curve
     chart.
   - ticker_tracker.json: every ticker either live workflow watches (see
-    WATCHED_STOCK_TICKERS/WATCHED_CRYPTO_TICKERS), not just the ones
-    currently held - each with its last daily close, trailing 100-day
-    SMA, and whether it's currently held (and if so, in profit or at a
-    loss) - see build_ticker_tracker. Only populated with
+    WATCHED_STOCK_TICKERS/WATCHED_CRYPTO_TICKERS), listed alphabetically
+    - not just the ones currently held - each with its last daily close,
+    trailing 100-day SMA, trailing 20-period/5-minute SMA (the same
+    signal rule_based/ml_filtered's own sell rule is measured against,
+    computed here for every watched ticker rather than only currently-
+    held ones), and whether it's currently held (and if so, in profit or
+    at a loss) - see build_ticker_tracker. Only populated with
     --live-positions, same as positions.json above.
   - ticker_charts.json: per-ticker price history behind the Ticker
     Tracker's click-to-expand chart, at four selectable ranges (1 Day/
     1 Week/1 Month/100 Day - see TICKER_CHART_RANGES) plus each
-    ticker's current 100-day SMA for the chart's reference line (see
+    ticker's current 100-day SMA and (if currently held) its real
+    average entry price, both for the chart's reference lines (see
     build_ticker_charts). Only populated with --live-positions, same as
     positions.json above.
 
@@ -882,12 +886,14 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
         return {"available": False, "reason": error, "categories": {"stocks": [], "crypto": []}}
 
     from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+    from src.features import add_features
     from src.symbols import resolve_symbol
 
     held_by_ticker = {_position_ticker(p["symbol"], p["is_crypto"]): p for p in positions}
 
     now_utc = dt.datetime.now(dt.timezone.utc)
     start_date = (now_utc - dt.timedelta(days=TICKER_TRACKER_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    start_date_20 = (now_utc - dt.timedelta(days=SMA_INDICATOR_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
     end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
     def build_row(ticker: str, is_crypto: bool) -> dict:
@@ -928,6 +934,30 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
             # Same non-blocking reasoning as build_position_price_histories:
             # one ticker's bars being unfetchable never blocks the rest.
             row.update(available=False, reason=f"{type(e).__name__}: {e}", last_close=None, sma100=None, pct_vs_sma100=None)
+
+        # Independent second fetch/metric: the same 20-period/5-minute
+        # SMA rule_based/ml_filtered's own sell rule is measured against
+        # (see build_position_sma_indicators), but computed here for
+        # *every* watched ticker rather than only currently-held
+        # rule_based/ml_filtered positions - a separate available/reason
+        # pair so this metric failing (or the 100-day one above failing)
+        # never hides the other.
+        try:
+            if is_crypto:
+                df20 = get_crypto_bars_range(resolve_symbol(ticker).alpaca, SMA_INDICATOR_BAR_INTERVAL, start_date_20, end_date)
+            else:
+                df20 = get_stock_bars_range(ticker, SMA_INDICATOR_BAR_INTERVAL, start_date_20, end_date)
+            featured = add_features(df20)
+            pct20_series = featured["pct_below_sma20"].dropna()
+            if pct20_series.empty:
+                row.update(sma20_available=False, sma20_reason="not enough trailing bars yet to compute a 20-period average",
+                            sma20=None, pct_vs_sma20=None)
+            else:
+                row.update(sma20_available=True, sma20_reason=None,
+                            sma20=float(featured["sma20"].dropna().iloc[-1]), pct_vs_sma20=round(float(pct20_series.iloc[-1]), 6))
+        except Exception as e:
+            row.update(sma20_available=False, sma20_reason=f"{type(e).__name__}: {e}", sma20=None, pct_vs_sma20=None)
+
         return row
 
     return {
@@ -935,8 +965,13 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
         "reason": None,
         "as_of_utc": now_utc.isoformat(),
         "categories": {
-            "stocks": [build_row(t, False) for t in WATCHED_STOCK_TICKERS],
-            "crypto": [build_row(t, True) for t in WATCHED_CRYPTO_TICKERS],
+            # Alphabetical, not the workflow's own watch-list order - a
+            # ticker tracker is for quickly finding one specific ticker,
+            # unlike WATCHED_STOCK_TICKERS/WATCHED_CRYPTO_TICKERS itself,
+            # which stays in the workflow's order for easy diffing
+            # against paper-trade-stocks.yml/paper-trade-crypto.yml.
+            "stocks": [build_row(t, False) for t in sorted(WATCHED_STOCK_TICKERS)],
+            "crypto": [build_row(t, True) for t in sorted(WATCHED_CRYPTO_TICKERS)],
         },
     }
 
@@ -970,7 +1005,12 @@ def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | N
     exact same 100 daily bars as the "100d" range's own points, not a
     second, potentially-drifting calculation) so the chart can draw it
     as a reference line - the same number build_ticker_tracker already
-    shows as text on the card.
+    shows as text on the card. A currently-held ticker additionally gets
+    its real average entry price (straight from the live position, not
+    re-derived from the trade log) so the chart can mark where it was
+    actually bought, the same way position mode's own modal already
+    marks an entry price - just available here across every range, not
+    only a single "since purchase" span.
 
     Best-effort per range, not just per ticker: one range failing for a
     ticker (e.g. Alpaca has no 5-minute bars for a thinly-traded name)
@@ -978,23 +1018,28 @@ def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | N
 
     Same opt-in contract as build_ticker_tracker: unavailable (not just
     unfetched) when --live-positions wasn't passed or failed - this
-    function doesn't itself need live position data, but sharing one
-    opt-in gate across every Alpaca-backed JSON file is simpler than a
-    second flag for a feature that already only matters alongside it.
+    function doesn't itself need live position data for its bars, but
+    does need it for held/entry_price above, and sharing one opt-in gate
+    across every Alpaca-backed JSON file is simpler than a second flag.
     """
     if live_positions_result is None:
         return {"available": False, "reason": "live position lookup not requested for this run", "symbols": {}}
-    _, error = live_positions_result
+    positions, error = live_positions_result
     if error is not None:
         return {"available": False, "reason": error, "symbols": {}}
 
     from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
     from src.symbols import resolve_symbol
 
+    held_by_ticker = {_position_ticker(p["symbol"], p["is_crypto"]): p for p in positions}
+
     now_utc = dt.datetime.now(dt.timezone.utc)
     end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
 
     def build_symbol(ticker: str, is_crypto: bool) -> dict:
+        held_position = held_by_ticker.get(ticker)
+        held = held_position is not None
+        entry_price = held_position["avg_entry_price"] if held else None
         ranges_payload: dict[str, dict] = {}
         sma100 = None
         for range_key, cfg in TICKER_CHART_RANGES.items():
@@ -1022,6 +1067,8 @@ def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | N
             "available": available,
             "reason": None if available else "none of this ticker's chart ranges could be fetched",
             "sma100": sma100,
+            "held": held,
+            "entry_price": entry_price,
             "ranges": ranges_payload,
         }
 

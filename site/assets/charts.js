@@ -44,7 +44,6 @@
   let equity = null;
   let positions = null;
   let positionIndicators = null;
-  let tickerTracker = null;
 
   let rangeKey = "today";   // today | week | month | all
   let charts = {};
@@ -821,45 +820,6 @@
     el.innerHTML = list.length ? list.map(positionCard).join("") : `<p class="empty-state">No open ${assetClass === "crypto" ? "crypto" : "stock"} positions right now.</p>`;
   }
 
-  // Same card/click contract as dashboard.js's own trackerCard() - see
-  // that file's comment for why data-tracker="true" matters (assets/
-  // position-chart.js branches on it to load ticker_charts.json instead
-  // of position_history.json and show the range selector).
-  function trackerCard(row) {
-    const stateClass = "tracker-state-" + row.position_state.replace("_", "-");
-    const heldBadge = row.held ? '<span class="tracker-card-badge">Held</span>' : "";
-    let body;
-    if (!row.available) {
-      body = `<p class="tracker-card-unavailable">${row.reason || "Price data unavailable."}</p>`;
-    } else {
-      const deltaClass = row.pct_vs_sma100 >= 0 ? "positive" : "negative";
-      body = `
-        <div class="tracker-card-row"><span>Last Close</span><span>${fmtUsd(row.last_close)}</span></div>
-        <div class="tracker-card-row"><span>100-Day Avg</span><span>${fmtUsd(row.sma100)}</span></div>
-        <div class="tracker-card-delta ${deltaClass}">${fmtPctSigned(row.pct_vs_sma100 * 100)} vs 100-day avg</div>`;
-    }
-    return `
-      <div class="tracker-card ${stateClass}" data-symbol="${row.ticker}" data-is-crypto="${row.is_crypto}" data-tracker="true" tabindex="0" role="button" aria-haspopup="dialog">
-        <div class="tracker-card-head">
-          <span class="tracker-card-ticker">${row.ticker}</span>
-          ${heldBadge}
-        </div>
-        ${body}
-        <div class="tracker-card-hint">View chart →</div>
-      </div>`;
-  }
-
-  function renderTrackerPanel(assetClass, elId) {
-    const el = document.getElementById(elId);
-    if (!el) return;
-    if (!tickerTracker || !tickerTracker.available) {
-      el.innerHTML = `<p class="empty-state">${(tickerTracker && tickerTracker.reason) || "Ticker tracker data wasn't fetched for this run."}</p>`;
-      return;
-    }
-    const list = (tickerTracker.categories && tickerTracker.categories[assetClass === "crypto" ? "crypto" : "stocks"]) || [];
-    el.innerHTML = list.length ? list.map(trackerCard).join("") : `<p class="empty-state">No watched ${assetClass === "crypto" ? "crypto" : "stock"} tickers configured.</p>`;
-  }
-
   // ---------------------------------------------------------------------
   // Orchestration
   // ---------------------------------------------------------------------
@@ -873,8 +833,6 @@
     renderClassWinLoss("stock", "chart-stock-winloss", "stockWinLoss");
     renderPositionsPanel("crypto", "positions-crypto");
     renderPositionsPanel("stock", "positions-stock");
-    renderTrackerPanel("crypto", "tracker-crypto");
-    renderTrackerPanel("stock", "tracker-stock");
   }
 
   function safely(label, fn) {
@@ -943,13 +901,12 @@
   }
 
   async function load() {
-    [dashboard, trades, equity, positions, positionIndicators, tickerTracker] = await Promise.all([
+    [dashboard, trades, equity, positions, positionIndicators] = await Promise.all([
       loadJson("dashboard.json", null),
       loadJson("trades.json", { available: false, trades: [] }),
       loadJson("equity.json", { available: false, points: [] }),
       loadJson("positions.json", { available: false, reason: "positions.json not found", positions: [] }),
       loadJson("position_indicators.json", { available: false, symbols: {} }),
-      loadJson("ticker_tracker.json", { available: false, reason: "ticker_tracker.json not found", categories: { stocks: [], crypto: [] } }),
     ]);
 
     if (!dashboard) {

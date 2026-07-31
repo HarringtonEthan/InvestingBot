@@ -920,14 +920,18 @@ def test_ticker_tracker_alpaca_error_surfaces_reason_not_crash():
     assert "no network access" in result["reason"]
 
 
-def test_ticker_tracker_covers_the_full_watched_universe(monkeypatch):
+def test_ticker_tracker_covers_the_full_watched_universe_alphabetically(monkeypatch):
     monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(120))
     monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda *a, **k: _daily_bars(120, start_price=60000.0, step=50.0))
     result = build_ticker_tracker(([], None))
     stock_tickers = [row["ticker"] for row in result["categories"]["stocks"]]
     crypto_tickers = [row["ticker"] for row in result["categories"]["crypto"]]
-    assert stock_tickers == WATCHED_STOCK_TICKERS
-    assert crypto_tickers == WATCHED_CRYPTO_TICKERS
+    # A ticker tracker is for quickly finding one specific ticker -
+    # alphabetical, not the workflow's own --ticker list order.
+    assert stock_tickers == sorted(WATCHED_STOCK_TICKERS)
+    assert crypto_tickers == sorted(WATCHED_CRYPTO_TICKERS)
+    assert set(stock_tickers) == set(WATCHED_STOCK_TICKERS)
+    assert set(crypto_tickers) == set(WATCHED_CRYPTO_TICKERS)
 
 
 def test_ticker_tracker_computes_sma100_and_pct(monkeypatch):
@@ -994,6 +998,44 @@ def test_ticker_tracker_per_ticker_failure_does_not_block_others(monkeypatch):
     assert by_ticker["AAPL"]["available"] is False
     assert "no stock bars" in by_ticker["AAPL"]["reason"]
     assert by_ticker["QQQ"]["available"] is True
+
+
+def test_ticker_tracker_computes_sma20_for_every_ticker_held_or_not(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(120))
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert aapl["held"] is False
+    assert aapl["sma20_available"] is True
+    assert aapl["sma20_reason"] is None
+    assert aapl["sma20"] is not None
+    # A steadily rising series sits *above* its own trailing average.
+    assert aapl["pct_vs_sma20"] > 0
+
+
+def test_ticker_tracker_sma20_not_enough_history_is_honest(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(10))
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert aapl["sma20_available"] is False
+    assert aapl["sma20"] is None
+    assert aapl["pct_vs_sma20"] is None
+    assert "not enough" in aapl["sma20_reason"]
+
+
+def test_ticker_tracker_sma20_failure_does_not_block_sma100(monkeypatch):
+    # Only the 20-bar (5m) fetch fails - the independently-fetched
+    # 100-day metric must still come through, and vice versa.
+    def fake_stock_bars(symbol, interval, start, end):
+        if interval == "5m":
+            raise RuntimeError("no 5-minute bars available")
+        return _daily_bars(120)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert aapl["available"] is True
+    assert aapl["sma20_available"] is False
+    assert "no 5-minute bars" in aapl["sma20_reason"]
 
 
 # ---- build_ticker_charts ----
@@ -1098,3 +1140,24 @@ def test_ticker_charts_per_ticker_failure_does_not_block_others(monkeypatch):
     result = build_ticker_charts(([], None))
     assert result["symbols"]["AAPL"]["available"] is False
     assert result["symbols"]["QQQ"]["available"] is True
+
+
+def test_ticker_charts_marks_a_held_ticker_with_its_real_entry_price(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "unrealized_plpc": 0.02}]
+    result = build_ticker_charts((positions, None))
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["held"] is True
+    assert aapl["entry_price"] == 305.5
+    qqq = result["symbols"]["QQQ"]
+    assert qqq["held"] is False
+    assert qqq["entry_price"] is None
+
+
+def test_ticker_charts_matches_a_held_crypto_position_by_bare_ticker(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    positions = [{"symbol": "BTCUSD", "is_crypto": True, "avg_entry_price": 60000.0, "unrealized_plpc": 0.01}]
+    result = build_ticker_charts((positions, None))
+    btc = result["symbols"]["BTC"]
+    assert btc["held"] is True
+    assert btc["entry_price"] == 60000.0

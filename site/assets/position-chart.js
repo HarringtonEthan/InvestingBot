@@ -12,14 +12,17 @@
  * duplicate copies:
  *   - Position mode (data-tracker unset): reads site/data/
  *     position_history.json, always shows the single "since purchase"
- *     span, and draws a dashed reference line at the entry price.
+ *     span, and draws one dashed reference line at the entry price.
  *   - Tracker mode (data-tracker="true"): reads site/data/
  *     ticker_charts.json, shows a 1 Day/1 Week/1 Month/100 Day range
  *     selector (all four already fetched server-side, so switching is
  *     instant with no extra network call), and draws a dashed reference
- *     line at the ticker's current 100-day SMA instead of an entry price
- *     - every watched ticker has one of those regardless of whether it's
- *     currently held, unlike an entry price.
+ *     line at the ticker's current 100-day SMA - every watched ticker
+ *     has one of those regardless of whether it's held - plus a second
+ *     one at the real entry price when the ticker is currently held.
+ *     Both lines carry their own on-canvas text label (not just a hover
+ *     tooltip), and the y-axis is always widened to keep every active
+ *     line actually visible rather than silently clipped off-screen.
  *
  * Both JSON files are real Alpaca historical prices this project's own
  * site_data.py already fetched server-side, never fabricated here. A
@@ -33,7 +36,11 @@
   "use strict";
 
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const COLORS = { green: "#34d372", red: "#f0554a", text: "#9aa5a0", grid: "rgba(255,255,255,0.06)" };
+  // avgLine/entryLine are the two reference-line colors - distinct from
+  // green/red (which mean "price up/down") and from each other, so a
+  // tracker chart showing both an SMA line and an entry-price line at
+  // once never leaves it ambiguous which is which even without hovering.
+  const COLORS = { green: "#34d372", red: "#f0554a", text: "#9aa5a0", grid: "rgba(255,255,255,0.06)", avgLine: "#6aa6ff", entryLine: "#f0a63c" };
 
   // Chart.js's own default font is a generic sans-serif that doesn't
   // match the rest of the page (Inter) - set once, globally, here since
@@ -50,8 +57,11 @@
   let tickerChartsPromise = null;
   let chart = null;
   let lastFocused = null;
-  let currentReferenceValue = null;
-  let currentReferenceLabel = "";
+  // Zero, one, or two dashed reference lines on the current chart - each
+  // {value, label, color, dash}. Position mode always has exactly one
+  // (entry price); tracker mode has the 100-day SMA plus, only when the
+  // ticker is currently held, a second one at its real entry price.
+  let currentReferenceLines = [];
   let currentSymbolLabel = "";
   let currentSeries = [];
   // Tracker-mode-only state - all null/unset in position mode.
@@ -179,18 +189,25 @@
     if (idx === null || idx === undefined) return;
     const point = currentSeries[idx];
     if (!point) return;
-    const pct = currentReferenceValue ? ((point.price / currentReferenceValue) - 1) * 100 : null;
+    // Signed color for the overall tooltip border - the first reference
+    // line (position mode's only one, or tracker mode's 100-day avg)
+    // still drives that, same as before this supported more than one.
+    const primaryPct = currentReferenceLines.length && isNum(currentReferenceLines[0].value)
+      ? ((point.price / currentReferenceLines[0].value) - 1) * 100
+      : null;
 
     let html = `<div class="tt-title">${currentSymbolLabel}</div>`;
     html += `<div class="tt-time">${fmtDateTimeET(point.t)}</div>`;
     html += `<div class="tt-rows">`;
     html += `<div class="tt-row"><span class="tt-label">Price</span><span class="tt-val">${fmtPrice(point.price)}</span></div>`;
-    if (isNum(pct)) {
-      html += `<div class="tt-row"><span class="tt-label">${currentReferenceLabel}</span><span class="tt-val ${pct >= 0 ? "positive" : "negative"}">${(pct >= 0 ? "+" : "") + pct.toFixed(2)}%</span></div>`;
-    }
+    currentReferenceLines.forEach((line) => {
+      if (!isNum(line.value)) return;
+      const pct = ((point.price / line.value) - 1) * 100;
+      html += `<div class="tt-row"><span class="tt-label">${line.label}</span><span class="tt-val ${pct >= 0 ? "positive" : "negative"}">${(pct >= 0 ? "+" : "") + pct.toFixed(2)}%</span></div>`;
+    });
     html += `</div>`;
     el.innerHTML = html;
-    el.style.borderColor = isNum(pct) ? (pct >= 0 ? COLORS.green : COLORS.red) : "";
+    el.style.borderColor = isNum(primaryPct) ? (primaryPct >= 0 ? COLORS.green : COLORS.red) : "";
     el.setAttribute("aria-hidden", "false");
     el.classList.add("is-visible");
 
@@ -224,28 +241,46 @@
     },
   };
 
-  // A faint dashed reference line at whichever value this chart's
-  // framing is measured against - the entry price in position mode, or
-  // the ticker's current 100-day SMA in tracker mode - made explicit
-  // instead of left for the eye to find on the y-axis.
+  // Dashed reference line(s) at whichever value(s) this chart's framing
+  // is measured against - the entry price in position mode, or the
+  // ticker's 100-day SMA (plus a second line at the real entry price if
+  // currently held) in tracker mode. Each line draws its own text label
+  // directly on the canvas (not just a hover tooltip) so what it means
+  // is never a mystery, and the y-axis scale (see renderChart) is
+  // always widened to guarantee every line is actually visible, not
+  // silently clipped off when a range's own price swing sits far from it.
   const referenceLinePlugin = {
-    id: "chartReferenceLine",
+    id: "chartReferenceLines",
     beforeDatasetsDraw(chartInstance) {
       const yScale = chartInstance.scales.y;
       const area = chartInstance.chartArea;
-      if (!yScale || !area || !isNum(currentReferenceValue)) return;
-      const py = yScale.getPixelForValue(currentReferenceValue);
-      if (py < area.top || py > area.bottom) return;
+      if (!yScale || !area || !currentReferenceLines.length) return;
       const c = chartInstance.ctx;
-      c.save();
-      c.beginPath();
-      c.setLineDash([4, 4]);
-      c.moveTo(area.left, py);
-      c.lineTo(area.right, py);
-      c.lineWidth = 1;
-      c.strokeStyle = "rgba(255,255,255,0.22)";
-      c.stroke();
-      c.restore();
+      currentReferenceLines.forEach((line, i) => {
+        if (!isNum(line.value)) return;
+        const py = yScale.getPixelForValue(line.value);
+        if (py < area.top - 1 || py > area.bottom + 1) return;
+        c.save();
+        c.beginPath();
+        c.setLineDash(line.dash || [4, 4]);
+        c.moveTo(area.left, py);
+        c.lineTo(area.right, py);
+        c.lineWidth = 1;
+        c.strokeStyle = line.color;
+        c.stroke();
+        c.restore();
+
+        // Alternate label placement above/below the line so two close-
+        // together lines (e.g. SMA and entry price near each other)
+        // don't draw their text on top of one another.
+        c.save();
+        c.font = "600 10px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        c.fillStyle = line.color;
+        c.textAlign = "right";
+        const labelY = i % 2 === 0 ? Math.max(py - 6, area.top + 10) : Math.min(py + 14, area.bottom - 4);
+        c.fillText(line.label, area.right - 6, labelY);
+        c.restore();
+      });
     },
   };
 
@@ -382,7 +417,7 @@
       ? "Recent price history (exact purchase date not clearly determined from the trade log)"
       : `Since purchase · ${fmtDateET(sym.entry_utc)}`;
 
-    renderChart(points, symbol, points[0].price, "Since purchase");
+    renderChart(points, symbol, [{ value: points[0].price, label: "Entry", color: COLORS.entryLine, dash: [4, 4] }]);
   }
 
   async function openTrackerModal(ticker, triggerEl) {
@@ -437,7 +472,17 @@
     }
     document.getElementById("position-modal-empty").hidden = true;
     document.getElementById("position-modal-canvas-wrap").hidden = false;
-    renderChart(range.points, currentTrackerTicker, currentTickerRanges.sma100, "vs 100-day avg");
+
+    const referenceLines = [];
+    if (isNum(currentTickerRanges.sma100)) {
+      referenceLines.push({ value: currentTickerRanges.sma100, label: "100-Day Avg", color: COLORS.avgLine, dash: [4, 4] });
+    }
+    // Only currently-held tickers have a real entry price - see
+    // site_data.py's build_ticker_charts.
+    if (currentTickerRanges.held && isNum(currentTickerRanges.entry_price)) {
+      referenceLines.push({ value: currentTickerRanges.entry_price, label: "Entry", color: COLORS.entryLine, dash: [2, 3] });
+    }
+    renderChart(range.points, currentTrackerTicker, referenceLines);
   }
 
   function closeModal() {
@@ -454,7 +499,7 @@
     if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
   }
 
-  function renderChart(points, symbol, referenceValue, referenceLabel) {
+  function renderChart(points, symbol, referenceLines) {
     if (typeof Chart === "undefined") {
       showEmpty("Charting library failed to load.");
       return;
@@ -466,8 +511,7 @@
     // already in use") or silently leave the old chart's data on screen.
     destroyChart();
     currentSeries = points;
-    currentReferenceValue = isNum(referenceValue) ? referenceValue : null;
-    currentReferenceLabel = referenceLabel || "";
+    currentReferenceLines = Array.isArray(referenceLines) ? referenceLines.filter((l) => isNum(l.value)) : [];
     currentSymbolLabel = symbol;
 
     const first = points[0].price;
@@ -475,6 +519,22 @@
     const up = last >= first;
     const trendColor = up ? COLORS.green : COLORS.red;
     const segmentColor = (segCtx) => (segCtx.p1.parsed.y >= first ? COLORS.green : COLORS.red);
+
+    // Widen the y-axis to guarantee every reference line actually lands
+    // inside the chart area, rather than being silently clipped off
+    // whenever a range's own price swing sits far from it (e.g. a 1-day
+    // view next to a 100-day average from weeks ago) - see this file's
+    // module docstring and referenceLinePlugin above.
+    const prices = points.map((p) => p.price);
+    let yMin = Math.min(...prices);
+    let yMax = Math.max(...prices);
+    currentReferenceLines.forEach((line) => {
+      yMin = Math.min(yMin, line.value);
+      yMax = Math.max(yMax, line.value);
+    });
+    const yPad = (yMax - yMin) * 0.08 || Math.abs(yMax) * 0.02 || 1;
+    yMin -= yPad;
+    yMax += yPad;
 
     const canvas = document.getElementById("position-modal-canvas");
     chart = new Chart(canvas, {
@@ -521,6 +581,8 @@
           },
           y: {
             beginAtZero: false,
+            min: yMin,
+            max: yMax,
             ticks: { color: COLORS.text, font: { size: 10 }, maxTicksLimit: 6, callback: (v) => fmtPrice(v) },
             grid: { color: COLORS.grid, drawTicks: false },
             border: { display: false },
