@@ -1,35 +1,55 @@
 /*
- * Shared price-chart modal for both position cards (Positions tab) and
- * Ticker Tracker cards - loaded by both index.html and charts.html.
- * Listens for clicks/keypresses on any element carrying a data-symbol
- * attribute via delegation on `document`, so it works regardless of
- * whether dashboard.js or charts.js rendered the card, and regardless of
- * when (asynchronously, via innerHTML) that card was inserted - no need
- * to coordinate boot order with either page's own renderer.
+ * Shared price-chart modal - loaded by both index.html and charts.html,
+ * opened by clicking ANY card carrying a data-symbol attribute: a
+ * position card (Positions tab, or charts.html's own Positions panels)
+ * or a Ticker Tracker card. Listens via delegation on `document`, so it
+ * works regardless of whether dashboard.js or charts.js rendered the
+ * card, and regardless of when (asynchronously, via innerHTML) that
+ * card was inserted - no need to coordinate boot order with either
+ * page's own renderer.
  *
- * Two modes share one modal/chart implementation (same DOM, same
- * tooltip/crosshair/reference-line plugins) rather than two near-
- * duplicate copies:
- *   - Position mode (data-tracker unset): reads site/data/
- *     position_history.json, always shows the single "since purchase"
- *     span, and draws one dashed reference line at the entry price.
- *   - Tracker mode (data-tracker="true"): reads site/data/
- *     ticker_charts.json, shows a 1 Day/1 Week/1 Month/100 Day range
- *     selector (all four already fetched server-side, so switching is
- *     instant with no extra network call), and draws a dashed reference
- *     line at the ticker's current 100-day SMA - every watched ticker
- *     has one of those regardless of whether it's held - plus a second
- *     one at the real entry price when the ticker is currently held.
- *     Both lines carry their own on-canvas text label (not just a hover
- *     tooltip), and the y-axis is always widened to keep every active
- *     line actually visible rather than silently clipped off-screen.
+ * Deliberately ONE mode, not two: every card - held or not, wherever it
+ * lives on the site - opens the exact same range-selectable (1 Day/
+ * 1 Week/1 Month/100 Day) chart, reading the exact same file
+ * (site/data/ticker_charts.json, keyed by the bare ticker). An earlier
+ * version of this file had a second "position mode" (a fixed "since
+ * purchase" span, no range selector) for position cards specifically -
+ * removed because it meant the exact same ticker showed a different
+ * click-to-chart experience depending on which tab you found it in,
+ * and because its "entry" reference line was approximated from the
+ * first fetched history bar instead of the position's real average
+ * entry price, which could disagree with the position card's own P&L
+ * sign right next to it. ticker_charts.json already covers every
+ * watched ticker, held or not, with the real entry price and exact
+ * entry timestamp when one is held - there was nothing position mode
+ * did that this can't do strictly more accurately.
  *
- * Both JSON files are real Alpaca historical prices this project's own
+ * Every ticker gets a dashed "100-Day Avg" reference line (the same
+ * number the Ticker Tracker card's own text already shows). A
+ * currently-held ticker also gets a second dashed "Entry" line at its
+ * real Alpaca average entry price - drawn starting only from the exact
+ * timestamp that position was actually opened (see entry_utc), not
+ * across the whole visible chart, so it never implies the position was
+ * held longer than it actually was. Both lines carry their own
+ * on-canvas label plus a persistent legend chip below the range
+ * buttons (so what a line means is never only discoverable by
+ * hovering), and the y-axis is always widened to keep every active
+ * line actually visible rather than silently clipped off-screen.
+ *
+ * The price line itself, and the modal's own trend accent, are colored
+ * relative to whichever reference line is most meaningful for this
+ * ticker - the real entry price if held, otherwise the 100-day average
+ * - rather than simply "up or down since the left edge of whatever
+ * range happens to be selected." That's what makes a held ticker's
+ * chart agree with its card: a position that's genuinely up vs. its
+ * own entry price reads green even if this particular window's own
+ * first visible point happened to be a local high.
+ *
+ * All chart data is real Alpaca historical prices this project's own
  * site_data.py already fetched server-side, never fabricated here. A
- * symbol/range with no data yet (feature not enabled for this run, a
- * per-symbol fetch failure, too few points) shows an honest message
- * instead of a chart - see the state handling in openModal()/
- * openTrackerModal().
+ * ticker/range with no data yet (feature not enabled for this run, a
+ * per-ticker/per-range fetch failure, too few points) shows an honest
+ * message instead of a chart - see the state handling in openModal().
  */
 
 (function () {
@@ -37,9 +57,10 @@
 
   const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   // avgLine/entryLine are the two reference-line colors - distinct from
-  // green/red (which mean "price up/down") and from each other, so a
-  // tracker chart showing both an SMA line and an entry-price line at
-  // once never leaves it ambiguous which is which even without hovering.
+  // green/red (which mean "price up/down relative to the baseline") and
+  // from each other, so a chart showing both an SMA line and an entry-
+  // price line at once never leaves it ambiguous which is which even
+  // without hovering.
   const COLORS = { green: "#34d372", red: "#f0554a", text: "#9aa5a0", grid: "rgba(255,255,255,0.06)", avgLine: "#6aa6ff", entryLine: "#f0a63c" };
 
   // Chart.js's own default font is a generic sans-serif that doesn't
@@ -51,24 +72,21 @@
     Chart.defaults.color = COLORS.text;
   }
 
-  let historyData = null;
-  let historyPromise = null;
-  let tickerChartsData = null;
-  let tickerChartsPromise = null;
+  let chartsData = null;
+  let chartsPromise = null;
   let chart = null;
   let lastFocused = null;
   // Zero, one, or two dashed reference lines on the current chart - each
-  // {value, label, color, dash}. Position mode always has exactly one
-  // (entry price); tracker mode has the 100-day SMA plus, only when the
-  // ticker is currently held, a second one at its real entry price.
+  // {value, label, color, dash, kind, startAt}. Every ticker gets a
+  // "100-Day Avg" line (kind: "avg"); a currently-held ticker also gets
+  // an "Entry" line (kind: "entry") clipped to start at startAt (its
+  // real entry timestamp) when that's known.
   let currentReferenceLines = [];
   let currentSymbolLabel = "";
   let currentSeries = [];
-  // Tracker-mode-only state - all null/unset in position mode.
-  let currentMode = "position";
   let currentRangeKey = null;
   let currentTickerRanges = null;
-  let currentTrackerTicker = "";
+  let currentTicker = "";
 
   const RANGE_ORDER = ["1d", "1w", "1m", "100d"];
   const RANGE_LABELS = { "1d": "1 Day", "1w": "1 Week", "1m": "1 Month", "100d": "100 Day" };
@@ -79,9 +97,9 @@
   // Data loading - independent of dashboard.js/charts.js's own fetches,
   // keeps this feature fully decoupled from either page's renderer.
   // ---------------------------------------------------------------------
-  function loadHistory() {
-    if (historyPromise) return historyPromise;
-    historyPromise = fetch("data/position_history.json", { cache: "no-store" })
+  function loadCharts() {
+    if (chartsPromise) return chartsPromise;
+    chartsPromise = fetch("data/ticker_charts.json", { cache: "no-store" })
       .then((res) => (res.ok ? res.text() : ""))
       .then((text) => {
         if (!text || !text.trim()) return { available: false, symbols: {} };
@@ -93,29 +111,10 @@
       })
       .catch(() => ({ available: false, symbols: {} }))
       .then((data) => {
-        historyData = data;
+        chartsData = data;
         return data;
       });
-    return historyPromise;
-  }
-  function loadTickerCharts() {
-    if (tickerChartsPromise) return tickerChartsPromise;
-    tickerChartsPromise = fetch("data/ticker_charts.json", { cache: "no-store" })
-      .then((res) => (res.ok ? res.text() : ""))
-      .then((text) => {
-        if (!text || !text.trim()) return { available: false, symbols: {} };
-        try {
-          return JSON.parse(text);
-        } catch (e) {
-          return { available: false, symbols: {} };
-        }
-      })
-      .catch(() => ({ available: false, symbols: {} }))
-      .then((data) => {
-        tickerChartsData = data;
-        return data;
-      });
-    return tickerChartsPromise;
+    return chartsPromise;
   }
 
   // ---------------------------------------------------------------------
@@ -152,7 +151,7 @@
   }
   // 1-day range gets intraday time labels (a date label would repeat
   // the same day across nearly every tick) - every other range keeps
-  // the plain month/day label, same as position mode always used.
+  // the plain month/day label.
   function fmtAxisLabel(iso, rangeKey) {
     return rangeKey === "1d" ? fmtAxisTime(iso) : fmtAxisDate(iso);
   }
@@ -161,7 +160,7 @@
   // Custom tooltip + crosshair - reuses the exact #chart-tooltip element
   // and CSS classes charts.html's own charts already use (created here
   // if the current page doesn't already declare one, e.g. index.html),
-  // so a position's price chart looks and behaves like the account
+  // so a card's price chart looks and behaves like the account
   // performance chart's, per the same visual language sitewide.
   // ---------------------------------------------------------------------
   function tooltipEl() {
@@ -181,6 +180,15 @@
     el.classList.remove("is-visible");
     el.setAttribute("aria-hidden", "true");
   }
+  function primaryReferenceLine() {
+    // The one line a held/not-held ticker's own P&L or trend text is
+    // actually measured against - the real entry price if held (so this
+    // chart can never disagree with the card sitting right next to it),
+    // otherwise the 100-day average. Everything that needs a single
+    // "up or down vs. what" answer (line color, modal trend accent,
+    // tooltip border) reads from this same line.
+    return currentReferenceLines.find((l) => l.kind === "entry") || currentReferenceLines.find((l) => l.kind === "avg") || null;
+  }
   function externalTooltip(ctx) {
     const el = tooltipEl();
     const model = ctx.tooltip;
@@ -189,12 +197,8 @@
     if (idx === null || idx === undefined) return;
     const point = currentSeries[idx];
     if (!point) return;
-    // Signed color for the overall tooltip border - the first reference
-    // line (position mode's only one, or tracker mode's 100-day avg)
-    // still drives that, same as before this supported more than one.
-    const primaryPct = currentReferenceLines.length && isNum(currentReferenceLines[0].value)
-      ? ((point.price / currentReferenceLines[0].value) - 1) * 100
-      : null;
+    const primary = primaryReferenceLine();
+    const primaryPct = primary && isNum(primary.value) ? ((point.price / primary.value) - 1) * 100 : null;
 
     let html = `<div class="tt-title">${currentSymbolLabel}</div>`;
     html += `<div class="tt-time">${fmtDateTimeET(point.t)}</div>`;
@@ -241,43 +245,68 @@
     },
   };
 
-  // Dashed reference line(s) at whichever value(s) this chart's framing
-  // is measured against - the entry price in position mode, or the
-  // ticker's 100-day SMA (plus a second line at the real entry price if
-  // currently held) in tracker mode. Each line draws its own text label
-  // directly on the canvas (not just a hover tooltip) so what it means
-  // is never a mystery, and the y-axis scale (see renderChart) is
-  // always widened to guarantee every line is actually visible, not
-  // silently clipped off when a range's own price swing sits far from it.
+  // Dashed reference line(s) - the ticker's 100-day SMA always, plus its
+  // real entry price when currently held. The entry line only draws
+  // from line.startIndex onward (its real entry timestamp mapped to a
+  // point index - see renderChart) rather than across the whole chart,
+  // so it never implies the position was held longer than it actually
+  // was; a small dot marks that exact starting point. Each line draws
+  // its own text label directly on the canvas, on a solid backing so it
+  // stays legible over the grid/data, and the y-axis (see renderChart)
+  // is always widened to guarantee every line is actually visible.
   const referenceLinePlugin = {
     id: "chartReferenceLines",
     beforeDatasetsDraw(chartInstance) {
       const yScale = chartInstance.scales.y;
+      const xScale = chartInstance.scales.x;
       const area = chartInstance.chartArea;
-      if (!yScale || !area || !currentReferenceLines.length) return;
+      if (!yScale || !xScale || !area || !currentReferenceLines.length) return;
       const c = chartInstance.ctx;
       currentReferenceLines.forEach((line, i) => {
         if (!isNum(line.value)) return;
         const py = yScale.getPixelForValue(line.value);
         if (py < area.top - 1 || py > area.bottom + 1) return;
+        let xStart = area.left;
+        const clipped = isNum(line.startIndex) && line.startIndex > 0;
+        if (clipped) {
+          xStart = Math.min(Math.max(xScale.getPixelForValue(line.startIndex), area.left), area.right);
+        }
+
         c.save();
         c.beginPath();
         c.setLineDash(line.dash || [4, 4]);
-        c.moveTo(area.left, py);
+        c.moveTo(xStart, py);
         c.lineTo(area.right, py);
-        c.lineWidth = 1;
+        c.lineWidth = 1.5;
         c.strokeStyle = line.color;
         c.stroke();
         c.restore();
 
+        if (clipped) {
+          // Marks exactly where the entry line begins - the real moment
+          // the position was opened, not the edge of the chart.
+          c.save();
+          c.beginPath();
+          c.arc(xStart, py, 3, 0, Math.PI * 2);
+          c.fillStyle = line.color;
+          c.fill();
+          c.restore();
+        }
+
         // Alternate label placement above/below the line so two close-
         // together lines (e.g. SMA and entry price near each other)
-        // don't draw their text on top of one another.
+        // don't draw their text on top of one another. A solid backing
+        // box keeps the label legible over gridlines/data.
         c.save();
         c.font = "600 10px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        const metrics = c.measureText(line.label);
+        const boxW = metrics.width + 10;
+        const boxH = 16;
+        const labelY = i % 2 === 0 ? Math.max(py - 8, area.top + 9) : Math.min(py + 20, area.bottom - 2);
+        c.fillStyle = "rgba(5,7,6,0.82)";
+        c.fillRect(area.right - boxW - 2, labelY - boxH + 4, boxW, boxH);
         c.fillStyle = line.color;
         c.textAlign = "right";
-        const labelY = i % 2 === 0 ? Math.max(py - 6, area.top + 10) : Math.min(py + 14, area.bottom - 4);
         c.fillText(line.label, area.right - 6, labelY);
         c.restore();
       });
@@ -297,10 +326,12 @@
           <div class="position-modal-head">
             <h2 class="position-modal-title" id="position-modal-title">—</h2>
             <p class="position-modal-sub" id="position-modal-sub"></p>
+            <p class="position-modal-meta" id="position-modal-meta" hidden></p>
           </div>
           <div class="segmented position-modal-ranges" id="position-modal-ranges" role="group" aria-label="Chart range" hidden>
             ${RANGE_ORDER.map((key) => `<button type="button" data-range-key="${key}">${RANGE_BTN_LABELS[key]}</button>`).join("")}
           </div>
+          <div class="position-modal-legend" id="position-modal-legend" hidden></div>
           <div class="chart-canvas-wrap position-modal-canvas-wrap" id="position-modal-canvas-wrap">
             <canvas id="position-modal-canvas"></canvas>
           </div>
@@ -323,14 +354,15 @@
       if (!backdrop || backdrop.hidden) return;
       if (e.key === "Escape") { closeModal(); return; }
       // Minimal focus trap: this modal's only focusable controls are the
-      // close button and (in tracker mode) the range buttons - Tab/
-      // Shift+Tab cycles among whichever of those are currently visible
-      // rather than escaping to the page underneath.
+      // close button and (whenever chart data loaded successfully) the
+      // range buttons - Tab/Shift+Tab cycles among whichever of those
+      // are currently visible rather than escaping to the page underneath.
       if (e.key === "Tab") {
         e.preventDefault();
+        const rangesEl = document.getElementById("position-modal-ranges");
         const focusable = [document.getElementById("position-modal-close")];
-        if (currentMode === "tracker") {
-          focusable.push(...document.querySelectorAll("#position-modal-ranges button"));
+        if (rangesEl && !rangesEl.hidden) {
+          focusable.push(...rangesEl.querySelectorAll("button"));
         }
         const idx = focusable.indexOf(document.activeElement);
         const next = e.shiftKey
@@ -347,30 +379,44 @@
   function showEmpty(message) {
     const empty = document.getElementById("position-modal-empty");
     const wrap = document.getElementById("position-modal-canvas-wrap");
+    const legend = document.getElementById("position-modal-legend");
     empty.hidden = false;
     empty.textContent = message;
     wrap.hidden = true;
+    legend.hidden = true;
   }
 
-  // Shared setup for both openModal (position) and openTrackerModal:
-  // resets the modal chrome to its "loading" state and shows the
-  // backdrop, before either mode's own data-specific logic takes over.
-  function openModalShell(symbol, triggerEl, loadingText) {
+  function heldMetaText(sym) {
+    if (!sym.held) return null;
+    if (sym.entry_utc && !sym.entry_is_estimated) {
+      return `Bought ${fmtPrice(sym.entry_price)} on ${fmtDateET(sym.entry_utc)}`;
+    }
+    return `Bought ${fmtPrice(sym.entry_price)} (exact purchase date not clearly determined from the trade log)`;
+  }
+
+  async function openModal(ticker, triggerEl) {
+    currentTicker = ticker;
+    currentRangeKey = null;
+    currentTickerRanges = null;
     lastFocused = triggerEl || document.activeElement;
     ensureModal();
     const backdrop = document.getElementById("position-modal-backdrop");
     const titleEl = document.getElementById("position-modal-title");
     const subEl = document.getElementById("position-modal-sub");
+    const metaEl = document.getElementById("position-modal-meta");
     const emptyEl = document.getElementById("position-modal-empty");
     const wrapEl = document.getElementById("position-modal-canvas-wrap");
+    const legendEl = document.getElementById("position-modal-legend");
     const summaryEl = document.getElementById("position-modal-summary");
     const modalEl = document.getElementById("position-modal");
     const rangesEl = document.getElementById("position-modal-ranges");
 
-    titleEl.textContent = symbol;
-    subEl.textContent = loadingText;
+    titleEl.textContent = ticker;
+    subEl.textContent = "Loading price history…";
+    metaEl.hidden = true;
     emptyEl.hidden = true;
     wrapEl.hidden = false;
+    legendEl.hidden = true;
     summaryEl.textContent = "";
     modalEl.classList.remove("trend-up", "trend-down");
     rangesEl.hidden = true;
@@ -379,77 +425,32 @@
     backdrop.hidden = false;
     document.body.classList.add("position-modal-open");
     document.getElementById("position-modal-close").focus();
-  }
 
-  async function openModal(symbol, triggerEl) {
-    currentMode = "position";
-    currentRangeKey = null;
-    currentTickerRanges = null;
-    openModalShell(symbol, triggerEl, "Loading price history…");
-    const subEl = document.getElementById("position-modal-sub");
-
-    const data = historyData || (await loadHistory());
+    const data = chartsData || (await loadCharts());
 
     if (!data || data.available === false) {
       subEl.textContent = "";
-      showEmpty((data && data.reason) || "Live position/price data wasn't fetched for this run.");
-      return;
-    }
-    const sym = (data.symbols || {})[symbol];
-    if (!sym) {
-      subEl.textContent = "";
-      showEmpty("No price history recorded yet for this position.");
-      return;
-    }
-    if (sym.available === false) {
-      subEl.textContent = sym.entry_utc ? `Since ${fmtDateET(sym.entry_utc)}` : "Recent price history";
-      showEmpty(sym.reason || "Price history couldn't be fetched for this symbol.");
-      return;
-    }
-    const points = sym.points || [];
-    if (points.length < 2) {
-      subEl.textContent = sym.entry_utc ? `Since ${fmtDateET(sym.entry_utc)}` : "Recent price history";
-      showEmpty("Not enough recorded price history yet to draw a chart.");
-      return;
-    }
-
-    subEl.textContent = sym.entry_is_estimated
-      ? "Recent price history (exact purchase date not clearly determined from the trade log)"
-      : `Since purchase · ${fmtDateET(sym.entry_utc)}`;
-
-    renderChart(points, symbol, [{ value: points[0].price, label: "Entry", color: COLORS.entryLine, dash: [4, 4] }]);
-  }
-
-  async function openTrackerModal(ticker, triggerEl) {
-    currentMode = "tracker";
-    currentTrackerTicker = ticker;
-    openModalShell(ticker, triggerEl, "Loading price history…");
-    const rangesEl = document.getElementById("position-modal-ranges");
-    rangesEl.hidden = false;
-
-    const data = tickerChartsData || (await loadTickerCharts());
-
-    if (!data || data.available === false) {
-      const subEl = document.getElementById("position-modal-sub");
-      subEl.textContent = "";
-      rangesEl.hidden = true;
       showEmpty((data && data.reason) || "Live ticker chart data wasn't fetched for this run.");
       return;
     }
     const sym = (data.symbols || {})[ticker];
     if (!sym || sym.available === false) {
-      const subEl = document.getElementById("position-modal-sub");
       subEl.textContent = "";
-      rangesEl.hidden = true;
       showEmpty((sym && sym.reason) || "No chart data recorded yet for this ticker.");
       return;
     }
 
     currentTickerRanges = sym;
-    // "100d" is the default view - see position-chart.js's module
-    // docstring for why: the 100-day range is what the Ticker Tracker
-    // card itself already summarizes as text, so opening on it keeps
-    // the chart's first view consistent with what was just clicked.
+    const metaText = heldMetaText(sym);
+    if (metaText) {
+      metaEl.hidden = false;
+      metaEl.innerHTML = `<span class="position-modal-held-badge">Held</span> ${metaText}`;
+    }
+    rangesEl.hidden = false;
+    // "100d" is the default view for every card, held or not - the
+    // same range every card's own summary text is already measured
+    // against, so opening the modal never disagrees with what was just
+    // clicked, and every card gives the same first impression.
     selectRange("100d");
   }
 
@@ -475,14 +476,24 @@
 
     const referenceLines = [];
     if (isNum(currentTickerRanges.sma100)) {
-      referenceLines.push({ value: currentTickerRanges.sma100, label: "100-Day Avg", color: COLORS.avgLine, dash: [4, 4] });
+      referenceLines.push({ value: currentTickerRanges.sma100, label: "100-Day Avg", color: COLORS.avgLine, dash: [4, 4], kind: "avg" });
     }
     // Only currently-held tickers have a real entry price - see
-    // site_data.py's build_ticker_charts.
+    // site_data.py's build_ticker_charts. startAt (the position's exact
+    // entry timestamp) is only set when the trade log clearly supports
+    // one - otherwise the line falls back to spanning the whole chart
+    // rather than guessing where it should start.
     if (currentTickerRanges.held && isNum(currentTickerRanges.entry_price)) {
-      referenceLines.push({ value: currentTickerRanges.entry_price, label: "Entry", color: COLORS.entryLine, dash: [2, 3] });
+      referenceLines.push({
+        value: currentTickerRanges.entry_price,
+        label: "Entry",
+        color: COLORS.entryLine,
+        dash: [2, 3],
+        kind: "entry",
+        startAt: currentTickerRanges.entry_is_estimated ? null : currentTickerRanges.entry_utc,
+      });
     }
-    renderChart(range.points, currentTrackerTicker, referenceLines);
+    renderChart(range.points, currentTicker, referenceLines);
   }
 
   function closeModal() {
@@ -492,11 +503,21 @@
     document.body.classList.remove("position-modal-open");
     destroyChart();
     hideTooltip();
-    currentMode = "position";
     currentRangeKey = null;
     currentTickerRanges = null;
-    currentTrackerTicker = "";
+    currentTicker = "";
     if (lastFocused && typeof lastFocused.focus === "function") lastFocused.focus();
+  }
+
+  function buildLegend(referenceLines, lastPrice) {
+    const el = document.getElementById("position-modal-legend");
+    if (!referenceLines.length) { el.hidden = true; el.innerHTML = ""; return; }
+    el.hidden = false;
+    el.innerHTML = referenceLines.map((line) => {
+      const pct = isNum(line.value) && line.value ? ((lastPrice / line.value) - 1) * 100 : null;
+      const pctHtml = isNum(pct) ? ` <span class="modal-legend-pct ${pct >= 0 ? "positive" : "negative"}">${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%</span>` : "";
+      return `<span class="modal-legend-chip"><span class="modal-legend-swatch" style="background:${line.color}"></span>${line.label}: ${fmtPrice(line.value)}${pctHtml}</span>`;
+    }).join("");
   }
 
   function renderChart(points, symbol, referenceLines) {
@@ -504,27 +525,45 @@
       showEmpty("Charting library failed to load.");
       return;
     }
-    // Tracker mode can call this more than once per modal session (each
-    // range switch re-renders) - always tear down the previous Chart.js
-    // instance first, the same way openModalShell already does for the
-    // very first render, or Chart.js would either throw ("Canvas is
-    // already in use") or silently leave the old chart's data on screen.
+    // A range switch re-renders on the same modal instance - always
+    // tear down the previous Chart.js instance first, or Chart.js would
+    // either throw ("Canvas is already in use") or silently leave the
+    // old chart's data on screen.
     destroyChart();
     currentSeries = points;
-    currentReferenceLines = Array.isArray(referenceLines) ? referenceLines.filter((l) => isNum(l.value)) : [];
     currentSymbolLabel = symbol;
+    currentReferenceLines = Array.isArray(referenceLines) ? referenceLines.filter((l) => isNum(l.value)) : [];
 
-    const first = points[0].price;
+    // Maps each reference line's real-world startAt timestamp to a
+    // point index in *this* range's series, so referenceLinePlugin can
+    // clip the entry line to start exactly there instead of at the left
+    // edge. No startAt (unknown/estimated entry) or an entry that
+    // predates every point in view both mean "draw across the whole
+    // chart" - startIndex stays null.
+    currentReferenceLines.forEach((line) => {
+      if (!line.startAt) { line.startIndex = null; return; }
+      const startMs = new Date(line.startAt).getTime();
+      const idx = points.findIndex((p) => new Date(p.t).getTime() >= startMs);
+      line.startIndex = idx > 0 ? idx : null;
+    });
+
     const last = points[points.length - 1].price;
-    const up = last >= first;
+    // The line's own up/down coloring is measured against whichever
+    // reference line is most meaningful for this ticker (real entry
+    // price if held, else the 100-day average) - not simply the first
+    // point of whatever range happens to be selected, which could make
+    // a genuinely-profitable held position read red just because this
+    // particular window's own start was a local high.
+    const primary = primaryReferenceLine();
+    const baseline = primary ? primary.value : points[0].price;
+    const up = last >= baseline;
     const trendColor = up ? COLORS.green : COLORS.red;
-    const segmentColor = (segCtx) => (segCtx.p1.parsed.y >= first ? COLORS.green : COLORS.red);
+    const segmentColor = (segCtx) => (segCtx.p1.parsed.y >= baseline ? COLORS.green : COLORS.red);
 
     // Widen the y-axis to guarantee every reference line actually lands
     // inside the chart area, rather than being silently clipped off
     // whenever a range's own price swing sits far from it (e.g. a 1-day
-    // view next to a 100-day average from weeks ago) - see this file's
-    // module docstring and referenceLinePlugin above.
+    // view next to a 100-day average from weeks ago).
     const prices = points.map((p) => p.price);
     let yMin = Math.min(...prices);
     let yMax = Math.max(...prices);
@@ -545,9 +584,21 @@
           label: symbol,
           data: points.map((p) => p.price),
           borderColor: trendColor,
-          backgroundColor: trendColor,
+          backgroundColor(context) {
+            // A soft gradient fill under the line, top-to-transparent -
+            // needs the chart's own layout, which isn't available until
+            // after the first pass, so this scriptable callback (Chart.js
+            // re-invokes it every render) falls back to a flat color
+            // until chartArea exists.
+            const { ctx: c, chartArea: area } = context.chart;
+            if (!area) return trendColor;
+            const gradient = c.createLinearGradient(0, area.top, 0, area.bottom);
+            gradient.addColorStop(0, trendColor + "2e");
+            gradient.addColorStop(1, trendColor + "00");
+            return gradient;
+          },
           segment: { borderColor: segmentColor },
-          fill: false,
+          fill: true,
           borderWidth: 2,
           tension: 0.18,
           pointRadius: 0,
@@ -592,9 +643,12 @@
       plugins: [crosshairPlugin, referenceLinePlugin],
     });
 
+    buildLegend(currentReferenceLines, last);
+
+    const first = points[0].price;
     const changePct = first ? ((last / first) - 1) * 100 : null;
     const summaryEl = document.getElementById("position-modal-summary");
-    summaryEl.innerHTML = `${points.length} recorded price point${points.length === 1 ? "" : "s"}, ` +
+    summaryEl.innerHTML = `${points.length} recorded price point${points.length === 1 ? "" : "s"} in this window, ` +
       `${fmtPrice(first)} &rarr; ${fmtPrice(last)}` +
       (isNum(changePct) ? ` (<span class="${changePct >= 0 ? "positive" : "negative"}">${changePct >= 0 ? "+" : ""}${changePct.toFixed(2)}%</span>)` : "");
 
@@ -605,35 +659,28 @@
 
   // ---------------------------------------------------------------------
   // Click/keyboard delegation - works on any [data-symbol] card anywhere
-  // in the document, however and whenever it was inserted. data-tracker
-  // distinguishes a Ticker Tracker card (range-selectable chart) from a
-  // position card (single "since purchase" span).
+  // in the document, however and whenever it was inserted. Every card
+  // opens the exact same modal - see this file's module docstring for
+  // why there's no longer a second "position mode."
   // ---------------------------------------------------------------------
   function findCard(target) {
     return target && target.closest ? target.closest("[data-symbol]") : null;
   }
-  function openCard(card) {
-    if (card.dataset.tracker === "true") {
-      openTrackerModal(card.dataset.symbol, card);
-    } else {
-      openModal(card.dataset.symbol, card);
-    }
-  }
   document.addEventListener("click", (e) => {
     const card = findCard(e.target);
     if (!card || !card.dataset.symbol) return;
-    openCard(card);
+    openModal(card.dataset.symbol, card);
   });
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
     const card = findCard(e.target);
     if (!card || card !== document.activeElement || !card.dataset.symbol) return;
     e.preventDefault();
-    openCard(card);
+    openModal(card.dataset.symbol, card);
   });
 
   document.addEventListener("DOMContentLoaded", () => {
     ensureModal();
-    loadHistory();
+    loadCharts();
   });
 })();

@@ -789,12 +789,14 @@
   function positionCard(p) {
     const pnl = p.unrealized_pl;
     const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
-    // data-symbol/data-is-crypto let assets/position-chart.js (a separate,
-    // shared script) open a "price since purchase" chart for this exact
-    // position on click - same markup contract as index.html's own
-    // positionCard() in dashboard.js, so one shared script handles both.
+    // data-symbol is the bare ticker (p.ticker, e.g. "BTC" - not
+    // Alpaca's own "BTCUSD") so assets/position-chart.js (a separate,
+    // shared script) can open this exact ticker's range-selectable
+    // price chart on click by keying straight into ticker_charts.json -
+    // same markup contract as index.html's own positionCard() in
+    // dashboard.js, so one shared script handles every card sitewide.
     return `
-      <div class="position-card ${trend}" data-symbol="${p.symbol}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
+      <div class="position-card ${trend}" data-symbol="${p.ticker}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="position-card-head">
           <span class="position-card-ticker">${p.symbol}</span>
           <span class="position-card-strategy">${p.strategy || "unknown"}</span>

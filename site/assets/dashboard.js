@@ -255,12 +255,14 @@
     const pnl = p.unrealized_pl;
     const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
     const strategyLabel = p.strategy || "unknown";
-    // data-symbol/data-is-crypto let assets/position-chart.js (a separate,
-    // shared script - see that file) open a "price since purchase" chart
-    // for this exact position on click, without this render function
-    // needing to know anything about that feature itself.
+    // data-symbol is the bare ticker (p.ticker, e.g. "BTC" - not Alpaca's
+    // own "BTCUSD") so assets/position-chart.js (a separate, shared
+    // script - see that file) can open this exact ticker's price chart
+    // on click by keying straight into ticker_charts.json, the same file
+    // every Ticker Tracker card already reads - one click-to-chart
+    // implementation for every card sitewide, not two.
     return `
-      <div class="position-card ${trend}" data-symbol="${p.symbol}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
+      <div class="position-card ${trend}" data-symbol="${p.ticker}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="position-card-head">
           <span class="position-card-ticker">${p.symbol}</span>
           <span class="position-card-strategy">${strategyLabel}</span>
@@ -326,14 +328,13 @@
     if (!row.available && !row.sma20_available) {
       body = `<p class="tracker-card-unavailable">${row.reason || row.sma20_reason || "Price data unavailable."}</p>`;
     }
-    // data-symbol/data-is-crypto/data-tracker let assets/position-chart.js
-    // (a separate, shared script) open this ticker's range-selectable
-    // price chart on click - same click-delegation contract as
-    // positionCard() above, distinguished by data-tracker="true" so that
-    // shared script knows to load ticker_charts.json instead of
-    // position_history.json.
+    // data-symbol/data-is-crypto let assets/position-chart.js (a
+    // separate, shared script) open this ticker's range-selectable
+    // price chart on click - same click-delegation contract every
+    // position card sitewide already uses (see positionCard() above),
+    // both reading the same ticker_charts.json.
     return `
-      <div class="tracker-card ${stateClass}" data-symbol="${row.ticker}" data-is-crypto="${row.is_crypto}" data-tracker="true" tabindex="0" role="button" aria-haspopup="dialog">
+      <div class="tracker-card ${stateClass}" data-symbol="${row.ticker}" data-is-crypto="${row.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="tracker-card-head">
           <span class="tracker-card-ticker">${row.ticker}</span>
           ${heldBadge}

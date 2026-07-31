@@ -19,14 +19,11 @@ from site_data import (
     TICKER_TRACKER_SMA_PERIODS,
     WATCHED_CRYPTO_TICKERS,
     WATCHED_STOCK_TICKERS,
-    _crypto_alpaca_symbol,
     _equity_value_asof,
     _max_drawdown,
-    _pick_bar_interval,
     _position_ticker,
     _thin_points,
     attribute_position_strategy,
-    build_position_price_histories,
     build_position_sma_indicators,
     build_positions_payload,
     build_ticker_charts,
@@ -571,12 +568,26 @@ def test_positions_payload_alpaca_error_surfaces_reason_not_crash():
     assert "no network access" in result["reason"]
 
 
-def test_positions_payload_success_enriches_with_strategy():
+def test_positions_payload_success_enriches_with_strategy_and_bare_ticker():
     trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "strategy": "rule_based"}])
     positions = [{"symbol": "AAPL", "is_crypto": False, "qty": 5.0}]
     result = build_positions_payload((positions, None), trades)
     assert result["available"] is True
     assert result["positions"][0]["strategy"] == "rule_based"
+    assert result["positions"][0]["ticker"] == "AAPL"
+
+
+def test_positions_payload_crypto_strategy_matches_via_bare_ticker():
+    # Alpaca's positions endpoint returns crypto symbols without a slash
+    # ("BTCUSD"), but the trade log's own "ticker" column is always the
+    # bare form live_trade.py's --ticker CLI arg uses ("BTC") - without
+    # converting first, every crypto position's strategy silently came
+    # back "unknown" even when the trade log clearly showed day_trading.
+    trades = _trades_df([{"ticker": "BTC", "asset_class": "crypto", "action": "BUY", "strategy": "day_trading"}])
+    positions = [{"symbol": "BTCUSD", "is_crypto": True, "qty": 0.1}]
+    result = build_positions_payload((positions, None), trades)
+    assert result["positions"][0]["ticker"] == "BTC"
+    assert result["positions"][0]["strategy"] == "day_trading"
 
 
 # ---- missing columns: a log file without the columns this code expects ----
@@ -618,20 +629,6 @@ def test_entry_timestamp_none_for_unknown_ticker_or_missing_data():
     assert position_entry_timestamp(trades, "AAPL") is None
 
 
-# ---- _pick_bar_interval: coarser bars for a longer span ----
-
-@pytest.mark.parametrize("hours,expected", [
-    (5, "5m"),
-    (24, "5m"),
-    (24 * 3, "15m"),
-    (24 * 20, "1h"),
-    (24 * 90, "4h"),
-    (24 * 200, "1d"),
-])
-def test_pick_bar_interval_boundaries(hours, expected):
-    assert _pick_bar_interval(dt.timedelta(hours=hours)) == expected
-
-
 # ---- _thin_points: downsamples but always keeps the first and last bar ----
 
 def test_thin_points_keeps_all_when_under_the_cap():
@@ -653,123 +650,6 @@ def test_thin_points_downsamples_but_keeps_first_and_last():
 def test_thin_points_empty_input():
     assert _thin_points(None) == []
     assert _thin_points(pd.DataFrame()) == []
-
-
-# ---- _crypto_alpaca_symbol: Alpaca's positions endpoint strips the "/"
-# from crypto symbols, but its bars endpoint needs it back ----
-
-@pytest.mark.parametrize("raw,expected", [
-    ("BTCUSD", "BTC/USD"),
-    ("DOGEUSD", "DOGE/USD"),
-    ("BTC/USD", "BTC/USD"),  # already correct - passed through unchanged
-])
-def test_crypto_alpaca_symbol_reinserts_slash(raw, expected):
-    assert _crypto_alpaca_symbol(raw) == expected
-
-
-# ---- build_position_price_histories: the "price since purchase" data
-# behind each position card's chart - mocked Alpaca fetch, no real
-# network calls in this test suite ----
-
-def test_position_history_not_requested():
-    result = build_position_price_histories(None, None)
-    assert result["available"] is False
-    assert result["symbols"] == {}
-
-
-def test_position_history_alpaca_error_surfaces_reason_not_crash():
-    result = build_position_price_histories(([], "RuntimeError: no network access"), None)
-    assert result["available"] is False
-    assert "no network access" in result["reason"]
-
-
-def test_position_history_no_open_positions():
-    result = build_position_price_histories(([], None), None)
-    assert result["available"] is True
-    assert result["symbols"] == {}
-
-
-def test_position_history_fetches_per_symbol_and_thins(monkeypatch):
-    trades = _trades_df([
-        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-20T10:00:00+00:00")},
-        {"ticker": "BTCUSD", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-25T10:00:00+00:00")},
-    ])
-    positions = [
-        {"symbol": "AAPL", "is_crypto": False},
-        {"symbol": "BTCUSD", "is_crypto": True},
-    ]
-
-    def fake_stock_bars(symbol, interval, start, end):
-        assert symbol == "AAPL"
-        idx = pd.date_range(start, periods=5, freq="1D", tz="UTC")
-        return pd.DataFrame({"Close": [200.0, 202.0, 205.0, 208.0, 210.0]}, index=idx)
-
-    def fake_crypto_bars(symbol, interval, start, end):
-        assert symbol == "BTC/USD"  # reconstructed from the positions endpoint's "BTCUSD"
-        idx = pd.date_range(start, periods=5, freq="1D", tz="UTC")
-        return pd.DataFrame({"Close": [60000.0, 61000.0, 60500.0, 61500.0, 62000.0]}, index=idx)
-
-    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
-    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", fake_crypto_bars)
-
-    result = build_position_price_histories((positions, None), trades)
-    assert result["available"] is True
-    aapl = result["symbols"]["AAPL"]
-    assert aapl["available"] is True
-    assert aapl["entry_is_estimated"] is False
-    assert aapl["entry_utc"] == "2026-07-20T10:00:00+00:00"
-    assert len(aapl["points"]) == 5
-    assert aapl["points"][0]["price"] == 200.0
-    assert aapl["points"][-1]["price"] == 210.0
-
-    btc = result["symbols"]["BTCUSD"]
-    assert btc["available"] is True
-    assert btc["points"][-1]["price"] == 62000.0
-
-
-def test_position_history_unknown_entry_falls_back_to_lookback_window(monkeypatch):
-    # No trade log at all for this ticker - entry date can't be
-    # determined, so it must fall back to a fixed recent window rather
-    # than fail or fabricate a start date.
-    positions = [{"symbol": "AAPL", "is_crypto": False}]
-    seen_start = {}
-
-    def fake_stock_bars(symbol, interval, start, end):
-        seen_start["start"] = start
-        idx = pd.date_range(start, periods=2, freq="1D", tz="UTC")
-        return pd.DataFrame({"Close": [100.0, 101.0]}, index=idx)
-
-    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
-    result = build_position_price_histories((positions, None), None)
-    aapl = result["symbols"]["AAPL"]
-    assert aapl["entry_utc"] is None
-    assert aapl["entry_is_estimated"] is True
-    assert aapl["available"] is True
-    assert "start" in seen_start
-
-
-def test_position_history_per_symbol_failure_does_not_block_others(monkeypatch):
-    trades = _trades_df([
-        {"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-20T10:00:00+00:00")},
-        {"ticker": "MSFT", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-20T10:00:00+00:00")},
-    ])
-    positions = [
-        {"symbol": "AAPL", "is_crypto": False},
-        {"symbol": "MSFT", "is_crypto": False},
-    ]
-
-    def fake_stock_bars(symbol, interval, start, end):
-        if symbol == "AAPL":
-            raise RuntimeError("Alpaca returned no stock bars for AAPL")
-        idx = pd.date_range(start, periods=2, freq="1D", tz="UTC")
-        return pd.DataFrame({"Close": [300.0, 305.0]}, index=idx)
-
-    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fake_stock_bars)
-    result = build_position_price_histories((positions, None), trades)
-    assert result["symbols"]["AAPL"]["available"] is False
-    assert "no stock bars" in result["symbols"]["AAPL"]["reason"]
-    assert result["symbols"]["MSFT"]["available"] is True
-    assert len(result["symbols"]["MSFT"]["points"]) == 2
 
 
 # ---- build_position_sma_indicators ----
@@ -838,7 +718,11 @@ def test_sma_indicators_ml_filtered_also_included(monkeypatch):
 
 
 def test_sma_indicators_crypto_symbol_conversion(monkeypatch):
-    trades = _trades_df([{"ticker": "BTCUSD", "action": "BUY", "strategy": "rule_based"}])
+    # The trade log's own "ticker" column is always the bare form
+    # live_trade.py's --ticker CLI arg uses ("BTC"), not Alpaca's own
+    # positions-endpoint symbol ("BTCUSD") - strategy attribution has to
+    # convert before it can match, same as build_positions_payload.
+    trades = _trades_df([{"ticker": "BTC", "asset_class": "crypto", "action": "BUY", "strategy": "rule_based"}])
     positions = [{"symbol": "BTCUSD", "is_crypto": True}]
 
     def fake_crypto_bars(symbol, interval, start, end):
@@ -1161,3 +1045,40 @@ def test_ticker_charts_matches_a_held_crypto_position_by_bare_ticker(monkeypatch
     btc = result["symbols"]["BTC"]
     assert btc["held"] is True
     assert btc["entry_price"] == 60000.0
+
+
+# ---- build_ticker_charts: entry_utc - lets the frontend start the entry
+# reference line exactly where the position began instead of drawing it
+# across the whole visible chart ----
+
+def test_ticker_charts_held_ticker_gets_its_real_entry_timestamp(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-28T10:00:00+00:00")}])
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "unrealized_plpc": 0.02}]
+    result = build_ticker_charts((positions, None), trades)
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["entry_utc"] == "2026-07-28T10:00:00+00:00"
+    assert aapl["entry_is_estimated"] is False
+
+
+def test_ticker_charts_held_ticker_with_no_trade_log_match_is_honestly_estimated(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "unrealized_plpc": 0.02}]
+    result = build_ticker_charts((positions, None), None)
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["entry_utc"] is None
+    assert aapl["entry_is_estimated"] is True
+    # A not-held ticker was never "estimated" - the concept doesn't apply.
+    qqq = result["symbols"]["QQQ"]
+    assert qqq["entry_utc"] is None
+    assert qqq["entry_is_estimated"] is False
+
+
+def test_ticker_charts_crypto_entry_timestamp_matches_by_bare_ticker(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    trades = _trades_df([{"ticker": "BTC", "asset_class": "crypto", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-25T09:00:00+00:00")}])
+    positions = [{"symbol": "BTCUSD", "is_crypto": True, "avg_entry_price": 60000.0, "unrealized_plpc": 0.01}]
+    result = build_ticker_charts((positions, None), trades)
+    btc = result["symbols"]["BTC"]
+    assert btc["entry_utc"] == "2026-07-25T09:00:00+00:00"
+    assert btc["entry_is_estimated"] is False

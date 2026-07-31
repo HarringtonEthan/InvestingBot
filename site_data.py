@@ -10,18 +10,17 @@ richly, instead of a static image. Reads the same logs/*.csv files
 visualize_log.py already reads, so there's exactly one source of truth
 for "what actually happened," not a second copy that could drift.
 
-Writes eight files into --out-dir (default site/data/):
+Writes seven files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
     every slot-machine reel and stat tile on the page.
   - positions.json: current open positions (crypto + stocks), only
     populated with --live-positions (same opt-in flag visualize_log.py
-    already uses) - a read-only Alpaca query, never an order.
-  - position_history.json: real historical closing prices per currently
-    open position, from that position's own entry date (see
-    position_entry_timestamp) through now - only populated with
-    --live-positions, same as positions.json above. Powers each position
-    card's "price since purchase" chart on the website.
+    already uses) - a read-only Alpaca query, never an order. Each
+    position also carries its bare "ticker" (e.g. "BTC" for Alpaca's own
+    "BTCUSD" symbol - see _position_ticker) so the frontend's click-to-
+    chart feature can key straight into ticker_charts.json below without
+    reimplementing that conversion in JS.
   - position_indicators.json: for each currently open rule_based/
     ml_filtered position, how far its current price sits above/below its
     own trailing 20-period SMA (pct_below_sma20) and the exit threshold
@@ -46,13 +45,19 @@ Writes eight files into --out-dir (default site/data/):
     held ones), and whether it's currently held (and if so, in profit or
     at a loss) - see build_ticker_tracker. Only populated with
     --live-positions, same as positions.json above.
-  - ticker_charts.json: per-ticker price history behind the Ticker
-    Tracker's click-to-expand chart, at four selectable ranges (1 Day/
-    1 Week/1 Month/100 Day - see TICKER_CHART_RANGES) plus each
-    ticker's current 100-day SMA and (if currently held) its real
-    average entry price, both for the chart's reference lines (see
-    build_ticker_charts). Only populated with --live-positions, same as
-    positions.json above.
+  - ticker_charts.json: per-ticker price history behind every card's
+    click-to-expand chart sitewide - the Ticker Tracker tab AND every
+    position card on the Positions tab/charts.html both read this same
+    file (keyed by the bare ticker), so any card opens the identical
+    range-selectable (1 Day/1 Week/1 Month/100 Day - see
+    TICKER_CHART_RANGES) chart experience no matter where it's clicked
+    from. Publishes each ticker's current 100-day SMA and, for a
+    currently-held ticker, its real average entry price plus the exact
+    timestamp it was bought (see position_entry_timestamp) so the
+    frontend can start that reference line exactly where the position
+    actually began instead of drawing it across the whole visible chart
+    (see build_ticker_charts). Only populated with --live-positions, same
+    as positions.json above.
 
 Every number here is derived from real logged/live data - nothing is
 fabricated, and a missing/empty log produces an honest "no data yet"
@@ -571,36 +576,24 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
         return {"available": False, "reason": error, "positions": []}
     enriched = []
     for p in positions:
-        enriched.append({**p, "strategy": attribute_position_strategy(trades_df, p["symbol"])})
+        # The trade log's own "ticker" column always uses the bare form
+        # live_trade.py's --ticker CLI arg does (e.g. "BTC") - Alpaca's
+        # positions endpoint returns crypto symbols without a slash
+        # instead (e.g. "BTCUSD"), which never matches that column as-is.
+        # Converting first is what lets a crypto position's strategy
+        # actually be found instead of always coming back "unknown".
+        # `ticker` is also published here so the frontend can key its
+        # own click-to-chart lookup (ticker_charts.json) by the same
+        # bare form build_ticker_charts already uses, instead of
+        # reimplementing this conversion in JS.
+        ticker = _position_ticker(p["symbol"], p["is_crypto"])
+        enriched.append({**p, "ticker": ticker, "strategy": attribute_position_strategy(trades_df, ticker)})
     return {"available": True, "reason": None, "positions": enriched}
 
 
-# How far back to look when a position's entry date can't be determined
-# from the trade log (see position_entry_timestamp) - a reasonable
-# "recent history" window rather than refusing to show a chart at all.
-FALLBACK_LOOKBACK_DAYS = 90
-# Cap on published points per symbol - keeps position_history.json small
-# regardless of how fine-grained the chosen bar interval is.
+# Cap on published points per symbol/range - keeps ticker_charts.json
+# small regardless of how fine-grained a given range's bar interval is.
 MAX_POINTS_PER_SYMBOL = 300
-
-
-def _pick_bar_interval(span: dt.timedelta) -> str:
-    """
-    Coarser bars for a longer span, so a position held for months doesn't
-    request tens of thousands of 1-minute bars just to end up thinned
-    back down anyway - matches the interval strings src/alpaca_data.py's
-    _INTERVAL_MAP already understands.
-    """
-    days = span.total_seconds() / 86400
-    if days <= 1:
-        return "5m"
-    if days <= 7:
-        return "15m"
-    if days <= 30:
-        return "1h"
-    if days <= 120:
-        return "4h"
-    return "1d"
 
 
 def _thin_points(df: pd.DataFrame, max_points: int = MAX_POINTS_PER_SYMBOL) -> list[dict]:
@@ -622,95 +615,6 @@ def _thin_points(df: pd.DataFrame, max_points: int = MAX_POINTS_PER_SYMBOL) -> l
         {"t": pd.Timestamp(ts).isoformat(), "price": round(float(row["Close"]), 6)}
         for ts, row in df.iterrows()
     ]
-
-
-def _crypto_alpaca_symbol(symbol: str) -> str:
-    """
-    Alpaca's positions endpoint returns crypto symbols without the "/"
-    (e.g. "BTCUSD" - see broker.py's get_all_positions), but its bars
-    endpoint needs the slash form ("BTC/USD"). Every pair this project
-    trades quotes in USD (see src/symbols.py), so reinserting the slash
-    before a trailing "USD" round-trips correctly without needing a
-    hardcoded list of bases.
-    """
-    if "/" in symbol:
-        return symbol
-    if symbol.endswith("USD") and len(symbol) > 3:
-        return f"{symbol[:-3]}/USD"
-    return symbol
-
-
-def build_position_price_histories(
-    live_positions_result: tuple[list[dict], str | None] | None,
-    trades_df: pd.DataFrame | None,
-) -> dict:
-    """
-    For each currently open position, fetches real historical closing
-    prices from Alpaca from the position's entry date (see
-    position_entry_timestamp) through now - the data behind the "price
-    since purchase" chart on a position card. Best-effort per symbol: a
-    fetch failure for one ticker (rate limit, an unsupported/new symbol,
-    a network blip) is recorded as that symbol's own "unavailable" state
-    and never blocks the rest of this function or the rest of site_data's
-    output. Same opt-in reasoning as fetch_live_positions: only reachable
-    when --live-positions was passed, and only imports alpaca-py then.
-    """
-    if live_positions_result is None:
-        return {"available": False, "reason": "live position lookup not requested for this run", "symbols": {}}
-    positions, error = live_positions_result
-    if error is not None:
-        return {"available": False, "reason": error, "symbols": {}}
-    if not positions:
-        return {"available": True, "reason": None, "symbols": {}}
-
-    from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
-
-    now_utc = dt.datetime.now(dt.timezone.utc)
-    end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
-    symbols_payload: dict[str, dict] = {}
-
-    for p in positions:
-        symbol = p["symbol"]
-        is_crypto = p["is_crypto"]
-        entry_ts = position_entry_timestamp(trades_df, symbol)
-        entry_is_estimated = entry_ts is None
-        start_dt = entry_ts.to_pydatetime() if entry_ts is not None else (now_utc - dt.timedelta(days=FALLBACK_LOOKBACK_DAYS))
-        if start_dt.tzinfo is None:
-            start_dt = start_dt.replace(tzinfo=dt.timezone.utc)
-        # A position opened moments ago would otherwise request an
-        # empty/invalid (start == end) range.
-        if (now_utc - start_dt) < dt.timedelta(hours=1):
-            start_dt = now_utc - dt.timedelta(hours=1)
-        interval = _pick_bar_interval(now_utc - start_dt)
-        start_date = start_dt.strftime("%Y-%m-%d")
-
-        try:
-            if is_crypto:
-                df = get_crypto_bars_range(_crypto_alpaca_symbol(symbol), interval, start_date, end_date)
-            else:
-                df = get_stock_bars_range(symbol, interval, start_date, end_date)
-            symbols_payload[symbol] = {
-                "available": True,
-                "reason": None,
-                "entry_utc": entry_ts.isoformat() if entry_ts is not None else None,
-                "entry_is_estimated": entry_is_estimated,
-                "interval": interval,
-                "points": _thin_points(df),
-            }
-        except Exception as e:
-            # A single symbol's history not being fetchable (e.g. Alpaca
-            # has no bars yet for a just-listed ticker) is never a reason
-            # to drop every other position's chart.
-            symbols_payload[symbol] = {
-                "available": False,
-                "reason": f"{type(e).__name__}: {e}",
-                "entry_utc": entry_ts.isoformat() if entry_ts is not None else None,
-                "entry_is_estimated": entry_is_estimated,
-                "interval": None,
-                "points": [],
-            }
-
-    return {"available": True, "reason": None, "symbols": symbols_payload}
 
 
 # The live stock workflow's --exit-threshold (see
@@ -753,8 +657,8 @@ def build_position_sma_indicators(
     the unrealized gain/loss the position card already displays - a
     second number here would be redundant, not additive.
 
-    Same best-effort-per-symbol contract as build_position_price_histories:
-    one ticker's fetch failing (or not having 20 bars of trailing history
+    Same best-effort-per-symbol contract as build_ticker_tracker: one
+    ticker's fetch failing (or not having 20 bars of trailing history
     yet) never blocks another symbol's reading or the rest of this run.
     """
     if live_positions_result is None:
@@ -767,6 +671,7 @@ def build_position_sma_indicators(
 
     from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
     from src.features import add_features
+    from src.symbols import resolve_symbol
 
     now_utc = dt.datetime.now(dt.timezone.utc)
     start_date = (now_utc - dt.timedelta(days=SMA_INDICATOR_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
@@ -775,13 +680,18 @@ def build_position_sma_indicators(
 
     for p in positions:
         symbol = p["symbol"]
-        strategy = attribute_position_strategy(trades_df, symbol)
+        # trades_df's own "ticker" column is always the bare form (e.g.
+        # "BTC") - Alpaca's position symbol needs the same conversion
+        # build_ticker_tracker/build_positions_payload already use before
+        # this can ever match a crypto position's logged rows.
+        ticker = _position_ticker(symbol, p["is_crypto"])
+        strategy = attribute_position_strategy(trades_df, ticker)
         if strategy not in ("rule_based", "ml_filtered"):
             continue
 
         try:
             if p["is_crypto"]:
-                df = get_crypto_bars_range(_crypto_alpaca_symbol(symbol), SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
+                df = get_crypto_bars_range(resolve_symbol(ticker).alpaca, SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
             else:
                 df = get_stock_bars_range(symbol, SMA_INDICATOR_BAR_INTERVAL, start_date, end_date)
             pct_series = add_features(df)["pct_below_sma20"].dropna()
@@ -993,13 +903,20 @@ TICKER_CHART_RANGES = {
 }
 
 
-def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | None) -> dict:
+def build_ticker_charts(
+    live_positions_result: tuple[list[dict], str | None] | None,
+    trades_df: pd.DataFrame | None = None,
+) -> dict:
     """
-    Per-ticker price history behind the Ticker Tracker's click-to-expand
-    chart, at each of the four TICKER_CHART_RANGES above - covers every
-    ticker build_ticker_tracker does (not just held positions), so any
-    watched ticker can be inspected regardless of whether the bot
-    happens to be holding it right now.
+    Per-ticker price history behind every card's click-to-expand chart
+    sitewide - not just the Ticker Tracker tab. Position cards on the
+    Positions tab and charts.html read this exact same file (keyed by
+    the bare ticker), so any card anywhere on the site opens the
+    identical range-selectable chart, at each of the four
+    TICKER_CHART_RANGES above - covers every ticker build_ticker_tracker
+    does (not just held positions), so any watched ticker can be
+    inspected regardless of whether the bot happens to be holding it
+    right now.
 
     Also publishes each ticker's current 100-day SMA (computed from the
     exact same 100 daily bars as the "100d" range's own points, not a
@@ -1007,10 +924,15 @@ def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | N
     as a reference line - the same number build_ticker_tracker already
     shows as text on the card. A currently-held ticker additionally gets
     its real average entry price (straight from the live position, not
-    re-derived from the trade log) so the chart can mark where it was
-    actually bought, the same way position mode's own modal already
-    marks an entry price - just available here across every range, not
-    only a single "since purchase" span.
+    re-derived from the trade log, so it can never disagree with the
+    position card's own P&L) plus the exact timestamp that position was
+    opened (see position_entry_timestamp) - entry_utc lets the frontend
+    draw that reference line starting only from where the position
+    actually began, instead of implying it was held for the entire
+    visible range. entry_is_estimated is True when the trade log can't
+    clearly support a single entry (see position_entry_timestamp) - the
+    frontend falls back to drawing the line across the whole chart in
+    that case rather than guessing a start point.
 
     Best-effort per range, not just per ticker: one range failing for a
     ticker (e.g. Alpaca has no 5-minute bars for a thinly-traded name)
@@ -1040,6 +962,14 @@ def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | N
         held_position = held_by_ticker.get(ticker)
         held = held_position is not None
         entry_price = held_position["avg_entry_price"] if held else None
+        # trades_df's own "ticker" column is already the bare form (this
+        # `ticker` param comes straight from WATCHED_STOCK_TICKERS/
+        # WATCHED_CRYPTO_TICKERS, never from Alpaca's own symbol) so no
+        # conversion is needed here, unlike build_positions_payload/
+        # build_position_sma_indicators which start from a live position's
+        # Alpaca symbol instead.
+        entry_ts = position_entry_timestamp(trades_df, ticker) if held else None
+        entry_is_estimated = held and entry_ts is None
         ranges_payload: dict[str, dict] = {}
         sma100 = None
         for range_key, cfg in TICKER_CHART_RANGES.items():
@@ -1069,6 +999,8 @@ def build_ticker_charts(live_positions_result: tuple[list[dict], str | None] | N
             "sma100": sma100,
             "held": held,
             "entry_price": entry_price,
+            "entry_utc": entry_ts.isoformat() if entry_ts is not None else None,
+            "entry_is_estimated": entry_is_estimated,
             "ranges": ranges_payload,
         }
 
@@ -1188,16 +1120,13 @@ def main():
     positions_payload = build_positions_payload(live_result, trades_df)
     (out_dir / "positions.json").write_text(json.dumps(positions_payload, indent=2))
 
-    position_history_payload = build_position_price_histories(live_result, trades_df)
-    (out_dir / "position_history.json").write_text(json.dumps(position_history_payload, indent=2))
-
     position_indicators_payload = build_position_sma_indicators(live_result, trades_df)
     (out_dir / "position_indicators.json").write_text(json.dumps(position_indicators_payload, indent=2))
 
     ticker_tracker_payload = build_ticker_tracker(live_result)
     (out_dir / "ticker_tracker.json").write_text(json.dumps(ticker_tracker_payload, indent=2))
 
-    ticker_charts_payload = build_ticker_charts(live_result)
+    ticker_charts_payload = build_ticker_charts(live_result, trades_df)
     (out_dir / "ticker_charts.json").write_text(json.dumps(ticker_charts_payload, indent=2))
 
     if trades_df is not None and not trades_df.empty:
@@ -1240,7 +1169,7 @@ def main():
         equity_payload = {"available": False, "points": []}
     (out_dir / "equity.json").write_text(json.dumps(equity_payload, indent=2))
 
-    print(f"Wrote dashboard/positions/position_history/position_indicators/trades/equity/ticker_tracker/ticker_charts JSON to {out_dir}/")
+    print(f"Wrote dashboard/positions/position_indicators/trades/equity/ticker_tracker/ticker_charts JSON to {out_dir}/")
 
 
 if __name__ == "__main__":

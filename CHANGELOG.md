@@ -17,6 +17,83 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.9 - 2026-07-31
+
+- **Every card sitewide now opens the exact same chart experience** -
+  a position card on the Positions tab, a position card on charts.html's
+  own Positions panels, and a Ticker Tracker card all read the same
+  ticker_charts.json and open the identical range-selectable (1 Day/
+  1 Week/1 Month/100 Day) modal. Previously a position card opened a
+  different, more limited modal (a fixed "since purchase" span, no range
+  buttons) than a Ticker Tracker card for the same ticker - that whole
+  second "position mode" is gone (`site_data.py`'s `build_position_
+  price_histories`/`position_history.json` retired along with it), so
+  there's now exactly one click-to-chart implementation instead of two
+  that could drift apart.
+- **Fixed a real bug behind the confusing "profitable position, red
+  chart" reports** (e.g. a stock sitting at +0.14% whose chart still
+  looked like it was underwater the entire time): the old position-mode
+  modal approximated a held position's "entry" reference line from the
+  first bar of its own fetched price history, not the position's real
+  average entry price - a mismatch that could make a genuinely-
+  profitable position's chart read red the whole time. The unified
+  modal now always uses the real Alpaca `avg_entry_price` (already
+  published per-ticker in `ticker_charts.json`), and colors the price
+  line itself (and the modal's own trend accent) against that same real
+  entry price when held - or the ticker's 100-day average when not -
+  instead of whatever point happens to be first in the currently-
+  selected range. A not-held ticker's chart now visibly agrees with its
+  own card text ("+3.4% vs 100-day avg") instead of an unrelated
+  "up/down since the left edge of this window" reading that changed
+  depending on which range was open.
+- **The entry reference line now starts exactly where the position was
+  actually bought**, not at the left edge of whatever range is open.
+  `build_ticker_charts` now also publishes `entry_utc`/
+  `entry_is_estimated` per held ticker (reusing `position_entry_
+  timestamp`, the same trade-log rule position cards' strategy label
+  already relies on); the frontend maps that timestamp onto the
+  currently-displayed range and clips the dashed line - plus a small
+  dot marking the exact start - to begin there. A position held longer
+  than the visible window still draws the line across the whole chart,
+  honestly, rather than guessing.
+- **Every dashed reference line now has a persistent, always-visible key**
+  under the range buttons (not just a hover tooltip or small on-canvas
+  text) - e.g. "▬ 100-Day Avg: $210.40 -1.95%" and "▬ Entry: $206.00
+  +0.14%" - so what a line means, and its current value, is never a
+  mystery. A held ticker's modal also now shows a "Held" badge plus
+  "Bought $X on DATE" right under the title.
+- Found and fixed the same root cause (Alpaca's slash-less crypto
+  position symbol, e.g. "BTCUSD", never matching the trade log's own
+  bare-ticker "BTC" column) in two more places it had been quietly
+  breaking things: `build_positions_payload` was labeling every crypto
+  position's strategy "unknown" instead of "day_trading", and
+  `build_position_sma_indicators` referenced a symbol-conversion helper
+  that no longer exists after this cleanup (see below) - both now
+  convert via `_position_ticker` first, the same fix already applied to
+  `build_ticker_tracker`/`build_ticker_charts` last release.
+  `positions.json` also now publishes each position's bare `ticker`
+  (e.g. "BTC") alongside Alpaca's own `symbol` ("BTCUSD"), so the
+  frontend can key into `ticker_charts.json` without reimplementing
+  that conversion in JS.
+- On-canvas reference-line labels now sit on a solid backing so they
+  stay legible over gridlines/data instead of floating bare text, and
+  the price line itself now fills with a soft gradient down to
+  transparent for a cleaner, more "at a glance" read - both purely
+  visual, no behavior change.
+- 15 tests removed (covered dead code deleted in this release:
+  `_pick_bar_interval`, `_crypto_alpaca_symbol`, `build_position_
+  price_histories`), 4 new tests added (the crypto strategy-attribution
+  fix, `entry_utc`/`entry_is_estimated` for both stock and crypto
+  positions) - 212 tests total, all passing. Verified end-to-end with
+  Playwright: a held stock's modal correctly
+  reads green/"+0.14%" end to end (card, legend, and trend accent all
+  agree), its entry line visibly starts at the real purchase date on
+  the 1-month/100-day views and correctly spans the full 1-day view
+  (entry predates it), the exact same modal opens from charts.html's
+  Positions panel, and a not-held ticker's segments now visibly track
+  its 100-day average.
+- Cache-busting bumped to `?v=0.16.9`.
+
 ## Version Richards 0.16.8 - 2026-07-31
 
 - **Removed the duplicated Ticker Tracker panels from charts.html** - the
