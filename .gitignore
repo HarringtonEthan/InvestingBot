@@ -24,3 +24,4 @@ logs/*
 # files out of git is what stops the deploy from ever triggering itself.
 # A local preview needs to generate its own copy first - see README.md.
 site/data/*.json
+site/data/*.csv
