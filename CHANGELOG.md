@@ -17,6 +17,46 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.16.10 - 2026-07-31
+
+- **Removed the on-canvas text labels from every chart's dashed
+  reference lines** - crowding the chart itself with "100-Day Avg"/
+  "Entry" text made it harder to read, not easier. The lines (plus the
+  small dot marking exactly where an entry line starts) are the only
+  thing drawn on the canvas now; the persistent legend below the range
+  buttons - already added last release - is the sole explanation of
+  what each one means and its current value, and it's the only thing
+  that needed to be.
+- **Fixed the real bug behind "the card is green but the chart opens
+  red"**: a held ticker's overall up/down verdict (the modal's border
+  accent, fill color, and the Entry legend chip's own %) used to come
+  from comparing the real entry price against whichever historical bar
+  happened to be the *last point of the currently-selected range* - and
+  the modal's default view is 100 Day (daily bars), whose last point is
+  *yesterday's* close. A position sitting at a small live gain could
+  easily have closed yesterday slightly under entry, so the card (live
+  quote) read green while the modal (yesterday's bar) opened red -
+  nothing was actually wrong, two different points in time were being
+  compared. `build_ticker_charts` now also publishes
+  `live_current_price`/`live_unrealized_plpc` straight from the
+  position object (never derived from any of its own historical bars),
+  and the modal's one overall verdict always reads from that when a
+  ticker is held - the exact number its own card is colored by - on
+  every range, not just the default. Per-point segment coloring along
+  the line itself is unchanged (it's a different, legitimate "was I
+  above or below entry back then" signal), and a small pulsing "live"
+  dot now marks the Entry legend chip's % specifically, since it's the
+  one figure on the chart that isn't only as fresh as the currently-
+  selected range's last bar.
+- 1 new test (`live_current_price`/`live_unrealized_plpc` pass through
+  correctly, and are `None` for a not-held ticker where the concept
+  doesn't apply) - 213 tests total, all passing. Verified end-to-end
+  with Playwright by deliberately reproducing the reported scenario
+  (every range's own historical bars ending just under entry while the
+  live quote sits just above it): the card and the modal now agree -
+  both green - on every one of the four ranges.
+- Cache-busting bumped to `?v=0.16.10`.
+
 ## Version Richards 0.16.9 - 2026-07-31
 
 - **Every card sitewide now opens the exact same chart experience** -

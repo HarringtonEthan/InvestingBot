@@ -55,7 +55,12 @@ Writes seven files into --out-dir (default site/data/):
     currently-held ticker, its real average entry price plus the exact
     timestamp it was bought (see position_entry_timestamp) so the
     frontend can start that reference line exactly where the position
-    actually began instead of drawing it across the whole visible chart
+    actually began instead of drawing it across the whole visible chart,
+    plus its live current price and unrealized_plpc straight from the
+    position itself (never derived from this file's own historical
+    bars) so the frontend's own up/down verdict always agrees with the
+    number the position's own card is colored by, regardless of how
+    stale the currently-selected range's last historical bar is
     (see build_ticker_charts). Only populated with --live-positions, same
     as positions.json above.
 
@@ -932,7 +937,14 @@ def build_ticker_charts(
     visible range. entry_is_estimated is True when the trade log can't
     clearly support a single entry (see position_entry_timestamp) - the
     frontend falls back to drawing the line across the whole chart in
-    that case rather than guessing a start point.
+    that case rather than guessing a start point. A held ticker also
+    gets live_current_price/live_unrealized_plpc, straight from the
+    position object rather than derived from any of this function's own
+    historical bars - the frontend needs a live number to color its own
+    up/down verdict by, since comparing entry_price against whichever
+    historical bar happens to be the range's own last point (e.g.
+    yesterday's close on the default 100-day view) can disagree with
+    the live figure the position's card is itself colored by.
 
     Best-effort per range, not just per ticker: one range failing for a
     ticker (e.g. Alpaca has no 5-minute bars for a thinly-traded name)
@@ -962,6 +974,17 @@ def build_ticker_charts(
         held_position = held_by_ticker.get(ticker)
         held = held_position is not None
         entry_price = held_position["avg_entry_price"] if held else None
+        # Straight from the live position, same as entry_price above -
+        # NOT derived from any of this function's own historical bars.
+        # The frontend needs this so a held ticker's chart always agrees
+        # with its own card: comparing entry_price against whichever
+        # historical bar happens to be the last point in the currently-
+        # selected range (e.g. yesterday's daily close on the default
+        # 100-day view) can disagree with the live number the card
+        # itself is colored by, purely because price moved since that
+        # bar closed - not because anything is actually wrong.
+        live_current_price = held_position["current_price"] if held else None
+        live_unrealized_plpc = held_position["unrealized_plpc"] if held else None
         # trades_df's own "ticker" column is already the bare form (this
         # `ticker` param comes straight from WATCHED_STOCK_TICKERS/
         # WATCHED_CRYPTO_TICKERS, never from Alpaca's own symbol) so no
@@ -1001,6 +1024,8 @@ def build_ticker_charts(
             "entry_price": entry_price,
             "entry_utc": entry_ts.isoformat() if entry_ts is not None else None,
             "entry_is_estimated": entry_is_estimated,
+            "live_current_price": live_current_price,
+            "live_unrealized_plpc": live_unrealized_plpc,
             "ranges": ranges_payload,
         }
 

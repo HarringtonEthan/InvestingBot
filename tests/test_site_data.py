@@ -1028,7 +1028,7 @@ def test_ticker_charts_per_ticker_failure_does_not_block_others(monkeypatch):
 
 def test_ticker_charts_marks_a_held_ticker_with_its_real_entry_price(monkeypatch):
     monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
-    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "unrealized_plpc": 0.02}]
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "current_price": 306.0, "unrealized_plpc": 0.02}]
     result = build_ticker_charts((positions, None))
     aapl = result["symbols"]["AAPL"]
     assert aapl["held"] is True
@@ -1040,11 +1040,30 @@ def test_ticker_charts_marks_a_held_ticker_with_its_real_entry_price(monkeypatch
 
 def test_ticker_charts_matches_a_held_crypto_position_by_bare_ticker(monkeypatch):
     monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
-    positions = [{"symbol": "BTCUSD", "is_crypto": True, "avg_entry_price": 60000.0, "unrealized_plpc": 0.01}]
+    positions = [{"symbol": "BTCUSD", "is_crypto": True, "avg_entry_price": 60000.0, "current_price": 60600.0, "unrealized_plpc": 0.01}]
     result = build_ticker_charts((positions, None))
     btc = result["symbols"]["BTC"]
     assert btc["held"] is True
     assert btc["entry_price"] == 60000.0
+
+
+# ---- build_ticker_charts: live_current_price/live_unrealized_plpc - a
+# held ticker's own "up or down" verdict has to come from the live
+# position, never from whichever historical bar happens to be the last
+# point of the currently-selected range (that mismatch is exactly what
+# made a genuinely profitable position's chart open red) ----
+
+def test_ticker_charts_held_ticker_gets_its_live_price_and_plpc(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "current_price": 306.0, "unrealized_plpc": 0.0016}]
+    result = build_ticker_charts((positions, None))
+    aapl = result["symbols"]["AAPL"]
+    assert aapl["live_current_price"] == 306.0
+    assert aapl["live_unrealized_plpc"] == 0.0016
+    # A not-held ticker has no live position to read these from.
+    qqq = result["symbols"]["QQQ"]
+    assert qqq["live_current_price"] is None
+    assert qqq["live_unrealized_plpc"] is None
 
 
 # ---- build_ticker_charts: entry_utc - lets the frontend start the entry
@@ -1054,7 +1073,7 @@ def test_ticker_charts_matches_a_held_crypto_position_by_bare_ticker(monkeypatch
 def test_ticker_charts_held_ticker_gets_its_real_entry_timestamp(monkeypatch):
     monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
     trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-28T10:00:00+00:00")}])
-    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "unrealized_plpc": 0.02}]
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "current_price": 306.0, "unrealized_plpc": 0.02}]
     result = build_ticker_charts((positions, None), trades)
     aapl = result["symbols"]["AAPL"]
     assert aapl["entry_utc"] == "2026-07-28T10:00:00+00:00"
@@ -1063,7 +1082,7 @@ def test_ticker_charts_held_ticker_gets_its_real_entry_timestamp(monkeypatch):
 
 def test_ticker_charts_held_ticker_with_no_trade_log_match_is_honestly_estimated(monkeypatch):
     monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
-    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "unrealized_plpc": 0.02}]
+    positions = [{"symbol": "AAPL", "is_crypto": False, "avg_entry_price": 305.5, "current_price": 306.0, "unrealized_plpc": 0.02}]
     result = build_ticker_charts((positions, None), None)
     aapl = result["symbols"]["AAPL"]
     assert aapl["entry_utc"] is None
@@ -1077,7 +1096,7 @@ def test_ticker_charts_held_ticker_with_no_trade_log_match_is_honestly_estimated
 def test_ticker_charts_crypto_entry_timestamp_matches_by_bare_ticker(monkeypatch):
     monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
     trades = _trades_df([{"ticker": "BTC", "asset_class": "crypto", "action": "BUY", "timestamp_utc": pd.Timestamp("2026-07-25T09:00:00+00:00")}])
-    positions = [{"symbol": "BTCUSD", "is_crypto": True, "avg_entry_price": 60000.0, "unrealized_plpc": 0.01}]
+    positions = [{"symbol": "BTCUSD", "is_crypto": True, "avg_entry_price": 60000.0, "current_price": 60600.0, "unrealized_plpc": 0.01}]
     result = build_ticker_charts((positions, None), trades)
     btc = result["symbols"]["BTC"]
     assert btc["entry_utc"] == "2026-07-25T09:00:00+00:00"

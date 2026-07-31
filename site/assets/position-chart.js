@@ -30,20 +30,32 @@
  * real Alpaca average entry price - drawn starting only from the exact
  * timestamp that position was actually opened (see entry_utc), not
  * across the whole visible chart, so it never implies the position was
- * held longer than it actually was. Both lines carry their own
- * on-canvas label plus a persistent legend chip below the range
- * buttons (so what a line means is never only discoverable by
- * hovering), and the y-axis is always widened to keep every active
- * line actually visible rather than silently clipped off-screen.
+ * held longer than it actually was. The lines themselves are deliberately
+ * bare on the canvas - no on-canvas text - a persistent legend below
+ * the range buttons (see buildLegend) is what explains what each one
+ * means and its current value, since crowding the chart itself with
+ * text made it harder to read, not easier. The y-axis is always
+ * widened to keep every active line actually visible rather than
+ * silently clipped off-screen.
  *
  * The price line itself, and the modal's own trend accent, are colored
  * relative to whichever reference line is most meaningful for this
  * ticker - the real entry price if held, otherwise the 100-day average
  * - rather than simply "up or down since the left edge of whatever
- * range happens to be selected." That's what makes a held ticker's
- * chart agree with its card: a position that's genuinely up vs. its
- * own entry price reads green even if this particular window's own
- * first visible point happened to be a local high.
+ * range happens to be selected." For a HELD ticker specifically, the
+ * modal's own top-level up/down read (border accent, legend %, fill
+ * color) always comes from the position's real live unrealized P&L
+ * (ticker_charts.json's live_unrealized_plpc - the exact number the
+ * card itself is colored by), never from comparing entry price against
+ * whatever historical bar happens to be the last point in the
+ * currently-selected range. Those two used to disagree in a genuinely
+ * confusing way: the default view is 100 Day (daily bars), whose last
+ * point is *yesterday's* close - a card showing green off a live quote
+ * could open a modal reading red purely because price moved since that
+ * bar closed, with nothing actually wrong. Per-point segment coloring
+ * along the line itself still compares each historical bar to entry
+ * price (a different, legitimate "was I above or below entry back
+ * then" signal) - only the one overall verdict is now always live.
  *
  * All chart data is real Alpaca historical prices this project's own
  * site_data.py already fetched server-side, never fabricated here. A
@@ -250,10 +262,12 @@
   // from line.startIndex onward (its real entry timestamp mapped to a
   // point index - see renderChart) rather than across the whole chart,
   // so it never implies the position was held longer than it actually
-  // was; a small dot marks that exact starting point. Each line draws
-  // its own text label directly on the canvas, on a solid backing so it
-  // stays legible over the grid/data, and the y-axis (see renderChart)
-  // is always widened to guarantee every line is actually visible.
+  // was; a small dot marks that exact starting point. What each line
+  // means lives in the legend below the range buttons (see buildLegend),
+  // not as text crowding the canvas itself - keeping the chart to just
+  // the lines themselves is a lot easier to actually read. The y-axis
+  // (see renderChart) is always widened to guarantee every line is
+  // actually visible.
   const referenceLinePlugin = {
     id: "chartReferenceLines",
     beforeDatasetsDraw(chartInstance) {
@@ -262,7 +276,7 @@
       const area = chartInstance.chartArea;
       if (!yScale || !xScale || !area || !currentReferenceLines.length) return;
       const c = chartInstance.ctx;
-      currentReferenceLines.forEach((line, i) => {
+      currentReferenceLines.forEach((line) => {
         if (!isNum(line.value)) return;
         const py = yScale.getPixelForValue(line.value);
         if (py < area.top - 1 || py > area.bottom + 1) return;
@@ -292,23 +306,6 @@
           c.fill();
           c.restore();
         }
-
-        // Alternate label placement above/below the line so two close-
-        // together lines (e.g. SMA and entry price near each other)
-        // don't draw their text on top of one another. A solid backing
-        // box keeps the label legible over gridlines/data.
-        c.save();
-        c.font = "600 10px 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-        const metrics = c.measureText(line.label);
-        const boxW = metrics.width + 10;
-        const boxH = 16;
-        const labelY = i % 2 === 0 ? Math.max(py - 8, area.top + 9) : Math.min(py + 20, area.bottom - 2);
-        c.fillStyle = "rgba(5,7,6,0.82)";
-        c.fillRect(area.right - boxW - 2, labelY - boxH + 4, boxW, boxH);
-        c.fillStyle = line.color;
-        c.textAlign = "right";
-        c.fillText(line.label, area.right - 6, labelY);
-        c.restore();
       });
     },
   };
@@ -514,9 +511,24 @@
     if (!referenceLines.length) { el.hidden = true; el.innerHTML = ""; return; }
     el.hidden = false;
     el.innerHTML = referenceLines.map((line) => {
-      const pct = isNum(line.value) && line.value ? ((lastPrice / line.value) - 1) * 100 : null;
+      // The Entry chip's % always comes from the position's real live
+      // unrealized_plpc when it's known (same number the card itself
+      // shows) rather than being recomputed from lastPrice - lastPrice
+      // is only the last point of whichever historical range happens
+      // to be on screen, which can lag the live quote by anywhere from
+      // minutes (1D) to a full trading day (100D's daily bars).
+      const livePct = line.kind === "entry" && currentTickerRanges && isNum(currentTickerRanges.live_unrealized_plpc)
+        ? currentTickerRanges.live_unrealized_plpc * 100
+        : null;
+      const pct = isNum(livePct) ? livePct : (isNum(line.value) && line.value ? ((lastPrice / line.value) - 1) * 100 : null);
       const pctHtml = isNum(pct) ? ` <span class="modal-legend-pct ${pct >= 0 ? "positive" : "negative"}">${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%</span>` : "";
-      return `<span class="modal-legend-chip"><span class="modal-legend-swatch" style="background:${line.color}"></span>${line.label}: ${fmtPrice(line.value)}${pctHtml}</span>`;
+      // A small pulsing dot marks the one number on this chart that's
+      // truly live (vs. every other figure here, which is only as
+      // fresh as the currently-selected range's own last bar) - the
+      // same visual language the page's own "Last updated" indicator
+      // already uses, so "live" reads consistently sitewide.
+      const liveTag = isNum(livePct) ? ` <span class="modal-legend-live"><span class="live-dot"></span>live</span>` : "";
+      return `<span class="modal-legend-chip"><span class="modal-legend-swatch" style="background:${line.color}"></span>${line.label}: ${fmtPrice(line.value)}${pctHtml}${liveTag}</span>`;
     }).join("");
   }
 
@@ -548,15 +560,29 @@
     });
 
     const last = points[points.length - 1].price;
-    // The line's own up/down coloring is measured against whichever
-    // reference line is most meaningful for this ticker (real entry
-    // price if held, else the 100-day average) - not simply the first
-    // point of whatever range happens to be selected, which could make
-    // a genuinely-profitable held position read red just because this
-    // particular window's own start was a local high.
+    // Per-point segment coloring still compares each historical bar
+    // against the primary reference line (real entry price if held,
+    // else the 100-day average) - a legitimate "was I above or below
+    // this back then" signal. baseline drives that; it is NOT what
+    // decides the chart's one overall verdict below.
     const primary = primaryReferenceLine();
     const baseline = primary ? primary.value : points[0].price;
-    const up = last >= baseline;
+    // The ONE overall up/down verdict (modal border accent, fill
+    // color, point-hover default) comes from the position's real live
+    // unrealized_plpc when held - the exact number the card that was
+    // just clicked is itself colored by - never from comparing entry
+    // price to whatever historical bar happens to be the last point of
+    // the currently-selected range. Those can disagree in a genuinely
+    // confusing way: the default view is 100 Day (daily bars), whose
+    // last point is *yesterday's* close, so a card reading green off a
+    // live quote could open a modal reading red purely because price
+    // moved since that bar closed - nothing actually wrong, just two
+    // different points in time being compared. A not-held ticker has
+    // no live P&L to read, so it still falls back to baseline.
+    const liveUp = currentTickerRanges && currentTickerRanges.held && isNum(currentTickerRanges.live_unrealized_plpc)
+      ? currentTickerRanges.live_unrealized_plpc >= 0
+      : null;
+    const up = liveUp !== null ? liveUp : last >= baseline;
     const trendColor = up ? COLORS.green : COLORS.red;
     const segmentColor = (segCtx) => (segCtx.p1.parsed.y >= baseline ? COLORS.green : COLORS.red);
 

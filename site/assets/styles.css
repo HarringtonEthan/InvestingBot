@@ -679,16 +679,33 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
 .position-modal-ranges { margin: 16px 0 12px; }
 .position-modal-ranges[hidden] { display: none; }
 
-/* Persistent key for the chart's dashed reference line(s) - restates
-   what position-chart.js's on-canvas labels already say, so a line's
-   meaning is never only discoverable by hovering. */
-.position-modal-legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-bottom: 14px; }
+/* Persistent key for the chart's dashed reference line(s) - the sole
+   explanation of what each line means (see position-chart.js's module
+   docstring for why the canvas itself stays free of on-chart text: a
+   legend the user can always find in the same place reads a lot easier
+   than labels competing with gridlines and data for space). */
+.position-modal-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 14px; }
 .position-modal-legend[hidden] { display: none; }
 .modal-legend-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--text-dim); font-family: var(--font-mono); }
 .modal-legend-swatch { width: 10px; height: 2px; border-radius: 1px; flex: none; }
 .modal-legend-pct { font-weight: 700; }
 .modal-legend-pct.positive { color: var(--win); }
 .modal-legend-pct.negative { color: var(--loss); }
+/* Marks the one legend figure that's truly live (a held ticker's own
+   entry-price %) as distinct from every other number on this chart,
+   which is only as fresh as the currently-selected range's own last
+   bar - reuses the exact dot/pulse the page's own "Last updated"
+   indicator already uses, so "live" means the same thing everywhere. */
+.modal-legend-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+.modal-legend-live .live-dot { width: 5px; height: 5px; }
 
 .position-modal-canvas-wrap { height: 280px; }
 .position-modal-empty {
