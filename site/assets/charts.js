@@ -50,6 +50,12 @@
   let zoom = null;
   let tooltipLocked = false;
 
+  // text/grid read the live theme (assets/theme.js's data-theme attribute
+  // on <html>) instead of a fixed value - the other colors here are all
+  // saturated enough to read fine against either a dark or light page.
+  function isLightTheme() {
+    return document.documentElement.getAttribute("data-theme") === "light";
+  }
   const COLORS = {
     combined: "#34d372",
     stock: "#6aa6ff",
@@ -57,8 +63,8 @@
     green: "#34d372",
     red: "#f0554a",
     gray: "#6b7280",
-    text: "#9aa5a0",
-    grid: "rgba(255,255,255,0.06)",
+    get text() { return isLightTheme() ? "#4c5852" : "#9aa5a0"; },
+    get grid() { return isLightTheme() ? "rgba(15,25,20,0.07)" : "rgba(255,255,255,0.06)"; },
   };
 
   // ---------------------------------------------------------------------
@@ -877,6 +883,14 @@
 
     setupScrollReveal();
     load();
+
+    // Every chart here is built from data already loaded once (dashboard/
+    // trades/equity/positions), so a theme flip just needs a redraw with
+    // the new text/grid colors, not a re-fetch.
+    document.addEventListener("ib:theme-changed", () => {
+      if (typeof Chart !== "undefined") Chart.defaults.color = COLORS.text;
+      if (dashboard) safely("charts", renderAll);
+    });
   }
 
   // Each account/crypto/stocks section eases in as it's scrolled into

@@ -30,10 +30,16 @@ Writes eight files into --out-dir (default site/data/):
     Skips day_trading positions - their existing unrealized gain/loss vs
     entry already serves that purpose. Only populated with
     --live-positions, same as positions.json above.
-  - trades.json: recent individual trade rows, each carrying its own
+  - trades.json: recent individual trade rows (capped at
+    MAX_TRADES_PUBLISHED for page weight), each carrying its own
     order_status (confirmed_fill / submitted_unconfirmed / not_placed -
     see classify_order_status() below for why those are the only three
-    honest categories this project's logs can actually support).
+    honest categories this project's logs can actually support). Also
+    writes trades_full.csv alongside it - every trade ever logged,
+    uncapped, same enriched fields, for the site's own "Download full
+    CSV" link (see _trade_row_json), so real analysis beyond what the
+    page itself renders doesn't require digging through the raw
+    logs/*.csv files on GitHub.
   - equity.json: the raw combined equity timeline, for the equity-curve
     chart.
   - ticker_tracker.json: every ticker either live workflow watches (see
@@ -60,9 +66,11 @@ Writes eight files into --out-dir (default site/data/):
     position itself (never derived from this file's own historical
     bars) so the frontend's own up/down verdict always agrees with the
     number the position's own card is colored by, regardless of how
-    stale the currently-selected range's last historical bar is
-    (see build_ticker_charts). Only populated with --live-positions, same
-    as positions.json above.
+    stale the currently-selected range's last historical bar is. Also
+    publishes each ticker's all-time real trade record (win rate, trade
+    count, realized P&L - see build_ticker_performance) for the chart
+    modal's own "report card" (see build_ticker_charts). Only populated
+    with --live-positions, same as positions.json above.
   - backtest_comparison.json: real walk-forward validation results (see
     results/walk_forward/) for each asset class's exact currently-live
     config - win rate, avg return per window, and how many real windows
@@ -498,6 +506,43 @@ def summarize_period(
     return result
 
 
+# Column order for _trade_row_json's dict below, and for trades_full.csv's
+# header when there are zero rows to derive it from - one literal list
+# instead of two that could silently drift apart.
+TRADE_ROW_COLUMNS = [
+    "timestamp_utc", "mode", "asset_class", "ticker", "strategy", "action", "price_usd",
+    "price_is_confirmed_fill", "notional_usd", "position_qty_before", "avg_entry_price_usd",
+    "realized_pnl_usd", "order_status", "notes",
+]
+
+
+def _trade_row_json(row: pd.Series) -> dict:
+    """
+    One trade log row as the enriched dict both trades.json (capped to
+    MAX_TRADES_PUBLISHED) and the full trades_full.csv export (every
+    row ever logged) publish - one definition of "what a trade row
+    looks like on this site" instead of two that could quietly drift
+    apart. Same fields the Trade History table and its detail modal
+    already read. Keys match TRADE_ROW_COLUMNS's order above.
+    """
+    return {
+        "timestamp_utc": row["timestamp_utc"].isoformat(),
+        "mode": row["mode"],
+        "asset_class": row["asset_class"],
+        "ticker": row["ticker"],
+        "strategy": row["strategy"],
+        "action": row["action"],
+        "price_usd": float(row["price_usd"]),
+        "price_is_confirmed_fill": row["order_status"] == "confirmed_fill",
+        "notional_usd": float(row["notional_usd"]) if pd.notna(row["notional_usd"]) and row["notional_usd"] != "" else None,
+        "position_qty_before": float(row["position_qty_before"]) if pd.notna(row["position_qty_before"]) else None,
+        "avg_entry_price_usd": float(row["avg_entry_price_usd"]) if pd.notna(row["avg_entry_price_usd"]) and row["avg_entry_price_usd"] != "" else None,
+        "realized_pnl_usd": round(float(row["realized_pnl_usd"]), 2) if pd.notna(row["realized_pnl_usd"]) else None,
+        "order_status": row["order_status"],
+        "notes": row["notes"] if pd.notna(row.get("notes")) else "",
+    }
+
+
 def _trade_summary(row: pd.Series) -> dict:
     return {
         "timestamp_utc": row["timestamp_utc"].isoformat(),
@@ -518,6 +563,33 @@ def _bucket_summary(sells: pd.DataFrame) -> dict:
         "realized_pnl_usd": round(float(sells["realized_pnl_usd"].sum()), 2) if n else 0.0,
         "num_wins": wins,
         "win_rate": (wins / n) if n else None,
+    }
+
+
+def build_ticker_performance(trades_df: pd.DataFrame | None) -> dict[str, dict]:
+    """
+    All-time real trade performance per ticker - the exact same
+    confirmed-fill-sell/win-rate/realized-P&L definition summarize_
+    period's own by_strategy/stocks_vs_crypto buckets already use (see
+    _bucket_summary above), just grouped by ticker instead of by
+    strategy or period. Powers each ticker's chart-modal "report card"
+    (see build_ticker_charts) - deliberately all-time and independent
+    of whatever Today/Week/Month/All Time period happens to be selected
+    elsewhere on the page, since "how has this ticker done for this bot,
+    ever" is a different question than "this period's numbers."
+
+    trades_df's own "ticker" column is already the bare form
+    (WATCHED_STOCK_TICKERS/WATCHED_CRYPTO_TICKERS' own form, e.g. "BTC")
+    live_trade.py logs directly - no Alpaca-symbol conversion needed
+    here, unlike the live-position-matching helpers elsewhere in this
+    file that start from Alpaca's own symbol instead.
+    """
+    if trades_df is None or trades_df.empty or "is_confirmed_sell" not in trades_df.columns:
+        return {}
+    confirmed_sells = trades_df[trades_df["is_confirmed_sell"]]
+    return {
+        ticker: _bucket_summary(confirmed_sells[confirmed_sells["ticker"] == ticker])
+        for ticker in sorted(confirmed_sells["ticker"].dropna().unique())
     }
 
 
@@ -955,6 +1027,13 @@ def build_ticker_charts(
     yesterday's close on the default 100-day view) can disagree with
     the live figure the position's card is itself colored by.
 
+    Also publishes each ticker's all-time real trade record (see
+    build_ticker_performance) - num_trades/win_rate/realized_pnl_usd
+    from every confirmed-fill sell ever logged for that exact ticker,
+    independent of whether it's currently held or which period happens
+    to be selected elsewhere on the page. Powers the chart modal's own
+    "report card," shown right below the chart itself.
+
     Best-effort per range, not just per ticker: one range failing for a
     ticker (e.g. Alpaca has no 5-minute bars for a thinly-traded name)
     never blocks that ticker's other ranges or any other ticker.
@@ -975,6 +1054,8 @@ def build_ticker_charts(
     from src.symbols import resolve_symbol
 
     held_by_ticker = {_position_ticker(p["symbol"], p["is_crypto"]): p for p in positions}
+    ticker_performance = build_ticker_performance(trades_df)
+    empty_performance = {"num_trades": 0, "realized_pnl_usd": 0.0, "num_wins": 0, "win_rate": None}
 
     now_utc = dt.datetime.now(dt.timezone.utc)
     end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
@@ -1035,6 +1116,7 @@ def build_ticker_charts(
             "entry_is_estimated": entry_is_estimated,
             "live_current_price": live_current_price,
             "live_unrealized_plpc": live_unrealized_plpc,
+            "performance": ticker_performance.get(ticker, empty_performance),
             "ranges": ranges_payload,
         }
 
@@ -1247,31 +1329,28 @@ def main():
     (out_dir / "backtest_comparison.json").write_text(json.dumps(backtest_comparison_payload, indent=2))
 
     if trades_df is not None and not trades_df.empty:
-        recent = trades_df.sort_values("timestamp_utc", ascending=False).head(MAX_TRADES_PUBLISHED)
+        all_trades_sorted = trades_df.sort_values("timestamp_utc", ascending=False)
+        recent = all_trades_sorted.head(MAX_TRADES_PUBLISHED)
         trades_payload = {
             "available": True,
-            "trades": [
-                {
-                    "timestamp_utc": row["timestamp_utc"].isoformat(),
-                    "mode": row["mode"],
-                    "asset_class": row["asset_class"],
-                    "ticker": row["ticker"],
-                    "strategy": row["strategy"],
-                    "action": row["action"],
-                    "price_usd": float(row["price_usd"]),
-                    "price_is_confirmed_fill": row["order_status"] == "confirmed_fill",
-                    "notional_usd": float(row["notional_usd"]) if pd.notna(row["notional_usd"]) and row["notional_usd"] != "" else None,
-                    "position_qty_before": float(row["position_qty_before"]) if pd.notna(row["position_qty_before"]) else None,
-                    "avg_entry_price_usd": float(row["avg_entry_price_usd"]) if pd.notna(row["avg_entry_price_usd"]) and row["avg_entry_price_usd"] != "" else None,
-                    "realized_pnl_usd": round(float(row["realized_pnl_usd"]), 2) if pd.notna(row["realized_pnl_usd"]) else None,
-                    "order_status": row["order_status"],
-                    "notes": row["notes"] if pd.notna(row.get("notes")) else "",
-                }
-                for _, row in recent.iterrows()
-            ],
+            "trades": [_trade_row_json(row) for _, row in recent.iterrows()],
         }
+        # The page itself only ever shows MAX_TRADES_PUBLISHED rows (page-
+        # weight reasons - see that constant's own comment), but anyone
+        # who wants to do their own analysis (pivot tables, longer-term
+        # trends) shouldn't have to go dig the raw CSVs out of the repo to
+        # get the rest. This is every row ever logged, oldest first (the
+        # natural order for a spreadsheet), with the exact same enriched
+        # fields (computed order_status, realized_pnl_usd) trades.json
+        # itself publishes - genuinely more useful for analysis than the
+        # raw logs/*.csv files, which don't have those derived columns.
+        full_csv_rows = [_trade_row_json(row) for _, row in all_trades_sorted.sort_values("timestamp_utc").iterrows()]
+        pd.DataFrame(full_csv_rows).to_csv(out_dir / "trades_full.csv", index=False)
     else:
         trades_payload = {"available": False, "trades": []}
+        # An honest empty CSV (header row only) rather than no file at
+        # all - the download link always has something valid to point to.
+        pd.DataFrame(columns=TRADE_ROW_COLUMNS).to_csv(out_dir / "trades_full.csv", index=False)
     (out_dir / "trades.json").write_text(json.dumps(trades_payload, indent=2))
 
     if equity_df is not None and not equity_df.empty:

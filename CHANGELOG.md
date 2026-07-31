@@ -17,6 +17,58 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.18.0 - 2026-07-31
+
+- **Per-ticker "report card"** in the chart modal: opening any ticker's
+  chart (Positions, Ticker Tracker, or a chart-card position) now shows
+  its all-time real trade record - trade count, win rate, realized P&L -
+  directly below the chart. New `site_data.py` function
+  `build_ticker_performance()` groups the exact same confirmed-fill-sell
+  rollup (`_bucket_summary`, already trusted for the by-strategy and
+  stocks-vs-crypto numbers elsewhere on the site) by ticker instead, so
+  this never risks disagreeing with any other win-rate/P&L number on the
+  page. A ticker with no confirmed sells yet shows nothing (no
+  fabricated "0% win rate" for a position that's never been closed).
+- **`ticker_charts.json` is now genuinely lazy-loaded.** The file's
+  fetch-on-first-click logic in `position-chart.js`'s `openModal()` was
+  already correct, but a separate, redundant eager prefetch at page load
+  was defeating it - every visitor was downloading the full 100KB+ file
+  even if they never opened a single chart. That prefetch call is
+  removed; the file now only downloads the first time someone actually
+  opens a chart, and stays cached in memory for the rest of the page
+  view after that.
+- **"Download full CSV" link on Trade History.** The table itself still
+  caps at 200 rows for page weight, but `site_data.py` now also writes
+  `trades_full.csv` - every trade ever logged, uncapped, in the same row
+  shape as `trades.json` (both now built from one shared
+  `_trade_row_json()` helper, so there's one definition of "what a trade
+  row looks like" instead of two that could drift). A plain `<a
+  download>` link next to the filter box points at it - no new backend
+  endpoint, just a static file already sitting in `site/data/`.
+- **Light mode.** A sun/moon toggle in the header (new `assets/theme.js`)
+  flips a `data-theme` attribute on `<html>`, stamped before first paint
+  from localStorage or the OS's own `prefers-color-scheme` so there's no
+  flash of the wrong theme on load. The whole site's styling was already
+  built entirely on CSS custom properties, so most of it themes for free
+  from one new `:root[data-theme="light"]` palette; the handful of
+  places that bypassed the variables (the header bar, the grid overlay,
+  a badge background, the table's zebra stripe) got explicit light-mode
+  overrides. Chart.js's own text/gridline colors read the live theme too
+  and redraw immediately on toggle via a new `ib:theme-changed` event -
+  no reload needed, and a chart already open in the modal updates in
+  place.
+- 7 new tests (`build_ticker_performance`'s per-ticker grouping and
+  confirmed-sells-only filtering, `_trade_row_json`'s column order and
+  honest blank-field handling) - 224 tests total, all passing. Verified
+  end-to-end with Playwright: `ticker_charts.json` is confirmed absent
+  from every network request until a chart is actually opened, the
+  report card renders real trade stats below an opened chart, the CSV
+  link points at a real uncapped file, and the light/dark toggle
+  persists across reloads and redraws an already-rendered Chart.js chart
+  live on click (both verified with a real Chart.js instance, not just
+  the color-selection logic).
+- Cache-busting bumped to `?v=0.18.0`.
+
 ## Version Richards 0.17.0 - 2026-07-31
 
 - **Trade History rows are now clickable** - opens a detail modal with

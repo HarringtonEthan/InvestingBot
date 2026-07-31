@@ -16,6 +16,7 @@ from site_data import (
     ET,
     RULE_BASED_EXIT_THRESHOLD,
     TICKER_CHART_RANGES,
+    TRADE_ROW_COLUMNS,
     TICKER_TRACKER_SMA_PERIODS,
     WATCHED_CRYPTO_TICKERS,
     WATCHED_STOCK_TICKERS,
@@ -23,11 +24,13 @@ from site_data import (
     _max_drawdown,
     _position_ticker,
     _thin_points,
+    _trade_row_json,
     attribute_position_strategy,
     build_position_sma_indicators,
     build_positions_payload,
     build_strategy_backtest_comparison,
     build_ticker_charts,
+    build_ticker_performance,
     build_ticker_tracker,
     classify_order_status,
     dedupe_trades,
@@ -1177,3 +1180,108 @@ def test_backtest_comparison_one_class_failure_does_not_block_the_other(tmp_path
     assert stock["win_rate"] == 1.0
     assert "dip -1.5%" in stock["config_label"]
     assert "exit 2.0%" in stock["config_label"]
+
+
+# ---- build_ticker_performance: all-time per-ticker trade record (the
+# same _bucket_summary rollup by_strategy/stocks_vs_crypto already use,
+# just grouped by ticker) - powers each chart modal's "report card" ----
+
+def test_ticker_performance_groups_confirmed_sells_by_ticker():
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "SELL", "order_status": "confirmed_fill", "price_usd": 210.0, "avg_entry_price_usd": 200.0, "position_qty_before": 10.0},
+        {"ticker": "AAPL", "action": "SELL", "order_status": "confirmed_fill", "price_usd": 195.0, "avg_entry_price_usd": 200.0, "position_qty_before": 10.0},
+        {"ticker": "QQQ", "action": "SELL", "order_status": "confirmed_fill", "price_usd": 520.0, "avg_entry_price_usd": 500.0, "position_qty_before": 5.0},
+    ])
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = (trades["price_usd"] - trades["avg_entry_price_usd"]) * trades["position_qty_before"]
+
+    result = build_ticker_performance(trades)
+    assert result["AAPL"]["num_trades"] == 2
+    assert result["AAPL"]["num_wins"] == 1
+    assert result["AAPL"]["win_rate"] == 0.5
+    assert result["AAPL"]["realized_pnl_usd"] == 50.0  # +100 - 50
+    assert result["QQQ"]["num_trades"] == 1
+    assert result["QQQ"]["win_rate"] == 1.0
+
+
+def test_ticker_performance_ignores_unconfirmed_and_not_placed():
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "SELL", "order_status": "confirmed_fill", "price_usd": 210.0, "avg_entry_price_usd": 200.0, "position_qty_before": 10.0},
+        {"ticker": "AAPL", "action": "SELL", "order_status": "submitted_unconfirmed", "price_usd": 500.0, "avg_entry_price_usd": 200.0, "position_qty_before": 10.0},
+        {"ticker": "AAPL", "action": "BUY", "order_status": "confirmed_fill", "price_usd": 200.0, "avg_entry_price_usd": "", "position_qty_before": 0.0},
+    ])
+    trades["is_confirmed_sell"] = (trades["action"] == "SELL") & (trades["order_status"] == "confirmed_fill")
+    realized = pd.Series(float("nan"), index=trades.index)
+    confirmed = trades["is_confirmed_sell"]
+    realized[confirmed] = (
+        pd.to_numeric(trades.loc[confirmed, "price_usd"])
+        - pd.to_numeric(trades.loc[confirmed, "avg_entry_price_usd"], errors="coerce")
+    ) * trades.loc[confirmed, "position_qty_before"]
+    trades["realized_pnl_usd"] = realized
+
+    result = build_ticker_performance(trades)
+    assert result["AAPL"]["num_trades"] == 1
+    assert result["AAPL"]["realized_pnl_usd"] == 100.0
+
+
+def test_ticker_performance_empty_or_missing_input():
+    assert build_ticker_performance(None) == {}
+    assert build_ticker_performance(_trades_df([{}]).iloc[0:0]) == {}
+
+
+def test_ticker_charts_report_card_reflects_all_time_trade_record(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda symbol, interval, start, end: _bars_for_interval(interval, start, end))
+    trades = _trades_df([
+        {"ticker": "AAPL", "action": "SELL", "order_status": "confirmed_fill", "price_usd": 210.0, "avg_entry_price_usd": 200.0, "position_qty_before": 10.0},
+    ])
+    trades["is_confirmed_sell"] = trades["action"] == "SELL"
+    trades["realized_pnl_usd"] = (trades["price_usd"] - trades["avg_entry_price_usd"]) * trades["position_qty_before"]
+
+    result = build_ticker_charts(([], None), trades)
+    aapl_perf = result["symbols"]["AAPL"]["performance"]
+    assert aapl_perf["num_trades"] == 1
+    assert aapl_perf["realized_pnl_usd"] == 100.0
+    # A ticker with no trades at all still gets an honest zeroed
+    # report card, not a missing key the frontend would need to guard.
+    qqq_perf = result["symbols"]["QQQ"]["performance"]
+    assert qqq_perf["num_trades"] == 0
+    assert qqq_perf["win_rate"] is None
+
+
+# ---- _trade_row_json: the one shared "what does a trade row look
+# like" definition trades.json (capped) and trades_full.csv (uncapped,
+# the site's "Download full CSV" link) both publish from ----
+
+def test_trade_row_json_matches_column_order():
+    row = _trade_row(ticker="AAPL", action="BUY")
+    row["order_status"] = classify_order_status(row)
+    row["realized_pnl_usd"] = float("nan")
+    result = _trade_row_json(row)
+    assert list(result.keys()) == TRADE_ROW_COLUMNS
+
+
+def test_trade_row_json_confirmed_sell_has_real_pnl_and_cost_basis():
+    row = _trade_row(
+        ticker="AAPL", action="SELL", order_placed="True", notes="",
+        price_usd=210.0, avg_entry_price_usd=200.0, position_qty_before=10.0,
+    )
+    row["order_status"] = classify_order_status(row)
+    row["realized_pnl_usd"] = (row["price_usd"] - row["avg_entry_price_usd"]) * row["position_qty_before"]
+    result = _trade_row_json(row)
+    assert result["price_is_confirmed_fill"] is True
+    assert result["avg_entry_price_usd"] == 200.0
+    assert result["realized_pnl_usd"] == 100.0
+
+
+def test_trade_row_json_handles_blank_optional_fields_honestly():
+    # A BUY row - no cost basis, no realized P&L, blank notional if the
+    # trade was sized by quantity rather than notional dollars. None,
+    # not a fabricated 0 or empty string, for every field that plainly
+    # doesn't apply to this kind of row.
+    row = _trade_row(action="BUY", avg_entry_price_usd="", notional_usd="")
+    row["order_status"] = classify_order_status(row)
+    row["realized_pnl_usd"] = float("nan")
+    result = _trade_row_json(row)
+    assert result["avg_entry_price_usd"] is None
+    assert result["notional_usd"] is None
+    assert result["realized_pnl_usd"] is None

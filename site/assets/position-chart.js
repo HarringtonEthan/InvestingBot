@@ -73,7 +73,19 @@
   // from each other, so a chart showing both an SMA line and an entry-
   // price line at once never leaves it ambiguous which is which even
   // without hovering.
-  const COLORS = { green: "#34d372", red: "#f0554a", text: "#9aa5a0", grid: "rgba(255,255,255,0.06)", avgLine: "#6aa6ff", entryLine: "#f0a63c" };
+  // text/grid read the live theme (assets/theme.js's data-theme attribute
+  // on <html>) instead of a fixed value, since these are the only two
+  // chart colors that actually need to flip for light mode to stay
+  // readable - green/red/avgLine/entryLine are saturated enough to read
+  // fine against either background.
+  function isLightTheme() {
+    return document.documentElement.getAttribute("data-theme") === "light";
+  }
+  const COLORS = {
+    green: "#34d372", red: "#f0554a", avgLine: "#6aa6ff", entryLine: "#f0a63c",
+    get text() { return isLightTheme() ? "#4c5852" : "#9aa5a0"; },
+    get grid() { return isLightTheme() ? "rgba(15,25,20,0.07)" : "rgba(255,255,255,0.06)"; },
+  };
 
   // Chart.js's own default font is a generic sans-serif that doesn't
   // match the rest of the page (Inter) - set once, globally, here since
@@ -83,6 +95,15 @@
     Chart.defaults.font.family = "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     Chart.defaults.color = COLORS.text;
   }
+
+  // Re-point Chart.defaults at the new theme's text color and redraw
+  // whatever chart is currently open (selectRange with the same range
+  // key it already has is a safe no-op-then-rebuild) - assets/theme.js
+  // dispatches this on every toggle.
+  document.addEventListener("ib:theme-changed", () => {
+    if (typeof Chart !== "undefined") Chart.defaults.color = COLORS.text;
+    if (currentTickerRanges && currentRangeKey) selectRange(currentRangeKey);
+  });
 
   let chartsData = null;
   let chartsPromise = null;
@@ -342,6 +363,7 @@
           </div>
           <p class="empty-state position-modal-empty" id="position-modal-empty" hidden></p>
           <p class="chart-summary position-modal-summary" id="position-modal-summary"></p>
+          <div class="position-modal-report-card" id="position-modal-report-card" hidden></div>
         </div>
       </div>`;
     document.body.appendChild(wrap.firstElementChild);
@@ -399,6 +421,30 @@
     return `Bought ${fmtPrice(sym.entry_price)} (exact purchase date not clearly determined from the trade log)`;
   }
 
+  // "How has this exact ticker done for this bot, ever" - a real
+  // all-time answer (site_data.py's build_ticker_performance), shown
+  // once per modal open (not per range switch - it's independent of
+  // whichever range is currently displayed) below the chart itself.
+  // Hidden entirely for a ticker with zero confirmed-fill sells yet
+  // rather than showing a misleading "0% win rate".
+  function renderReportCard(sym) {
+    const el = document.getElementById("position-modal-report-card");
+    const perf = sym.performance;
+    if (!perf || !perf.num_trades) {
+      el.hidden = true;
+      return;
+    }
+    const pnl = perf.realized_pnl_usd;
+    const pnlText = (pnl >= 0 ? "+" : "-") + "$" + Math.abs(pnl).toFixed(2);
+    el.hidden = false;
+    el.innerHTML = `
+      <span class="position-modal-report-title">All-Time Record</span>
+      <span class="position-modal-report-row"><span>Trades</span><span>${perf.num_trades}</span></span>
+      <span class="position-modal-report-row"><span>Win Rate</span><span>${perf.win_rate === null ? "—" : (perf.win_rate * 100).toFixed(0) + "%"}</span></span>
+      <span class="position-modal-report-row"><span>Realized P&amp;L</span><span class="${pnl >= 0 ? "positive" : "negative"}">${pnlText}</span></span>
+    `;
+  }
+
   async function openModal(ticker, triggerEl) {
     currentTicker = ticker;
     currentRangeKey = null;
@@ -424,6 +470,7 @@
     wrapEl.hidden = false;
     legendEl.hidden = true;
     summaryEl.textContent = "";
+    document.getElementById("position-modal-report-card").hidden = true;
     modalEl.classList.remove("trend-up", "trend-down");
     rangesEl.hidden = true;
     rangesEl.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
@@ -452,6 +499,7 @@
       metaEl.hidden = false;
       metaEl.innerHTML = `<span class="position-modal-held-badge">Held</span> ${metaText}`;
     }
+    renderReportCard(sym);
     rangesEl.hidden = false;
     // "100d" is the default view for every card, held or not - the
     // same range every card's own summary text is already measured
@@ -721,8 +769,13 @@
     openModal(card.dataset.symbol, card);
   });
 
+  // Deliberately does NOT prefetch ticker_charts.json here - it's
+  // already 100KB+ and only grows as more tickers get watched, so a
+  // visitor who never opens a single chart shouldn't pay for it. openModal()
+  // above already fetches it lazily, on first click, via
+  // `chartsData || (await loadCharts())` - only the modal DOM itself
+  // (cheap, no network) is built up front.
   document.addEventListener("DOMContentLoaded", () => {
     ensureModal();
-    loadCharts();
   });
 })();
