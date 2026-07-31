@@ -132,6 +132,20 @@
     }, { passive: true });
   }
 
+  // Scroll parallax: the backdrop drifts vertically at a fraction of
+  // the page's own scroll speed, so it reads as sitting a bit further
+  // back than the content scrolling past it rather than pinned flat to
+  // the viewport. Unlike the cursor parallax above, this applies on
+  // touch devices too - scrolling has nothing to do with pointer
+  // capability. Capped so an unusually long page (charts.html) never
+  // drifts the backdrop further than a small, still-subtle distance.
+  let targetScrollY = 0, scrollOffsetY = 0;
+  if (!REDUCED_MOTION) {
+    window.addEventListener("scroll", () => {
+      targetScrollY = Math.max(-140, Math.min(140, window.scrollY * -0.04));
+    }, { passive: true });
+  }
+
   let rafId = null;
 
   function step(now) {
@@ -139,9 +153,10 @@
 
     offsetX += (targetX - offsetX) * 0.035;
     offsetY += (targetY - offsetY) * 0.035;
+    scrollOffsetY += (targetScrollY - scrollOffsetY) * 0.06;
 
     ctx.save();
-    ctx.translate(offsetX * 9, offsetY * 7);
+    ctx.translate(offsetX * 9, offsetY * 7 + scrollOffsetY);
 
     if (!REDUCED_MOTION) {
       for (const p of particles) {

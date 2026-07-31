@@ -23,6 +23,7 @@ from site_data import (
     _equity_value_asof,
     _max_drawdown,
     _position_ticker,
+    _sparkline_closes,
     _thin_points,
     _trade_row_json,
     attribute_position_strategy,
@@ -572,26 +573,42 @@ def test_positions_payload_alpaca_error_surfaces_reason_not_crash():
     assert "no network access" in result["reason"]
 
 
-def test_positions_payload_success_enriches_with_strategy_and_bare_ticker():
+def test_positions_payload_success_enriches_with_strategy_and_bare_ticker(monkeypatch):
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", lambda *a, **k: _daily_bars(30))
     trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "strategy": "rule_based"}])
     positions = [{"symbol": "AAPL", "is_crypto": False, "qty": 5.0}]
     result = build_positions_payload((positions, None), trades)
     assert result["available"] is True
     assert result["positions"][0]["strategy"] == "rule_based"
     assert result["positions"][0]["ticker"] == "AAPL"
+    # Card sparkline: a real sampled series from the (mocked) bars fetch,
+    # not a fabricated/flat one.
+    assert len(result["positions"][0]["spark"]) >= 2
 
 
-def test_positions_payload_crypto_strategy_matches_via_bare_ticker():
+def test_positions_payload_crypto_strategy_matches_via_bare_ticker(monkeypatch):
     # Alpaca's positions endpoint returns crypto symbols without a slash
     # ("BTCUSD"), but the trade log's own "ticker" column is always the
     # bare form live_trade.py's --ticker CLI arg uses ("BTC") - without
     # converting first, every crypto position's strategy silently came
     # back "unknown" even when the trade log clearly showed day_trading.
+    monkeypatch.setattr("src.alpaca_data.get_crypto_bars_range", lambda *a, **k: _daily_bars(30, start_price=60000.0, step=50.0))
     trades = _trades_df([{"ticker": "BTC", "asset_class": "crypto", "action": "BUY", "strategy": "day_trading"}])
     positions = [{"symbol": "BTCUSD", "is_crypto": True, "qty": 0.1}]
     result = build_positions_payload((positions, None), trades)
     assert result["positions"][0]["ticker"] == "BTC"
     assert result["positions"][0]["strategy"] == "day_trading"
+
+
+def test_positions_payload_spark_fetch_failure_does_not_block_position(monkeypatch):
+    def fail_if_called(*a, **k):
+        raise RuntimeError("no network access")
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fail_if_called)
+    trades = _trades_df([{"ticker": "AAPL", "action": "BUY", "strategy": "rule_based"}])
+    positions = [{"symbol": "AAPL", "is_crypto": False, "qty": 5.0}]
+    result = build_positions_payload((positions, None), trades)
+    assert result["available"] is True
+    assert result["positions"][0]["spark"] == []
 
 
 # ---- missing columns: a log file without the columns this code expects ----
@@ -654,6 +671,29 @@ def test_thin_points_downsamples_but_keeps_first_and_last():
 def test_thin_points_empty_input():
     assert _thin_points(None) == []
     assert _thin_points(pd.DataFrame()) == []
+
+
+# ---- _sparkline_closes: same keep-first-and-last downsampling as
+# _thin_points, but bare floats (no timestamps) for a card sparkline ----
+
+def test_sparkline_closes_keeps_all_when_under_the_cap():
+    df = pd.DataFrame({"Close": [1.0, 2.0, 3.0]})
+    values = _sparkline_closes(df, max_points=20)
+    assert values == [1.0, 2.0, 3.0]
+
+
+def test_sparkline_closes_downsamples_but_keeps_first_and_last():
+    df = pd.DataFrame({"Close": [float(i) for i in range(200)]})
+    values = _sparkline_closes(df, max_points=20)
+    assert len(values) <= 21
+    assert values[0] == 0.0
+    assert values[-1] == 199.0
+
+
+def test_sparkline_closes_empty_or_too_short_is_honest_not_a_flat_line():
+    assert _sparkline_closes(None) == []
+    assert _sparkline_closes(pd.DataFrame()) == []
+    assert _sparkline_closes(pd.DataFrame({"Close": [1.0]})) == []
 
 
 # ---- build_position_sma_indicators ----
@@ -831,6 +871,36 @@ def test_ticker_tracker_computes_sma100_and_pct(monkeypatch):
     # A steadily rising series sits *above* its own trailing average.
     assert aapl["pct_vs_sma100"] > 0
     assert aapl["last_close"] == 219.0  # 100 + 119*1.0
+
+
+def test_ticker_tracker_spark_reuses_the_same_fetch_no_second_call(monkeypatch):
+    # get_stock_bars_range is also called separately (a different
+    # interval, "5m") for the unrelated 20-bar SMA reading below - only
+    # the "1d" call count matters here, to prove the sparkline reuses
+    # the 100-day df already fetched rather than issuing its own second
+    # "1d" fetch per ticker.
+    calls = {"1d": 0}
+
+    def counting_bars(ticker, interval, start, end):
+        if interval == "1d":
+            calls["1d"] += 1
+        return _daily_bars(120)
+
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", counting_bars)
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert len(aapl["spark"]) >= 2
+    assert calls["1d"] == len(WATCHED_STOCK_TICKERS)
+
+
+def test_ticker_tracker_spark_empty_on_fetch_failure(monkeypatch):
+    def fail_if_called(*a, **k):
+        raise RuntimeError("no network access")
+    monkeypatch.setattr("src.alpaca_data.get_stock_bars_range", fail_if_called)
+    result = build_ticker_tracker(([], None))
+    aapl = next(row for row in result["categories"]["stocks"] if row["ticker"] == "AAPL")
+    assert aapl["available"] is False
+    assert aapl["spark"] == []
 
 
 def test_ticker_tracker_not_enough_history_is_honest_not_a_guess(monkeypatch):

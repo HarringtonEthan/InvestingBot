@@ -792,6 +792,35 @@
     return `<div class="position-card-row position-card-sma"><span>vs 20-bar avg</span><span class="${cls}">${label}</span></div>`;
   }
 
+  // Same small sparkline renderer index.html's dashboard.js draws its
+  // own position/tracker cards with (see that file's sparklineSvg) -
+  // duplicated here rather than shared since these two pages already
+  // each build their own independent positionCard(). Omitted entirely
+  // when a ticker's own spark fetch failed server-side, never drawn as
+  // a fabricated flat line.
+  function sparkSvg(values) {
+    const w = 100, h = 28, pad = 2;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const span = max - min || 1;
+    const stepX = (w - pad * 2) / (values.length - 1);
+    const pts = values.map((v, i) => {
+      const x = pad + i * stepX;
+      const y = pad + (1 - (v - min) / span) * (h - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    });
+    const color = values[values.length - 1] >= values[0] ? COLORS.green : COLORS.red;
+    const area = `${pad},${h - pad} ${pts.join(" ")} ${w - pad},${h - pad}`;
+    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">` +
+      `<polyline points="${area}" fill="${color}" fill-opacity="0.1" stroke="none"></polyline>` +
+      `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.6" ` +
+      `stroke-linejoin="round" stroke-linecap="round"></polyline></svg>`;
+  }
+  function cardSparkHtml(spark) {
+    if (!Array.isArray(spark) || spark.length < 2) return "";
+    return `<div class="position-card-spark">${sparkSvg(spark)}</div>`;
+  }
+
   function positionCard(p) {
     const pnl = p.unrealized_pl;
     const trend = pnl > 0 ? "trend-up" : pnl < 0 ? "trend-down" : "";
@@ -805,8 +834,9 @@
       <div class="position-card ${trend}" data-symbol="${p.ticker}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="position-card-head">
           <span class="position-card-ticker">${p.symbol}</span>
-          <span class="position-card-strategy">${p.strategy || "unknown"}</span>
+          <span class="position-card-strategy strategy-${p.strategy || "unknown"}">${p.strategy || "unknown"}</span>
         </div>
+        ${cardSparkHtml(p.spark)}
         <div class="position-card-row"><span>Qty</span><span>${fmtQty(p.qty)}</span></div>
         <div class="position-card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>

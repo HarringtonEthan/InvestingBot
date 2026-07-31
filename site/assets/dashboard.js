@@ -96,27 +96,58 @@
   // ---------------------------------------------------------------------
   // Headline metric row
   // ---------------------------------------------------------------------
+  // Each metric carries its own raw number (for the count-up animation
+  // below to interpolate through) alongside the formatter that turns
+  // any intermediate value into the same display string a final one
+  // would get - so a mid-animation frame for, say, win_rate still reads
+  // "37%" in the right format, not a bare unformatted float.
   const METRIC_DEFS = {
-    equity: (p) => ({ text: fmtUsd(p.ending_value_usd), cls: "" }),
-    period_pnl: (p) => ({ text: fmtUsdSigned(p.dollar_pnl_usd), cls: signClass(p.dollar_pnl_usd) }),
-    pct_return: (p) => ({ text: fmtPct(p.pct_return), cls: signClass(p.pct_return) }),
-    win_rate: (p) => ({ text: p.win_rate === null ? "—" : (p.win_rate * 100).toFixed(0) + "%", cls: "" }),
-    num_trades: (p) => ({ text: String(p.num_trades ?? 0), cls: "" }),
-    unrealized: (p) => ({ text: fmtUsdSigned(p.unrealized_pnl_usd), cls: signClass(p.unrealized_pnl_usd) }),
+    equity: (p) => ({ raw: p.ending_value_usd, fmt: fmtUsd, cls: "" }),
+    period_pnl: (p) => ({ raw: p.dollar_pnl_usd, fmt: fmtUsdSigned, cls: signClass(p.dollar_pnl_usd) }),
+    pct_return: (p) => ({ raw: p.pct_return, fmt: fmtPct, cls: signClass(p.pct_return) }),
+    win_rate: (p) => ({ raw: p.win_rate, fmt: (v) => (v * 100).toFixed(0) + "%", cls: "" }),
+    num_trades: (p) => ({ raw: p.num_trades ?? 0, fmt: (v) => String(Math.round(v)), cls: "" }),
+    unrealized: (p) => ({ raw: p.unrealized_pnl_usd, fmt: fmtUsdSigned, cls: signClass(p.unrealized_pnl_usd) }),
   };
 
-  function setMetric(el, finalText, finalClass) {
+  // Count-up/down animation for the headline metric cards: switching
+  // Today/Week/Month/All Time (or the initial load) animates each
+  // number from whatever it last showed to its new real value, instead
+  // of an instant snap. Purely cosmetic - the final displayed value is
+  // always the same exact real number regardless of animation.
+  const METRIC_ANIM_MS = 650;
+  const lastMetricValue = new WeakMap();
+
+  function animateMetric(el, raw, fmt, finalClass) {
     el.classList.remove("positive", "negative");
-    const apply = () => {
-      el.textContent = finalText;
-      if (finalClass) el.classList.add(finalClass);
+    if (finalClass) el.classList.add(finalClass);
+
+    if (raw === null || raw === undefined || Number.isNaN(raw)) {
+      lastMetricValue.delete(el);
+      el.textContent = "—";
+      return;
+    }
+
+    const hasPrior = lastMetricValue.has(el);
+    const from = hasPrior ? lastMetricValue.get(el) : raw;
+    lastMetricValue.set(el, raw);
+
+    // No prior value (first paint) or reduced-motion: show the real
+    // number immediately rather than counting up from zero/nothing,
+    // which would itself read as a fabricated intermediate value.
+    if (!hasPrior || REDUCED_MOTION || from === raw) {
+      el.textContent = fmt(raw);
+      return;
+    }
+
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / METRIC_ANIM_MS);
+      const eased = 1 - Math.pow(1 - t, 3);
+      el.textContent = fmt(from + (raw - from) * eased);
+      if (t < 1) requestAnimationFrame(tick);
     };
-    if (REDUCED_MOTION) { apply(); return; }
-    el.style.opacity = "0";
-    setTimeout(() => {
-      apply();
-      el.style.opacity = "1";
-    }, 120);
+    requestAnimationFrame(tick);
   }
 
   // ---------------------------------------------------------------------
@@ -167,16 +198,44 @@
     el.innerHTML = series ? sparklineSvg(series) : "";
   }
 
+  // Position/tracker card sparklines - a small "spark" array of sampled
+  // recent closes site_data.py already publishes per ticker (see
+  // build_positions_payload/build_ticker_tracker's own _sparkline_closes
+  // calls). Reuses the exact same sparklineSvg() the headline equity
+  // card draws with, just fed a different series - one sparkline
+  // renderer for the whole site, not two. Omitted entirely (not drawn
+  // as a flat/fabricated line) when a ticker's own spark fetch failed.
+  function cardSparkHtml(spark, cls) {
+    if (!Array.isArray(spark) || spark.length < 2) return "";
+    return `<div class="${cls}">${sparklineSvg(spark)}</div>`;
+  }
+
+  // Hovering the headline Win Rate card reveals the real win/loss count
+  // it's computed from - the same num_wins/num_losses the stats grid
+  // below already shows as its own separate tiles, just surfaced here
+  // too since a visitor glancing only at the headline row otherwise has
+  // no way to see "37% of *what*" without scrolling down.
+  function winRateTooltip(card, p) {
+    if (p.win_rate === null || p.num_wins === undefined || p.num_losses === undefined) {
+      card.removeAttribute("data-tooltip");
+      return;
+    }
+    const wins = `${p.num_wins} win${p.num_wins === 1 ? "" : "s"}`;
+    const losses = `${p.num_losses} loss${p.num_losses === 1 ? "" : "es"}`;
+    card.setAttribute("data-tooltip", `${wins} · ${losses}`);
+  }
+
   function renderMetricRow(period) {
     const p = dashboard.periods[period];
     document.querySelectorAll(".metric-card[data-metric]").forEach((card) => {
       const key = card.dataset.metric;
       const def = METRIC_DEFS[key];
       if (!def) return;
-      const { text, cls } = def(p);
-      setMetric(card.querySelector("[data-value]"), text, cls);
+      const { raw, fmt, cls } = def(p);
+      animateMetric(card.querySelector("[data-value]"), raw, fmt, cls);
       const sparkEl = card.querySelector("[data-spark]");
       if (sparkEl) renderSpark(sparkEl, p);
+      if (key === "win_rate") winRateTooltip(card, p);
     });
   }
 
@@ -272,8 +331,9 @@
       <div class="position-card ${trend}" data-symbol="${p.ticker}" data-is-crypto="${p.is_crypto}" tabindex="0" role="button" aria-haspopup="dialog">
         <div class="position-card-head">
           <span class="position-card-ticker">${p.symbol}</span>
-          <span class="position-card-strategy">${strategyLabel}</span>
+          <span class="position-card-strategy strategy-${strategyLabel}">${strategyLabel}</span>
         </div>
+        ${cardSparkHtml(p.spark, "position-card-spark")}
         <div class="position-card-row"><span>Qty</span><span>${fmtQty(p.qty)}</span></div>
         <div class="position-card-row"><span>Avg Entry</span><span>${fmtUsd(p.avg_entry_price)}</span></div>
         <div class="position-card-row"><span>Current</span><span>${fmtUsd(p.current_price)}</span></div>
@@ -346,6 +406,7 @@
           <span class="tracker-card-ticker">${row.ticker}</span>
           ${heldBadge}
         </div>
+        ${cardSparkHtml(row.spark, "tracker-card-spark")}
         ${body}
         <div class="tracker-card-hint">View chart →</div>
       </div>`;
@@ -384,6 +445,14 @@
     not_placed: "badge-notplaced",
   };
 
+  // One consistent per-strategy accent color everywhere a strategy name
+  // shows up as its own pill (Trade History's Strategy column, the
+  // trade detail modal) - see the .strategy-pill/.strategy-* CSS rules.
+  function strategyPillHtml(strategy) {
+    const key = strategy || "unknown";
+    return `<span class="strategy-pill strategy-${key}">${key}</span>`;
+  }
+
   function ledgerRowHtml(t) {
     const pnlCls = t.realized_pnl_usd === null ? "" : (t.realized_pnl_usd >= 0 ? "pnl-positive" : "pnl-negative");
     const qtyOrNotional = t.notional_usd !== null ? fmtUsd(t.notional_usd) : fmtQty(t.position_qty_before);
@@ -394,7 +463,7 @@
         <td>${fmtEt(t.timestamp_utc)}</td>
         <td>${t.asset_class}</td>
         <td>${t.ticker}</td>
-        <td>${t.strategy}</td>
+        <td>${strategyPillHtml(t.strategy)}</td>
         <td>${t.action}</td>
         <td>${fmtUsd(t.price_usd)}${t.price_is_confirmed_fill ? "" : " (est.)"}</td>
         <td>${qtyOrNotional}</td>
@@ -522,7 +591,7 @@
     document.getElementById("trade-modal-sub").textContent = `${fmtEt(t.timestamp_utc)} · ${t.mode || "—"} · ${t.asset_class}`;
 
     const rows = [
-      tradeDetailRow("Strategy", t.strategy || "unknown"),
+      tradeDetailRow("Strategy", strategyPillHtml(t.strategy)),
       tradeDetailRow("Status", `<span class="badge ${STATUS_BADGE_CLASS[t.order_status] || ""}">${STATUS_LABEL[t.order_status] || t.order_status}</span>`),
       tradeDetailRow("Price", `${fmtUsd(t.price_usd)}${t.price_is_confirmed_fill ? " (confirmed fill)" : " (decision-time estimate - fill not confirmed)"}`),
       t.notional_usd !== null ? tradeDetailRow("Notional", fmtUsd(t.notional_usd)) : tradeDetailRow("Qty held before this trade", fmtQty(t.position_qty_before)),
@@ -567,7 +636,7 @@
     const label = STRATEGY_LABELS[strategyKey] || strategyKey;
     const avgPerTrade = stats.num_trades ? stats.realized_pnl_usd / stats.num_trades : null;
     return `
-      <div class="strategy-card">
+      <div class="strategy-card strategy-${strategyKey}">
         <div class="strategy-card-head"><span class="strategy-card-name">${label}</span></div>
         <div class="strategy-card-row"><span>Trades</span><span>${stats.num_trades}</span></div>
         <div class="strategy-card-row"><span>Win Rate</span><span>${stats.win_rate === null ? "—" : (stats.win_rate * 100).toFixed(0) + "%"}</span></div>

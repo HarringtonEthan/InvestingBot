@@ -1,7 +1,7 @@
 """
-Generates the static JSON files the casino dashboard website (site/) reads -
-the website's entire backend, in effect: no server, no database, just
-plain files this script writes and a browser fetches directly.
+Generates the static JSON files the InvestingBot dashboard website (site/)
+reads - the website's entire backend, in effect: no server, no database,
+just plain files this script writes and a browser fetches directly.
 
 Run by the exact same scheduled process that used to only render
 results/trade_dashboard.png (see .github/workflows/update-dashboard.yml) -
@@ -13,14 +13,17 @@ for "what actually happened," not a second copy that could drift.
 Writes eight files into --out-dir (default site/data/):
   - dashboard.json: account totals (cash/equity/buying power) plus a full
     Today/This Week/This Month/All-Time breakdown - the numbers behind
-    every slot-machine reel and stat tile on the page.
+    every stat tile on the page.
   - positions.json: current open positions (crypto + stocks), only
     populated with --live-positions (same opt-in flag visualize_log.py
     already uses) - a read-only Alpaca query, never an order. Each
     position also carries its bare "ticker" (e.g. "BTC" for Alpaca's own
     "BTCUSD" symbol - see _position_ticker) so the frontend's click-to-
     chart feature can key straight into ticker_charts.json below without
-    reimplementing that conversion in JS.
+    reimplementing that conversion in JS. Also carries a small "spark"
+    array (~20 sampled recent daily closes, see _sparkline_closes) for
+    the card's own inline sparkline - small enough to publish
+    unconditionally, unlike ticker_charts.json's full range data below.
   - position_indicators.json: for each currently open rule_based/
     ml_filtered position, how far its current price sits above/below its
     own trailing 20-period SMA (pct_below_sma20) and the exit threshold
@@ -48,9 +51,11 @@ Writes eight files into --out-dir (default site/data/):
     trailing 100-day SMA, trailing 20-period/5-minute SMA (the same
     signal rule_based/ml_filtered's own sell rule is measured against,
     computed here for every watched ticker rather than only currently-
-    held ones), and whether it's currently held (and if so, in profit or
-    at a loss) - see build_ticker_tracker. Only populated with
-    --live-positions, same as positions.json above.
+    held ones), a small "spark" array for its own card sparkline (the
+    tail of the same 100-day-SMA fetch above, no second fetch needed),
+    and whether it's currently held (and if so, in profit or at a loss)
+    - see build_ticker_tracker. Only populated with --live-positions,
+    same as positions.json above.
   - ticker_charts.json: per-ticker price history behind every card's
     click-to-expand chart sitewide - the Ticker Tracker tab AND every
     position card on the Positions tab/charts.html both read this same
@@ -660,6 +665,14 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
     positions, error = live_positions_result
     if error is not None:
         return {"available": False, "reason": error, "positions": []}
+
+    from src.alpaca_data import get_crypto_bars_range, get_stock_bars_range
+    from src.symbols import resolve_symbol
+
+    now_utc = dt.datetime.now(dt.timezone.utc)
+    start_date = (now_utc - dt.timedelta(days=SPARK_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+    end_date = (now_utc + dt.timedelta(days=1)).strftime("%Y-%m-%d")
+
     enriched = []
     for p in positions:
         # The trade log's own "ticker" column always uses the bare form
@@ -673,8 +686,56 @@ def build_positions_payload(live_positions_result: tuple[list[dict], str | None]
         # bare form build_ticker_charts already uses, instead of
         # reimplementing this conversion in JS.
         ticker = _position_ticker(p["symbol"], p["is_crypto"])
-        enriched.append({**p, "ticker": ticker, "strategy": attribute_position_strategy(trades_df, ticker)})
+        # Card sparkline: a small number of open positions at any given
+        # time makes a dedicated short fetch per position cheap - unlike
+        # ticker_charts.json's full range data, this is small enough to
+        # publish unconditionally rather than gating behind a click. One
+        # ticker's fetch failing (delisted, rate-limited, etc.) never
+        # blocks any other position's card or its own other fields.
+        try:
+            if p["is_crypto"]:
+                spark_df = get_crypto_bars_range(resolve_symbol(ticker).alpaca, "1d", start_date, end_date)
+            else:
+                spark_df = get_stock_bars_range(ticker, "1d", start_date, end_date)
+            spark = _sparkline_closes(spark_df)
+        except Exception:
+            spark = []
+        enriched.append({**p, "ticker": ticker, "strategy": attribute_position_strategy(trades_df, ticker), "spark": spark})
     return {"available": True, "reason": None, "positions": enriched}
+
+
+# How many points a card sparkline (positions.json/ticker_tracker.json's
+# "spark" field) samples down to - just enough to show real recent shape
+# at a glance, small enough that publishing one per watched ticker never
+# meaningfully grows page weight (unlike ticker_charts.json's full
+# range data, which is why that file stays fetched on-demand instead).
+SPARK_MAX_POINTS = 20
+
+# Daily-bar lookback for a position card's own sparkline fetch - shorter
+# than ticker_tracker's own 220-day window (TICKER_TRACKER_LOOKBACK_DAYS
+# below) since a sparkline only needs to show recent shape, not enough
+# history to compute a trailing 100-day average.
+SPARK_LOOKBACK_DAYS = 45
+
+
+def _sparkline_closes(df: pd.DataFrame, max_points: int = SPARK_MAX_POINTS) -> list[float]:
+    """
+    Same even-stride-plus-keep-the-last-bar downsampling as _thin_points,
+    but returns bare close prices (no timestamps) - a card sparkline only
+    ever draws relative shape, never exact times, so publishing timestamps
+    here would just be wasted bytes repeated for every watched ticker.
+    """
+    if df is None or df.empty or "Close" not in df.columns:
+        return []
+    closes = df["Close"].dropna()
+    n = len(closes)
+    if n < 2:
+        return []
+    if n > max_points:
+        step = max(1, n // max_points)
+        keep_idx = sorted(set(range(0, n, step)) | {n - 1})
+        closes = closes.iloc[keep_idx]
+    return [round(float(v), 6) for v in closes]
 
 
 # Cap on published points per symbol/range - keeps ticker_charts.json
@@ -919,6 +980,11 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
                 df = get_stock_bars_range(ticker, "1d", start_date, end_date)
             sma_series = df["Close"].rolling(TICKER_TRACKER_SMA_PERIODS).mean().dropna()
             current_price = float(df["Close"].iloc[-1])
+            # Card sparkline: the last ~45 daily bars of the same df
+            # already fetched for the 100-day average above - recent
+            # shape, not the full 220-day window compressed down, and
+            # free (no second fetch) since df is already in memory.
+            row["spark"] = _sparkline_closes(df.tail(45))
             if sma_series.empty:
                 row.update(available=False, reason="not enough trailing daily bars yet to compute a 100-day average",
                             last_close=current_price, sma100=None, pct_vs_sma100=None)
@@ -929,7 +995,7 @@ def build_ticker_tracker(live_positions_result: tuple[list[dict], str | None] | 
         except Exception as e:
             # Same non-blocking reasoning as build_position_price_histories:
             # one ticker's bars being unfetchable never blocks the rest.
-            row.update(available=False, reason=f"{type(e).__name__}: {e}", last_close=None, sma100=None, pct_vs_sma100=None)
+            row.update(available=False, reason=f"{type(e).__name__}: {e}", last_close=None, sma100=None, pct_vs_sma100=None, spark=[])
 
         # Independent second fetch/metric: the same 20-period/5-minute
         # SMA rule_based/ml_filtered's own sell rule is measured against

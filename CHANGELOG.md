@@ -17,6 +17,68 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.19.0 - 2026-07-31
+
+- **Count-up animation on the headline metric cards** - switching Today/
+  This Week/This Month/All Time now animates each number from its
+  previous value to the new real one (~650ms, eased) instead of an
+  instant snap. Purely cosmetic: the number it lands on is always the
+  same exact real value a snap would have shown, and it's skipped
+  entirely under prefers-reduced-motion or on first paint (no counting
+  up from zero on load, which would itself read as a fabricated
+  intermediate value).
+- **Mini sparklines on every position/tracker card** - `site_data.py`
+  now publishes a small `spark` array (~20 sampled recent daily closes)
+  per ticker in both `positions.json` and `ticker_tracker.json`, reusing
+  data already being fetched for other fields wherever possible (the
+  ticker tracker's spark comes from the same 100-day-average df already
+  in memory, no second fetch) or a small dedicated 45-day fetch
+  otherwise. Small enough to publish unconditionally, unlike
+  `ticker_charts.json`'s full range data (why that file stays fetched
+  on-demand). Reuses the exact same sparkline renderer the headline
+  equity card already draws with.
+- **A real Open Graph / Twitter Card social preview.** Both pages now
+  carry `og:*`/`twitter:*` meta tags pointing at a new branded
+  `assets/og-image.png` (1200x630, the account/brand mark plus the site's
+  own tagline) - previously, sharing either page's link anywhere would
+  have shown as bare, unbranded text.
+- **One consistent accent color per strategy** (`rule_based`/
+  `ml_filtered`/`day_trading`), reused everywhere a strategy name
+  appears - Trade History's Strategy column, the trade detail modal,
+  position/tracker cards, and the Strategies tab's own card border - so
+  the eye learns to tell them apart across the whole site instead of
+  reading every instance as plain undifferentiated text.
+- **Scroll-linked parallax on the ambient background** - the existing
+  cursor-parallax glow layers (`assets/background.js`) now also drift a
+  little at a fraction of the page's own scroll speed, so the backdrop
+  reads as sitting behind the content rather than pinned flat to the
+  viewport. Applies on touch devices too, unlike the cursor parallax,
+  since scrolling has nothing to do with pointer capability.
+- **Hovering the headline Win Rate card** reveals the real win/loss
+  count it's computed from (e.g. "3 wins · 1 loss") - the same
+  `num_wins`/`num_losses` the stats grid below already shows as separate
+  tiles, surfaced here too since the headline row alone otherwise gives
+  no way to see "37% of *what*" without scrolling down.
+- **A branded empty-state glyph** - the generic sparkline-and-dot icon
+  shown on every "nothing here yet" panel (positions, ticker tracker,
+  trade history, chart cards) is now a simplified version of the
+  account's own robot-head-plus-rising-bars mark (`assets/logo.svg`),
+  tying "nothing here yet" back to the brand instead of a generic icon.
+- Also fixed a stray pre-rebrand "casino dashboard" reference left over
+  in `site_data.py`'s own module docstring from before the InvestingBot
+  rebrand (0.9-ish era) - purely a comment/documentation fix, no
+  behavior change.
+- 6 new tests (`_sparkline_closes`'s downsampling/empty-input behavior,
+  `build_positions_payload`/`build_ticker_tracker`'s own spark-field
+  wiring and per-ticker fetch-failure isolation) - 230 tests total, all
+  passing. Verified end-to-end with Playwright in both themes: the
+  count-up animation lands on the correct real number, the Win Rate
+  hover tooltip shows the real win/loss breakdown, strategy pills render
+  with the right color in the Trade History table and the Strategies
+  tab's card border, the scroll-parallax offset applies without
+  throwing, and the OG image renders correctly at 1200x630.
+- Cache-busting bumped to `?v=0.19.0`.
+
 ## Version Richards 0.18.0 - 2026-07-31
 
 - **Per-ticker "report card"** in the chart modal: opening any ticker's
