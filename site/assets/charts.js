@@ -49,6 +49,11 @@
   let charts = {};
   let zoom = null;
   let tooltipLocked = false;
+  // Same live-ticking "(2m ago)" as index.html's dashboard.js - see that
+  // file's fmtRelativeTime for the reasoning; duplicated here rather
+  // than shared since these two pages already each own their own boot/
+  // load functions.
+  let generatedAtMs = null;
 
   // text/grid read the live theme (assets/theme.js's data-theme attribute
   // on <html>) instead of a fixed value - the other colors here are all
@@ -136,6 +141,20 @@
     const d = toDate(iso);
     if (!d) return "—";
     return `${fmtDateET(iso)} at ${fmtTimeET(iso)}`;
+  }
+  function fmtRelativeTime(fromMs) {
+    if (fromMs === null || Number.isNaN(fromMs)) return "";
+    const diffSec = Math.max(0, Math.round((Date.now() - fromMs) / 1000));
+    if (diffSec < 45) return " (just now)";
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return ` (${diffMin}m ago)`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return ` (${diffHr}h ago)`;
+    return ` (${Math.round(diffHr / 24)}d ago)`;
+  }
+  function tickLastUpdatedRelative() {
+    const el = document.getElementById("last-updated-relative");
+    if (el) el.textContent = fmtRelativeTime(generatedAtMs);
   }
   function axisLabel(iso, multiDay) {
     const d = toDate(iso);
@@ -816,9 +835,12 @@
       `<polyline points="${pts.join(" ")}" fill="none" stroke="${color}" stroke-width="1.6" ` +
       `stroke-linejoin="round" stroke-linecap="round"></polyline></svg>`;
   }
+  // Same "what is this" ambiguity index.html's dashboard.js flags on its
+  // own version of this card - see that file's SPARK_TOOLTIP comment.
+  const SPARK_TOOLTIP = "Last ~45 days of daily closes - not since purchase, not an average";
   function cardSparkHtml(spark) {
     if (!Array.isArray(spark) || spark.length < 2) return "";
-    return `<div class="position-card-spark">${sparkSvg(spark)}</div>`;
+    return `<div class="position-card-spark" data-tooltip="${SPARK_TOOLTIP}" aria-label="${SPARK_TOOLTIP}">${sparkSvg(spark)}</div>`;
   }
 
   function positionCard(p) {
@@ -965,6 +987,9 @@
 
     const lu = document.getElementById("last-updated");
     if (lu) lu.textContent = `Last updated: ${fmtDateTimeET(dashboard.generated_at_utc)}`;
+    generatedAtMs = new Date(dashboard.generated_at_utc).getTime();
+    tickLastUpdatedRelative();
+    setInterval(tickLastUpdatedRelative, 30000);
     const note = document.getElementById("data-note");
     if (note) {
       note.textContent =

@@ -37,12 +37,16 @@ Writes eight files into --out-dir (default site/data/):
     MAX_TRADES_PUBLISHED for page weight), each carrying its own
     order_status (confirmed_fill / submitted_unconfirmed / not_placed -
     see classify_order_status() below for why those are the only three
-    honest categories this project's logs can actually support). Also
-    writes trades_full.csv alongside it - every trade ever logged,
-    uncapped, same enriched fields, for the site's own "Download full
-    CSV" link (see _trade_row_json), so real analysis beyond what the
-    page itself renders doesn't require digging through the raw
-    logs/*.csv files on GitHub.
+    honest categories this project's logs can actually support). With
+    --live-positions, a recent submitted_unconfirmed row also gets
+    checked against Alpaca's own real order history and corrected to
+    confirmed_fill if it turns out to have actually filled shortly after
+    live_trade.py's own poll_for_fill() gave up waiting - see
+    reconcile_unconfirmed_fills(). Also writes trades_full.csv alongside
+    it - every trade ever logged, uncapped, same enriched fields, for the
+    site's own "Download full CSV" link (see _trade_row_json), so real
+    analysis beyond what the page itself renders doesn't require digging
+    through the raw logs/*.csv files on GitHub.
   - equity.json: the raw combined equity timeline, for the equity-curve
     chart.
   - ticker_tracker.json: every ticker either live workflow watches (see
@@ -1302,6 +1306,110 @@ def fetch_live_positions():
         return [], f"{type(e).__name__}: {e}", None, None, None
 
 
+# How far back a submitted_unconfirmed row is still worth reconciling -
+# older than this, not worth another Alpaca query; if it hasn't filled by
+# then it likely never will (a stock BUY is a DAY order and expires at
+# market close if genuinely never filled).
+RECONCILE_WINDOW_DAYS = 3
+# How close a real filled order's own fill timestamp has to be to a trade
+# log row's own logged timestamp to count as "the same order" - generous
+# enough to cover Alpaca's occasionally-slow notional/fractional fills
+# (observed in practice: a real buy that filled about two minutes after
+# being logged), tight enough that two genuinely different orders for the
+# same ticker/side essentially never both fall inside it - already
+# structurally unlikely since has_open_order() (live_trade.py) stops a
+# second BUY from ever stacking on an unfilled one for the same ticker.
+RECONCILE_MATCH_MINUTES = 20
+
+
+def reconcile_unconfirmed_fills(trades_df: pd.DataFrame | None) -> pd.DataFrame | None:
+    """
+    live_trade.py's poll_for_fill() only waits a few seconds for Alpaca to
+    confirm a just-submitted order before giving up and logging it as
+    "submitted_unconfirmed" - honest at the time, but Alpaca's own paper-
+    trading engine can take noticeably longer to actually fill a notional/
+    fractional order (real example that prompted this: an AAPL buy that
+    filled about two minutes after being logged, and an XOM buy that
+    filled within about a minute - both genuinely executed, just slower
+    than the poll window). Without this, a trade that DID fill stays
+    mislabeled "unconfirmed" - and its price shown as a stale decision-
+    time estimate - forever, which reads as something went wrong when
+    nothing did.
+
+    This corrects the DISPLAYED data only - trade_log_*.csv itself is
+    never rewritten, so it stays exactly what live_trade.py actually
+    observed at decision time. Same "enrich with live context, never
+    rewrite history" pattern positions.json/ticker_tracker.json's own
+    --live-positions data already uses.
+
+    Best-effort and non-blocking, same as every other --live-positions
+    feature in this file: any failure (missing credentials, network
+    error, nothing eligible to check) leaves trades_df exactly as
+    load_trades() returned it.
+    """
+    if trades_df is None or trades_df.empty or "order_status" not in trades_df.columns:
+        return trades_df
+    cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=RECONCILE_WINDOW_DAYS)
+    eligible_mask = (trades_df["order_status"] == "submitted_unconfirmed") & (trades_df["timestamp_utc"] >= cutoff)
+    if not eligible_mask.any():
+        return trades_df
+
+    try:
+        from src.broker import Broker
+        from src.symbols import resolve_symbol
+
+        broker = Broker(allow_live=True)  # read-only query - never places an order
+        since = (trades_df.loc[eligible_mask, "timestamp_utc"].min() - pd.Timedelta(minutes=RECONCILE_MATCH_MINUTES)).to_pydatetime()
+        filled_orders = broker.list_recent_filled_orders(since)
+    except Exception:
+        return trades_df
+    if not filled_orders:
+        return trades_df
+
+    tolerance = pd.Timedelta(minutes=RECONCILE_MATCH_MINUTES)
+    for idx, row in trades_df.loc[eligible_mask].iterrows():
+        try:
+            alpaca_symbol = resolve_symbol(row["ticker"]).alpaca
+        except Exception:
+            continue
+        side = str(row["action"]).lower()
+        row_ts = row["timestamp_utc"]
+        best, best_gap = None, None
+        for order in filled_orders:
+            if order["symbol"] != alpaca_symbol or order["side"] != side or order["filled_at"] is None:
+                continue
+            gap = abs(pd.Timestamp(order["filled_at"]) - row_ts)
+            if gap > tolerance:
+                continue
+            if best_gap is None or gap < best_gap:
+                best, best_gap = order, gap
+        if best is None or best["filled_avg_price"] is None:
+            continue
+        trades_df.at[idx, "price_usd"] = best["filled_avg_price"]
+        trades_df.at[idx, "order_status"] = "confirmed_fill"
+        trades_df.at[idx, "notes"] = (
+            f"Confirmed after the fact via reconciliation - Alpaca's own order "
+            f"history shows this filled at ${best['filled_avg_price']:.6f}, about "
+            f"{int(best_gap.total_seconds())}s after being logged as unconfirmed "
+            f"(poll_for_fill's window had already elapsed)."
+        )
+
+    # Re-derive is_confirmed_sell/realized_pnl_usd from the (possibly
+    # just-corrected) order_status column - same computation load_trades()
+    # itself already does. A newly-confirmed SELL should count toward
+    # realized P&L exactly like one that confirmed within the poll window.
+    trades_df["is_confirmed_sell"] = (trades_df["action"] == "SELL") & (trades_df["order_status"] == "confirmed_fill")
+    realized = pd.Series(float("nan"), index=trades_df.index)
+    confirmed = trades_df["is_confirmed_sell"]
+    if confirmed.any():
+        realized[confirmed] = (
+            pd.to_numeric(trades_df.loc[confirmed, "price_usd"])
+            - pd.to_numeric(trades_df.loc[confirmed, "avg_entry_price_usd"], errors="coerce")
+        ) * trades_df.loc[confirmed, "position_qty_before"]
+    trades_df["realized_pnl_usd"] = realized
+    return trades_df
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--equity-log", nargs="+", default=DEFAULT_EQUITY_LOGS)
@@ -1325,6 +1433,12 @@ def main():
     unrealized_by_class: dict[str, float] = {}
     live_result = None
     if args.live_positions:
+        # Needs the same live Alpaca access --live-positions already
+        # opts into, so it only runs here - see reconcile_unconfirmed_
+        # fills's own docstring for why this never touches the CSV logs
+        # themselves, only this in-memory copy every downstream JSON/CSV
+        # output below is built from.
+        trades_df = reconcile_unconfirmed_fills(trades_df)
         positions, error, cash, equity, buying_power = fetch_live_positions()
         live_result = (positions, error)
         if error is None:

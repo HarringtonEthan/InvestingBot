@@ -79,3 +79,31 @@ def test_get_buying_power_returns_account_field():
     broker = _broker_with_mock_client()
     broker.client.get_account.return_value = SimpleNamespace(buying_power="12345.67")
     assert broker.get_buying_power() == 12345.67
+
+
+def test_list_recent_filled_orders_excludes_non_filled_and_shapes_output():
+    import datetime as dt
+
+    from alpaca.trading.enums import OrderSide, OrderStatus
+
+    broker = _broker_with_mock_client()
+    filled = SimpleNamespace(
+        symbol="AAPL", side=OrderSide.BUY, status=OrderStatus.FILLED,
+        filled_qty="6.61153719", filled_avg_price="302.65",
+        filled_at="2026-07-31T09:33:15Z",
+    )
+    # A DAY order that expired unfilled at market close - must never be
+    # mistaken for a real fill just because it's in the same "closed"
+    # status batch Alpaca's own filter returns.
+    canceled = SimpleNamespace(
+        symbol="XOM", side=OrderSide.BUY, status=OrderStatus.CANCELED,
+        filled_qty=None, filled_avg_price=None, filled_at=None,
+    )
+    broker.client.get_orders.return_value = [filled, canceled]
+    result = broker.list_recent_filled_orders(since=dt.datetime(2026, 7, 31, tzinfo=dt.timezone.utc))
+    assert len(result) == 1
+    assert result[0]["symbol"] == "AAPL"
+    assert result[0]["side"] == "buy"
+    assert result[0]["filled_qty"] == 6.61153719
+    assert result[0]["filled_avg_price"] == 302.65
+    assert result[0]["filled_at"] == "2026-07-31T09:33:15Z"

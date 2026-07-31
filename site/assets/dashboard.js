@@ -201,13 +201,19 @@
   // Position/tracker card sparklines - a small "spark" array of sampled
   // recent closes site_data.py already publishes per ticker (see
   // build_positions_payload/build_ticker_tracker's own _sparkline_closes
-  // calls). Reuses the exact same sparklineSvg() the headline equity
-  // card draws with, just fed a different series - one sparkline
-  // renderer for the whole site, not two. Omitted entirely (not drawn
-  // as a flat/fabricated line) when a ticker's own spark fetch failed.
+  // calls: the last ~45 calendar days of daily closes, not since-
+  // purchase and not a rolling average - just recent raw price shape).
+  // Reuses the exact same sparklineSvg() the headline equity card draws
+  // with, just fed a different series - one sparkline renderer for the
+  // whole site, not two. Omitted entirely (not drawn as a flat/
+  // fabricated line) when a ticker's own spark fetch failed. The hover
+  // tooltip/aria-label exists because this had no on-card label at all
+  // before and was genuinely ambiguous with the "vs 100-day avg" text
+  // sitting right next to it on the same card.
+  const SPARK_TOOLTIP = "Last ~45 days of daily closes - not since purchase, not an average";
   function cardSparkHtml(spark, cls) {
     if (!Array.isArray(spark) || spark.length < 2) return "";
-    return `<div class="${cls}">${sparklineSvg(spark)}</div>`;
+    return `<div class="${cls}" data-tooltip="${SPARK_TOOLTIP}" aria-label="${SPARK_TOOLTIP}">${sparklineSvg(spark)}</div>`;
   }
 
   // Hovering the headline Win Rate card reveals the real win/loss count
@@ -280,6 +286,28 @@
   // ---------------------------------------------------------------------
   // Account strip (cash / buying power / equity) - independent of period
   // ---------------------------------------------------------------------
+  // Live-ticking "(2m ago)" next to the absolute timestamp, so it's
+  // obvious at a glance the page is actually current without needing to
+  // reload - re-rendered on an interval below, purely from the one
+  // generated_at_utc timestamp already loaded, no refetch involved.
+  let generatedAtMs = null;
+
+  function fmtRelativeTime(fromMs) {
+    if (fromMs === null || Number.isNaN(fromMs)) return "";
+    const diffSec = Math.max(0, Math.round((Date.now() - fromMs) / 1000));
+    if (diffSec < 45) return " (just now)";
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return ` (${diffMin}m ago)`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return ` (${diffHr}h ago)`;
+    return ` (${Math.round(diffHr / 24)}d ago)`;
+  }
+
+  function tickLastUpdatedRelative() {
+    const el = document.getElementById("last-updated-relative");
+    if (el) el.textContent = fmtRelativeTime(generatedAtMs);
+  }
+
   function renderAccountStrip() {
     const a = dashboard.account;
     document.getElementById("stat-cash").textContent = fmtUsd(a.cash_usd);
@@ -288,6 +316,8 @@
     document.getElementById("last-updated").textContent =
       `Last updated: ${fmtEt(dashboard.generated_at_utc)} (${dashboard.generated_at_utc} UTC)` +
       (a.available ? "" : " — live account figures unavailable this run, showing logged data only");
+    generatedAtMs = new Date(dashboard.generated_at_utc).getTime();
+    tickLastUpdatedRelative();
   }
 
   // ---------------------------------------------------------------------
@@ -838,6 +868,12 @@
     safely("trade history", renderLedger);
     safely("backtest comparison", renderBacktestComparison);
     safely("period metrics", () => renderPeriod(currentPeriod));
+
+    // Just a text refresh, not animation - runs regardless of prefers-
+    // reduced-motion. 30s is frequent enough that "(2m ago)" never
+    // visibly sits wrong for long, without doing anything on every tick
+    // beyond one Date.now() and a textContent write.
+    setInterval(tickLastUpdatedRelative, 30000);
   }
 
   document.addEventListener("DOMContentLoaded", boot);

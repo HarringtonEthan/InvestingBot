@@ -500,7 +500,11 @@ main, .page-shell { position: relative; z-index: 1; max-width: 1200px; margin: 0
   padding: 6px 11px;
   font-size: 0.72rem;
   font-weight: 600;
-  white-space: nowrap;
+  white-space: normal;
+  width: max-content;
+  max-width: 220px;
+  text-align: center;
+  line-height: 1.4;
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.15s ease, transform 0.15s ease;

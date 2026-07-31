@@ -23,7 +23,7 @@ from alpaca.trading.client import TradingClient
 # order should remain active before it's cancelled automatically, and
 # (AssetClass) telling a crypto position apart from a stock one using
 # Alpaca's own classification rather than re-deriving it from the symbol.
-from alpaca.trading.enums import AssetClass, OrderSide, QueryOrderStatus, TimeInForce
+from alpaca.trading.enums import AssetClass, OrderSide, OrderStatus, QueryOrderStatus, TimeInForce
 # Request payload builders: one for listing orders with filters, one for
 # submitting a new market order.
 from alpaca.trading.requests import GetOrdersRequest, MarketOrderRequest
@@ -191,6 +191,32 @@ class Broker:
         filled_avg_price) rather than assuming submission == execution.
         """
         return self.client.get_order_by_id(order_id)
+
+    def list_recent_filled_orders(self, since) -> list[dict]:
+        """
+        Every order Alpaca has actually filled since `since` (a datetime),
+        used to reconcile a trade log row live_trade.py's own
+        poll_for_fill() logged as "fill not confirmed within the polling
+        window" against what really happened - Alpaca's paper-trading
+        engine can take noticeably longer than that few-second poll to
+        actually fill a notional/fractional order, especially one that
+        fills via more than one partial execution (site_data.py's
+        reconcile_unconfirmed_fills is the caller). Read-only, same as
+        every other method here - never places or modifies an order.
+        """
+        request = GetOrdersRequest(status=QueryOrderStatus.CLOSED, after=since, limit=500)
+        orders = self.client.get_orders(filter=request)
+        return [
+            {
+                "symbol": o.symbol,
+                "side": o.side.value,
+                "filled_qty": float(o.filled_qty) if o.filled_qty is not None else None,
+                "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price is not None else None,
+                "filled_at": o.filled_at,
+            }
+            for o in orders
+            if o.status == OrderStatus.FILLED
+        ]
 
     def buy_notional(self, symbol: str, notional: float, is_crypto: bool = False):
         # Crypto orders on Alpaca don't support DAY (there's no market

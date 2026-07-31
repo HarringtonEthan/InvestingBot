@@ -1,9 +1,9 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.19.0
+# InvestingBot — Version Richards 0.20.0
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Tests: 230 passing](https://img.shields.io/badge/tests-230%20passing-4c9a2a)](tests/)
+[![Tests: 239 passing](https://img.shields.io/badge/tests-239%20passing-4c9a2a)](tests/)
 [![Mode: paper trading only](https://img.shields.io/badge/mode-paper%20trading%20only-orange)](docs/RISK.md)
 [![Demonstrated edge: not yet](https://img.shields.io/badge/demonstrated%20edge-not%20yet-lightgrey)](CHANGELOG.md)
 

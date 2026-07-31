@@ -17,6 +17,41 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.20.0 - 2026-07-31
+
+- **Fixed: a real trade that filled was staying mislabeled "Submitted,
+  Unconfirmed" forever.** `live_trade.py`'s `poll_for_fill()` only waits
+  a few seconds for Alpaca to confirm a just-submitted order before
+  giving up - reported by a user who checked Alpaca's own activity log
+  and found two stock buys (AAPL, XOM) that genuinely filled, just
+  roughly one to two minutes after being logged, well outside that
+  short window. New `Broker.list_recent_filled_orders()` plus
+  `site_data.py`'s `reconcile_unconfirmed_fills()`: with
+  `--live-positions`, any `submitted_unconfirmed` row from the last 3
+  days now gets checked against Alpaca's own real order history and
+  corrected to `confirmed_fill` (with the real fill price, and the real
+  realized P&L recomputed if it was a SELL) if a matching filled order
+  actually exists. This corrects the DISPLAYED data only -
+  `trade_log_*.csv` itself is never rewritten, so it stays exactly what
+  `live_trade.py` observed at decision time; the correction lives only
+  in `trades.json`/`trades_full.csv`, the same "enrich with live
+  context, never rewrite history" pattern `positions.json`'s own
+  `--live-positions` data already uses.
+- **Live-updating "(2m ago)"** next to the "Last updated" timestamp on
+  both pages, ticking on a 30s client-side interval (no refetch) - makes
+  it obvious at a glance the page is actually current without needing to
+  reload.
+- **Clarified what the new card sparklines actually show** - they had no
+  label at all and were genuinely ambiguous next to the "vs 100-day avg"
+  text already on the same card. A hover tooltip (and `aria-label`) now
+  says plainly: last ~45 days of daily closes, not since purchase, not a
+  rolling average.
+- 9 new tests (`reconcile_unconfirmed_fills`'s matching/tolerance/window
+  logic and non-blocking failure handling, `Broker.
+  list_recent_filled_orders`'s filled-only filtering) - 239 tests total,
+  all passing.
+- Cache-busting bumped to `?v=0.20.0`.
+
 ## Version Richards 0.19.0 - 2026-07-31
 
 - **Count-up animation on the headline metric cards** - switching Today/

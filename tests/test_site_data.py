@@ -38,6 +38,7 @@ from site_data import (
     find_account_relaunch,
     period_bounds,
     position_entry_timestamp,
+    reconcile_unconfirmed_fills,
     summarize_period,
 )
 
@@ -1355,3 +1356,158 @@ def test_trade_row_json_handles_blank_optional_fields_honestly():
     assert result["avg_entry_price_usd"] is None
     assert result["notional_usd"] is None
     assert result["realized_pnl_usd"] is None
+
+
+# ---- reconcile_unconfirmed_fills: poll_for_fill (live_trade.py) only
+# waits a few seconds for Alpaca to confirm a fill before giving up and
+# logging "submitted_unconfirmed" - but a real order can (and, per a real
+# AAPL/XOM buy that prompted this, sometimes does) go on to fill a minute
+# or two later. This corrects the DISPLAYED row against Alpaca's own real
+# order history, never the underlying CSV log itself. ----
+
+UNCONFIRMED_NOTE = "Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
+
+
+def _reconcilable_trades_df(rows: list[dict]) -> pd.DataFrame:
+    # Mirrors exactly what load_trades() itself computes (order_status/
+    # is_confirmed_sell/realized_pnl_usd), since reconcile_unconfirmed_
+    # fills expects to receive trades_df in that already-classified shape.
+    df = _trades_df(rows)
+    df["order_status"] = df.apply(classify_order_status, axis=1)
+    df["is_confirmed_sell"] = (df["action"] == "SELL") & (df["order_status"] == "confirmed_fill")
+    realized = pd.Series(float("nan"), index=df.index)
+    confirmed = df["is_confirmed_sell"]
+    if confirmed.any():
+        realized[confirmed] = (
+            pd.to_numeric(df.loc[confirmed, "price_usd"])
+            - pd.to_numeric(df.loc[confirmed, "avg_entry_price_usd"], errors="coerce")
+        ) * df.loc[confirmed, "position_qty_before"]
+    df["realized_pnl_usd"] = realized
+    return df
+
+
+class _FakeReconcileBroker:
+    """A minimal src.broker.Broker stand-in - only the one method
+    reconcile_unconfirmed_fills actually calls, so a monkeypatched
+    src.broker.Broker() never needs real Alpaca credentials in a test."""
+    orders: list[dict] = []
+
+    def __init__(self, allow_live: bool = True):
+        pass
+
+    def list_recent_filled_orders(self, since):
+        return self.__class__.orders
+
+
+def _patch_broker(monkeypatch, orders):
+    fake = type("_FakeReconcileBroker", (_FakeReconcileBroker,), {"orders": orders})
+    monkeypatch.setattr("src.broker.Broker", fake)
+
+
+def test_reconcile_no_unconfirmed_rows_never_touches_broker(monkeypatch):
+    def fail_if_called(*a, **k):
+        raise AssertionError("Broker() should never be constructed when nothing is eligible")
+    monkeypatch.setattr("src.broker.Broker", fail_if_called)
+    now = pd.Timestamp.now(tz="UTC")
+    trades = _reconcilable_trades_df([{"action": "BUY", "timestamp_utc": now, "notes": ""}])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "order_status"] == "confirmed_fill"
+
+
+def test_reconcile_corrects_a_buy_that_actually_filled(monkeypatch):
+    now = pd.Timestamp.now(tz="UTC")
+    trades = _reconcilable_trades_df([{
+        "ticker": "AAPL", "action": "BUY", "price_usd": 304.89,
+        "timestamp_utc": now, "notes": UNCONFIRMED_NOTE,
+    }])
+    assert trades.loc[0, "order_status"] == "submitted_unconfirmed"
+    _patch_broker(monkeypatch, [{
+        "symbol": "AAPL", "side": "buy", "filled_qty": 6.61153719,
+        "filled_avg_price": 302.65, "filled_at": now + pd.Timedelta(minutes=2),
+    }])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "order_status"] == "confirmed_fill"
+    assert result.loc[0, "price_usd"] == 302.65
+    assert "reconciliation" in result.loc[0, "notes"].lower()
+
+
+def test_reconcile_corrects_a_sell_and_recomputes_realized_pnl(monkeypatch):
+    now = pd.Timestamp.now(tz="UTC")
+    trades = _reconcilable_trades_df([{
+        "ticker": "AAPL", "action": "SELL", "price_usd": 300.0,
+        "avg_entry_price_usd": 250.0, "position_qty_before": 2.0,
+        "timestamp_utc": now, "notes": UNCONFIRMED_NOTE,
+    }])
+    assert pd.isna(trades.loc[0, "realized_pnl_usd"])
+    _patch_broker(monkeypatch, [{
+        "symbol": "AAPL", "side": "sell", "filled_qty": 2.0,
+        "filled_avg_price": 310.0, "filled_at": now + pd.Timedelta(seconds=45),
+    }])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "is_confirmed_sell"] == True  # noqa: E712 - real numpy bool, not a mock
+    assert result.loc[0, "realized_pnl_usd"] == 120.0  # (310 - 250) * 2.0
+
+
+def test_reconcile_leaves_row_alone_when_no_matching_order_found(monkeypatch):
+    now = pd.Timestamp.now(tz="UTC")
+    trades = _reconcilable_trades_df([{
+        "ticker": "AAPL", "action": "BUY", "price_usd": 304.89,
+        "timestamp_utc": now, "notes": UNCONFIRMED_NOTE,
+    }])
+    # A real filled order exists, but for a different ticker entirely -
+    # must never be mistaken for this row's own order.
+    _patch_broker(monkeypatch, [{
+        "symbol": "XOM", "side": "buy", "filled_qty": 13.0,
+        "filled_avg_price": 153.0, "filled_at": now + pd.Timedelta(seconds=30),
+    }])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "order_status"] == "submitted_unconfirmed"
+    assert result.loc[0, "price_usd"] == 304.89
+
+
+def test_reconcile_ignores_a_fill_outside_the_match_window(monkeypatch):
+    now = pd.Timestamp.now(tz="UTC")
+    trades = _reconcilable_trades_df([{
+        "ticker": "AAPL", "action": "BUY", "price_usd": 304.89,
+        "timestamp_utc": now, "notes": UNCONFIRMED_NOTE,
+    }])
+    # Same ticker/side, but filled an hour later - too far away to
+    # plausibly be the same order (RECONCILE_MATCH_MINUTES is far
+    # shorter), so this must not be treated as a match.
+    _patch_broker(monkeypatch, [{
+        "symbol": "AAPL", "side": "buy", "filled_qty": 6.6,
+        "filled_avg_price": 302.65, "filled_at": now + pd.Timedelta(hours=1),
+    }])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "order_status"] == "submitted_unconfirmed"
+
+
+def test_reconcile_ignores_rows_older_than_the_reconcile_window(monkeypatch):
+    def fail_if_called(*a, **k):
+        raise AssertionError("Broker() should never be constructed for a row outside the window")
+    monkeypatch.setattr("src.broker.Broker", fail_if_called)
+    old = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=30)
+    trades = _reconcilable_trades_df([{
+        "ticker": "AAPL", "action": "BUY", "price_usd": 304.89,
+        "timestamp_utc": old, "notes": UNCONFIRMED_NOTE,
+    }])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "order_status"] == "submitted_unconfirmed"
+
+
+def test_reconcile_broker_failure_is_non_blocking(monkeypatch):
+    def raise_no_credentials(*a, **k):
+        raise RuntimeError("Set ALPACA_API_KEY and ALPACA_SECRET_KEY")
+    monkeypatch.setattr("src.broker.Broker", raise_no_credentials)
+    now = pd.Timestamp.now(tz="UTC")
+    trades = _reconcilable_trades_df([{
+        "ticker": "AAPL", "action": "BUY", "price_usd": 304.89,
+        "timestamp_utc": now, "notes": UNCONFIRMED_NOTE,
+    }])
+    result = reconcile_unconfirmed_fills(trades)
+    assert result.loc[0, "order_status"] == "submitted_unconfirmed"
+
+
+def test_reconcile_empty_or_missing_input():
+    assert reconcile_unconfirmed_fills(None) is None
+    assert reconcile_unconfirmed_fills(pd.DataFrame()).empty
