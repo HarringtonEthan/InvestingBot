@@ -1,0 +1,16 @@
+# Minimum-version constraints (not exact pins) so this installs cleanly
+# across a normal range of Python versions (3.10+), not just whatever
+# exact release happened to be current when this was packaged.
+numpy>=1.26
+pandas>=2.1
+scikit-learn>=1.4
+joblib>=1.3
+matplotlib>=3.8
+yfinance>=0.2.40
+python-dotenv>=1.0
+pytest>=7.4
+
+# Optional - only needed if you set ALPACA_API_KEY/ALPACA_SECRET_KEY to
+# pull intraday history past Yahoo Finance's ~60-day window. Everything
+# in this toolkit works without it.
+alpaca-py>=0.30
