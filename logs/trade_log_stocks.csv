@@ -13,3 +13,5 @@ timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,pos
 2026-07-31T13:31:03+00:00,PAPER,stock,AAPL,rule_based,BUY,304.890000,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-07-31T13:35:47+00:00,PAPER,stock,XOM,rule_based,BUY,153.900000,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-08-03T13:36:02+00:00,PAPER,stock,DIS,rule_based,SELL,98.785000,,20.794239966,96.180000,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
+2026-08-04T13:35:54+00:00,PAPER,stock,JPM,rule_based,SELL,358.225000,,5.71654376,349.860000,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
+2026-08-04T13:35:58+00:00,PAPER,stock,KO,rule_based,BUY,85.420000,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
