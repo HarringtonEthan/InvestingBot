@@ -17,6 +17,38 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.25.0 - 2026-08-07
+
+- **New `--position-fraction` flag in `live_trade.py`** - spend a fixed
+  fraction of currently-available cash per BUY (e.g. `0.2` = 20% per
+  trade) instead of the default even cash/N-tickers split.
+  Scale-invariant on purpose: the same `0.2` means $50 trades on a $250
+  account and ~$20k trades on the ~$100k paper account, so the exact
+  config being rehearsed on paper carries unchanged to a
+  differently-sized real account later. Validated at startup (must be
+  in (0, 1]); `--max-notional` still ceilings the result; a fraction of
+  *remaining* cash shrinks geometrically across consecutive buys and
+  can never fully drain the account on its own. 4 new tests.
+- **Both live workflows now pass `--position-fraction 0.20` and raise
+  `--max-notional` 10000 -> 30000.** 0.20 was chosen to exactly
+  rehearse the planned real-money setup ("$50 trades on a $250
+  account"). The cap now sits above the ~$20k natural first buy and is
+  purely a blast-radius limit again (why it exists at all - see the
+  2026-07-28 incident), no longer the thing doing the sizing. This
+  supersedes 0.24.0's interim $10k cap the same day, before any trade
+  executed under it.
+- **Incident note - 2026-08-06: GitHub Actions platform outage.** For
+  much of the trading day, GitHub's own Actions infrastructure failed
+  runs before any project code executed ("Failed to resolve action
+  download info. Error: Service Unavailable" during the runner's Set up
+  job step), and queued retriggers cancelled each other under the
+  workflows' concurrency group. Trading, dashboard, and data-refresh
+  runs were all affected. Not a bug in this project, no code change
+  made or needed, and no logged data was corrupted - but Aug 6 has a
+  gap in potential trades/equity points that would otherwise look like
+  the bot went quiet on its own, so it's recorded here the same way the
+  project's own incidents are.
+
 ## Version Richards 0.24.0 - 2026-08-07
 
 - **Position sizing raised: `--max-notional` 2000 -> 10000 in both live

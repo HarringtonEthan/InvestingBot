@@ -53,19 +53,22 @@ jobs:
         # unwanted 2026-07-28 BUYs. --max-notional/--daily-loss-limit
         # mirror the caps paper-trade-crypto.yml already had, which
         # stocks were previously missing entirely.
-        # --max-notional 10000 (~10% of the ~$100k account per position,
-        # raised 2026-08-07 from the original post-incident 2000): with
-        # all 9 tickers at $2k the account could never deploy more than
-        # ~18% of itself, which muted every equity-curve stat to
-        # unreadability. live_trade.py's own cash/9 per-run split is the
-        # real sizing mechanism; this cap exists only as a blast-radius
-        # limit so a runaway workflow can't spend the account in one
-        # order - it should stay well above the natural split, not below.
+        # Sizing (2026-08-07): --position-fraction 0.20 spends 20% of
+        # currently-available cash per BUY - chosen to exactly rehearse
+        # the planned real-money config ("$50 trades on a $250 account"),
+        # since the fraction is scale-invariant. Replaces both the
+        # original post-incident $2,000 fixed cap (which pinned every
+        # trade to ~2% of the account and left ~82% of it permanently
+        # idle) and the default cash/9 even split. --max-notional 30000
+        # is pure blast-radius now - above the ~$20k natural first buy,
+        # only there so a runaway workflow can't spend the account in
+        # one order (the 2026-07-28 incident is why a hard per-order
+        # ceiling exists at all).
         run: >
           python live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS
           --strategy rule_based --interval 5m
           --dip-threshold -0.015 --exit-threshold 0.02
-          --max-notional 10000 --daily-loss-limit 0.05
+          --position-fraction 0.20 --max-notional 30000 --daily-loss-limit 0.05
           --log-suffix _stocks
           --execute
 

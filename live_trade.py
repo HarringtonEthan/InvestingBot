@@ -340,6 +340,28 @@ def compute_buy_budget(per_ticker_budget: float, max_notional: float | None) -> 
     return per_ticker_budget
 
 
+def compute_per_ticker_budget(starting_cash: float, num_tickers: int, position_fraction: float | None) -> float:
+    """
+    The pre-cap budget a single BUY starts from (compute_buy_budget then
+    applies --max-notional on top). Two modes:
+
+    - position_fraction given (--position-fraction 0.2): spend that
+      fraction of currently available cash per buy, regardless of how
+      many tickers are watched. Scale-invariant on purpose - 0.2 means
+      "$50 trades on a $250 account" and "$20k trades on a $100k
+      account" with the same flag, so a config rehearsed on paper
+      carries to a differently-sized real account unchanged. Because
+      it's a fraction of *remaining* cash each run, repeated buys shrink
+      geometrically and can never fully drain the account on their own.
+    - no fraction (default): the original even split of cash across the
+      N watched tickers, so N simultaneous BUY signals can't let the
+      first one spend everything.
+    """
+    if position_fraction is not None:
+        return starting_cash * position_fraction
+    return starting_cash / num_tickers if num_tickers else 0.0
+
+
 def poll_for_fill(broker: Broker, order, attempts: int = 3, delay_seconds: float = 2.0):
     """
     Briefly poll Alpaca for whether a just-submitted order has actually
@@ -602,6 +624,11 @@ def main():
                          help="bollinger_breakout: long SMA period required to confirm a breakout")
     parser.add_argument("--max-notional", type=float, default=None,
                          help="cap $ amount per buy; default = an even split of available cash across tickers")
+    parser.add_argument("--position-fraction", type=float, default=None,
+                         help="fraction of currently available cash to spend per BUY, e.g. 0.2 = 20%% of "
+                              "cash each trade regardless of account size ($50 trades on a $250 account, "
+                              "$20k trades on a $100k one). Default: an even 1/N split across the N "
+                              "watched tickers. --max-notional still caps the result either way.")
     parser.add_argument("--daily-loss-limit", type=float, default=0.05,
                          help="circuit breaker: block new BUYs (not SELLs) once the account is down this "
                               "fraction from today's first logged equity value, e.g. 0.05 = 5%%. "
@@ -617,6 +644,13 @@ def main():
                               "see .gitattributes for the belt-and-suspenders fix that still covers "
                               "any two processes that DO share a log file (e.g. manual local runs).")
     args = parser.parse_args()
+
+    # Fail loudly at startup on a nonsensical fraction rather than deep in
+    # the buy loop (where the account-info try/except would misreport it
+    # as an API failure). 1.0 (all cash on one buy) is deliberately legal;
+    # anything above it can't mean anything.
+    if args.position_fraction is not None and not (0.0 < args.position_fraction <= 1.0):
+        parser.error(f"--position-fraction must be greater than 0 and at most 1, got {args.position_fraction}")
 
     if args.log_suffix:
         # Reassign the module-level paths rather than threading a path
@@ -669,11 +703,11 @@ def main():
     # rather than an unhandled traceback - the next scheduled run 5
     # minutes later will simply try again.
     try:
-        # Split whatever cash is available evenly across tickers being
-        # watched this run, so several simultaneous BUY signals don't
-        # let the first one spend the whole account.
+        # Sizing: --position-fraction of available cash per buy if given,
+        # else an even split across watched tickers - see
+        # compute_per_ticker_budget's docstring for the two modes.
         starting_cash = broker.get_cash()
-        per_ticker_budget = starting_cash / len(tickers) if tickers else 0.0
+        per_ticker_budget = compute_per_ticker_budget(starting_cash, len(tickers), args.position_fraction)
 
         # Checked once per run, not per ticker - the account is either
         # having a bad enough day or it isn't, regardless of which ticker

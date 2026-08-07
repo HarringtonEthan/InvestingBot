@@ -8,15 +8,21 @@ Two automated controls exist specifically to bound how much damage a bad
 run (or a bad stretch of runs) can do, on top of the "paper trading only,
 two locks required to go live" safeguard below:
 
-- **`--max-notional`** caps the dollar amount of a single BUY. Both live
-  workflows pass `--max-notional 10000` (raised 2026-08-07 from the
-  original post-incident $2,000, which kept the whole account under ~18%
-  deployed and muted every equity-curve stat), so no single trade can
-  exceed $10,000 regardless of how the even-split-across-tickers budget
-  would otherwise size it. The cap is a blast-radius limit for a runaway
-  workflow, not the sizing mechanism - `live_trade.py`'s per-run
-  cash/N-tickers split is what actually sizes normal buys, and the cap
-  should stay above it. Passing `--max-notional 0` explicitly caps every buy at $0
+- **`--position-fraction`** is the sizing mechanism: both live workflows
+  pass `--position-fraction 0.20`, spending 20% of currently-available
+  cash per BUY. Scale-invariant by design - the same flag means "$50
+  trades on a $250 account" and "$20k trades on a $100k one," so a
+  config rehearsed on paper carries unchanged to a differently-sized
+  real account. Because each buy takes a fraction of *remaining* cash,
+  repeated buys shrink geometrically and can never fully drain the
+  account on their own. Without the flag, `live_trade.py` falls back to
+  its original even cash/N-tickers split.
+- **`--max-notional`** caps the dollar amount of a single BUY on top of
+  whatever the sizing above computed. Both live workflows pass
+  `--max-notional 30000` - deliberately above the ~$20k natural first
+  buy, because the cap is a blast-radius limit for a runaway workflow
+  (the reason it exists at all - see the 2026-07-28 incident), not the
+  sizing mechanism. Passing `--max-notional 0` explicitly caps every buy at $0
   (never buy) rather than silently falling back to the uncapped split -
   see `CHANGELOG.md` 0.5.2 for why that distinction needed a dedicated
   fix.

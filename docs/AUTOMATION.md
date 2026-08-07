@@ -77,7 +77,7 @@ schedule it every 5 minutes during market hours instead:
 crontab -e
 # Add a line like this (adjust the path; cron uses your system's local time -
 # convert 9:30am-4:00pm ET to your machine's own timezone first):
-*/5 9-16 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy rule_based --dip-threshold -0.015 --exit-threshold 0.02 --max-notional 10000 --daily-loss-limit 0.05 --execute >> logs/cron.log 2>&1
+*/5 9-16 * * 1-5 cd /path/to/InvestingBot && /usr/bin/python3 live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS --strategy rule_based --dip-threshold -0.015 --exit-threshold 0.02 --position-fraction 0.20 --max-notional 30000 --daily-loss-limit 0.05 --execute >> logs/cron.log 2>&1
 ```
 
 **Windows (Task Scheduler):** create a new task that runs the same
