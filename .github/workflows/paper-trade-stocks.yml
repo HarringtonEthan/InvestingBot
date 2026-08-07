@@ -53,11 +53,19 @@ jobs:
         # unwanted 2026-07-28 BUYs. --max-notional/--daily-loss-limit
         # mirror the caps paper-trade-crypto.yml already had, which
         # stocks were previously missing entirely.
+        # --max-notional 10000 (~10% of the ~$100k account per position,
+        # raised 2026-08-07 from the original post-incident 2000): with
+        # all 9 tickers at $2k the account could never deploy more than
+        # ~18% of itself, which muted every equity-curve stat to
+        # unreadability. live_trade.py's own cash/9 per-run split is the
+        # real sizing mechanism; this cap exists only as a blast-radius
+        # limit so a runaway workflow can't spend the account in one
+        # order - it should stay well above the natural split, not below.
         run: >
           python live_trade.py --ticker SPY AAPL QQQ JPM XOM JNJ KO CAT DIS
           --strategy rule_based --interval 5m
           --dip-threshold -0.015 --exit-threshold 0.02
-          --max-notional 2000 --daily-loss-limit 0.05
+          --max-notional 10000 --daily-loss-limit 0.05
           --log-suffix _stocks
           --execute
 

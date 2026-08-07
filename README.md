@@ -1,6 +1,6 @@
 <div align="center">
 
-# InvestingBot — Version Richards 0.23.0
+# InvestingBot — Version Richards 0.24.0
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![Tests: 240 passing](https://img.shields.io/badge/tests-240%20passing-4c9a2a)](tests/)
@@ -113,7 +113,7 @@ neither one is missing information the other has:
 | **Price data source** | Alpaca first (bars, own built-in staleness check), Yahoo only as a last resort | Alpaca first (bars, same `get_price_data_smart()` mechanism `optimize.py`/`walk_forward.py` validate against, plus an explicit staleness check - see `CHANGELOG.md` 0.10.0/0.10.1), Yahoo only as a last resort |
 | **Buy signal** | price ≥4.0% below its 20-bar average | price ≥1.5% below its 20-bar average |
 | **Sell signal** | +1.0% profit **or** -5.0% stop-loss from entry | back within 2.0% of the average (no stop-loss) |
-| **Max $ per trade** (`--max-notional`) | $2,000 | $2,000 |
+| **Max $ per trade** (`--max-notional`) | $10,000 | $10,000 |
 | **Daily loss circuit breaker** | 5% of that day's starting balance | 5% of that day's starting balance |
 | **Market-hours guard** | N/A - crypto trades 24/7 | Yes - refuses to submit a BUY/SELL unless Alpaca's own market clock confirms the market is open right now |
 | **Demonstrated edge?** | No - "meaningfully de-risked," not proven | No - best-of-8 walk-forward candidate, not proven |

@@ -17,6 +17,30 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.24.0 - 2026-08-07
+
+- **Position sizing raised: `--max-notional` 2000 -> 10000 in both live
+  workflows** (~2% -> ~10% of the ~$100k account per position). The
+  $2,000 cap was a post-incident guardrail that ended up as the binding
+  constraint on every single buy - with all 9 stock tickers triggered
+  the account could never deploy more than ~18% of itself, muting the
+  equity curve, drawdown, and % return stats to unreadability while
+  ~82% of the account sat idle. `live_trade.py`'s per-run
+  cash/N-tickers split (~$11k when fully cashed) is the actual sizing
+  mechanism and remains unchanged; the cap goes back to being what it
+  was meant to be - a blast-radius limit for a runaway workflow, above
+  the natural split, not below it. The 5% daily-loss circuit breaker
+  also becomes genuinely reachable at this size instead of decorative.
+  Deliberately NOT removed entirely: the 2026-07-28 incident is why a
+  hard per-order ceiling exists at all.
+- Rationale note: sizing up scales dollar P&L and dollar losses
+  identically (it is not more evidence that the strategy works - win
+  rate and per-trade % remain the evidence), and paper fills have no
+  market impact, so no backtest could distinguish $2k from $10k sizing.
+  This is a risk-preference change, made because the account is paper
+  and the goal is seeing the strategy at a meaningful allocation.
+- README status table and docs/RISK.md updated to match.
+
 ## Version Richards 0.23.0 - 2026-07-31
 
 - **Reorganized position/tracker cards into two clearly-labeled, clearly-

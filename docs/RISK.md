@@ -8,11 +8,15 @@ Two automated controls exist specifically to bound how much damage a bad
 run (or a bad stretch of runs) can do, on top of the "paper trading only,
 two locks required to go live" safeguard below:
 
-- **`--max-notional`** caps the dollar amount of a single BUY. The live
-  crypto workflow passes `--max-notional 2000`, so no single trade can
-  exceed $2,000 regardless of how the even-split-across-tickers budget
-  would otherwise size it (which can run well above that as the account
-  grows). Passing `--max-notional 0` explicitly caps every buy at $0
+- **`--max-notional`** caps the dollar amount of a single BUY. Both live
+  workflows pass `--max-notional 10000` (raised 2026-08-07 from the
+  original post-incident $2,000, which kept the whole account under ~18%
+  deployed and muted every equity-curve stat), so no single trade can
+  exceed $10,000 regardless of how the even-split-across-tickers budget
+  would otherwise size it. The cap is a blast-radius limit for a runaway
+  workflow, not the sizing mechanism - `live_trade.py`'s per-run
+  cash/N-tickers split is what actually sizes normal buys, and the cap
+  should stay above it. Passing `--max-notional 0` explicitly caps every buy at $0
   (never buy) rather than silently falling back to the uncapped split -
   see `CHANGELOG.md` 0.5.2 for why that distinction needed a dedicated
   fix.
