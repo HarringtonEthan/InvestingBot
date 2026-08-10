@@ -20,3 +20,4 @@ timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,pos
 2026-08-06T13:35:58+00:00,PAPER,stock,CAT,rule_based,BUY,867.520000,2000.00,0.0,,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-08-07T13:35:53+00:00,PAPER,stock,JNJ,rule_based,SELL,255.575000,,7.70145173,259.690000,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
 2026-08-10T13:20:53+00:00,PAPER,stock,AAPL,rule_based,SELL,309.240000,,6.61153719,302.500000,,False,Stock market was closed at decision time - order not submitted.
+2026-08-10T13:31:00+00:00,PAPER,stock,AAPL,rule_based,SELL,308.850000,,6.61153719,302.500000,,True,"Fill not confirmed within the polling window at log time - price/qty shown are decision-time estimates, not a confirmed fill."
