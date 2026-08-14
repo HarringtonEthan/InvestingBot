@@ -207,6 +207,42 @@ def test_find_account_relaunch_none_on_empty_or_missing_df():
     assert find_account_relaunch(_equity_df_with_cash([]).iloc[0:0]) is None
 
 
+def test_find_account_relaunch_ignores_full_cash_after_trading_already_began():
+    # Real incident, 2026-08-14: the account closed its very last open
+    # position (fully cash again for the first time since the real
+    # relaunch) - that must NOT be mistaken for a fresh relaunch, or All
+    # Time/This Week/This Month all collapse to that instant and weeks
+    # of real trade history vanish from every stat while the CSVs
+    # themselves stay completely intact.
+    equity = _equity_df_with_cash([
+        ("2026-07-28T07:05:54+00:00", 99787.08, 99787.08),  # pre-relaunch blip
+        ("2026-07-28T18:53:05+00:00", 99751.68, 99751.68),  # the real relaunch
+        ("2026-07-28T19:12:58+00:00", 99751.00, 91751.72),  # positions bought back
+        ("2026-08-14T13:35:46+00:00", 100038.42, 100038.42),  # last position sold - NOT a relaunch
+    ])
+    trades = _trades_df([
+        {"timestamp_utc": "2026-07-28T19:12:52+00:00", "ticker": "QQQ", "action": "BUY"},
+        {"timestamp_utc": "2026-08-14T13:35:46+00:00", "ticker": "AAPL", "action": "SELL"},
+    ])
+    result = find_account_relaunch(equity, trades)
+    assert result is not None
+    ts, value = result
+    assert ts == pd.Timestamp("2026-07-28T18:53:05+00:00")
+    assert value == 99751.68
+
+
+def test_find_account_relaunch_without_trades_df_keeps_old_unbounded_behavior():
+    # No trades_df given (e.g. a brand-new account with nothing logged
+    # yet) - falls back to "latest fully-cash row across the whole
+    # equity log," same as before trades_df existed as a parameter.
+    df = _equity_df_with_cash([
+        ("2026-07-25T07:00:00+00:00", 100000.0, 100000.0),
+        ("2026-07-28T18:53:05+00:00", 99751.68, 99751.68),
+    ])
+    ts, value = find_account_relaunch(df)
+    assert ts == pd.Timestamp("2026-07-28T18:53:05+00:00")
+
+
 # ---- period_bounds relaunch floor ----
 
 def test_period_bounds_floors_calendar_start_at_relaunch():

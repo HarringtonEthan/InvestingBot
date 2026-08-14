@@ -217,14 +217,32 @@ def load_trades(paths: list[str]) -> pd.DataFrame:
     return df
 
 
-def find_account_relaunch(equity_df: pd.DataFrame | None) -> tuple[pd.Timestamp, float] | None:
+def find_account_relaunch(equity_df: pd.DataFrame | None, trades_df: pd.DataFrame | None = None) -> tuple[pd.Timestamp, float] | None:
     """
     The most recent point the account held 100% cash - portfolio_value_usd
-    == cash_usd, i.e. zero open positions - which is exactly the signature
-    every relaunch in this project's history leaves behind (a fresh start
-    with nothing bought yet). Returns (timestamp_utc, value) for the
-    latest such row, or None if the equity log has no cash_usd column
-    (older log format) or no such row at all.
+    == cash_usd, i.e. zero open positions - *before the account's first
+    ever logged trade*, which is exactly the signature every relaunch in
+    this project's history leaves behind (a fresh start with nothing
+    bought yet, sometimes with a couple of earlier same-day all-cash
+    blips before trading actually began for real). Returns
+    (timestamp_utc, value) for the latest such row, or None if the
+    equity log has no cash_usd column (older log format) or no such row
+    at all.
+
+    The "before the first trade" bound is load-bearing, not optional: a
+    fully-traded account returns to 100% cash constantly and correctly
+    as a normal, expected part of trading (every position closing out at
+    once, even briefly) - completely unrelated to a relaunch. Without
+    this bound, the very next such moment - which *will* happen again -
+    gets misread as "the account was just relaunched," collapsing All
+    Time/This Week/This Month down to that instant and making weeks of
+    real trade history vanish from every period's stats while the
+    underlying CSV logs stay completely intact (real incident:
+    2026-08-14, the first time the account closed its last position
+    since the 2026-07-28 relaunch). trades_df is optional only so
+    callers that already know there are no trades at all yet (a
+    brand-new account) don't need to construct an empty DataFrame just
+    to call this.
 
     This is the honest, code-verifiable answer to "when did the account's
     current run actually begin" - not a hand-typed date, and not inferred
@@ -238,7 +256,13 @@ def find_account_relaunch(equity_df: pd.DataFrame | None) -> tuple[pd.Timestamp,
     """
     if equity_df is None or equity_df.empty or "cash_usd" not in equity_df.columns:
         return None
-    full_cash = equity_df[(equity_df["cash_usd"] - equity_df["portfolio_value_usd"]).abs() < 0.01]
+    candidates = equity_df
+    if trades_df is not None and not trades_df.empty:
+        first_trade_ts = pd.Timestamp(trades_df["timestamp_utc"].min())
+        candidates = equity_df[equity_df["timestamp_utc"] <= first_trade_ts]
+        if candidates.empty:
+            return None
+    full_cash = candidates[(candidates["cash_usd"] - candidates["portfolio_value_usd"]).abs() < 0.01]
     if full_cash.empty:
         return None
     row = full_cash.iloc[-1]
@@ -1482,7 +1506,7 @@ def main():
             live_row = pd.DataFrame([{"timestamp_utc": pd.Timestamp(now_utc), "portfolio_value_usd": equity}])
             equity_df = pd.concat([equity_df, live_row], ignore_index=True).sort_values("timestamp_utc") if equity_df is not None else live_row
 
-    relaunch = find_account_relaunch(equity_df)
+    relaunch = find_account_relaunch(equity_df, trades_df)
     relaunch_ts, relaunch_value = relaunch if relaunch is not None else (None, None)
 
     bounds = period_bounds(now_utc, relaunch_ts)

@@ -17,6 +17,34 @@ The `0.x.x` line is "Version Richards"; `1.0.0`+ becomes "Version Giroux."
   regime the most recent real year happened to contain.
 - No known open correctness bugs (true as of 0.5.2).
 
+## Version Richards 0.26.0 - 2026-08-14
+
+- **Fixed a real bug: "All Time" (and This Week/This Month) collapsed
+  down to just today, making 2.5 weeks of real trade history disappear
+  from every dashboard stat** - `find_account_relaunch()` identified
+  "the account's most recent relaunch" as the latest row where it held
+  100% cash (zero open positions), which is the correct signature for a
+  genuine relaunch *except* that a fully-traded account also returns to
+  100% cash constantly and normally, any time every open position
+  happens to close out at once - completely unrelated to a relaunch.
+  Today was the first time since the real 2026-07-28 relaunch that
+  happened (the AAPL position that had been open finally sold), and the
+  very next dashboard refresh mistook that ordinary moment for a fresh
+  relaunch, floored every period's calendar boundary at it, and made
+  the site (and the PNG dashboard, which reads the same
+  `starting_value_usd`/`starting_value_asof_utc` fields) look like the
+  account had just been reset - "today is day 1" - while the underlying
+  CSV logs were never touched and stayed completely intact throughout.
+  Fixed by only considering fully-cash rows *at or before the account's
+  first-ever logged trade* as relaunch candidates - a genuine relaunch
+  always happens before any trading resumes; an ordinary all-positions-
+  closed moment during live trading always happens after. 2 new tests
+  cover both the incident (today's exact data) and the original
+  intended behavior unchanged.
+- No CSV data was lost, corrupted, or reset at any point - this was
+  purely a display/aggregation bug in how the dashboard's JSON was
+  computed from the (always-intact) logs.
+
 ## Version Richards 0.25.0 - 2026-08-07
 
 - **New `--position-fraction` flag in `live_trade.py`** - spend a fixed
