@@ -1,2 +1,3 @@
 timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,position_qty_before,avg_entry_price_usd,unrealized_gain_pct,order_placed,notes
 2026-08-20T18:35:51+00:00,PAPER,crypto,XRP,day_trading,BUY,1.252749,16006.08,0.0,,,True,
+2026-08-20T21:50:51+00:00,PAPER,crypto,XRP,day_trading,SELL,1.264491,,12516.156975594,1.252749,1.26,True,
