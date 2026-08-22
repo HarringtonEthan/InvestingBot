@@ -9,3 +9,4 @@ timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,pos
 2026-08-22T05:15:58+00:00,PAPER,crypto,XRP,day_trading,BUY,1.545000,1265.99,0.0,,,True,
 2026-08-22T05:16:00+00:00,PAPER,crypto,DOT,day_trading,BUY,0.957540,25.63,0.0,,,True,
 2026-08-22T05:35:49+00:00,PAPER,crypto,DOT,day_trading,SELL,0.968549,,26.19244777,0.957540,1.04,True,
+2026-08-22T06:30:50+00:00,PAPER,crypto,XRP,day_trading,SELL,1.549400,,801.05827943,1.545000,1.00,True,
