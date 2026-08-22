@@ -1,3 +1,10 @@
 timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,position_qty_before,avg_entry_price_usd,unrealized_gain_pct,order_placed,notes
 2026-08-20T18:35:51+00:00,PAPER,crypto,XRP,day_trading,BUY,1.252749,16006.08,0.0,,,True,
 2026-08-20T21:50:51+00:00,PAPER,crypto,XRP,day_trading,SELL,1.264491,,12516.156975594,1.252749,1.26,True,
+2026-08-22T05:15:50+00:00,PAPER,crypto,SOL,day_trading,BUY,94.576091,16645.26,0.0,,,True,
+2026-08-22T05:15:52+00:00,PAPER,crypto,DOGE,day_trading,BUY,0.092657,16645.26,0.0,,,True,
+2026-08-22T05:15:54+00:00,PAPER,crypto,LTC,day_trading,BUY,52.728651,16645.26,0.0,,,True,
+2026-08-22T05:15:56+00:00,PAPER,crypto,AVAX,day_trading,BUY,7.821929,16645.26,0.0,,,True,
+2026-08-22T05:15:58+00:00,PAPER,crypto,LINK,day_trading,BUY,11.854257,16645.26,0.0,,,True,
+2026-08-22T05:15:58+00:00,PAPER,crypto,XRP,day_trading,BUY,1.545000,1265.99,0.0,,,True,
+2026-08-22T05:16:00+00:00,PAPER,crypto,DOT,day_trading,BUY,0.957540,25.63,0.0,,,True,
