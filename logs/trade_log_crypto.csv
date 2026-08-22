@@ -16,3 +16,4 @@ timestamp_utc,mode,asset_class,ticker,strategy,action,price_usd,notional_usd,pos
 2026-08-22T10:15:47+00:00,PAPER,crypto,AVAX,day_trading,SELL,7.298879,,2107.463572128,7.821942,-5.32,True,
 2026-08-22T10:25:52+00:00,PAPER,crypto,XRP,day_trading,BUY,1.440210,6603.54,0.0,,,True,
 2026-08-22T10:30:49+00:00,PAPER,crypto,XRP,day_trading,SELL,1.470548,,4481.719401761,1.440210,2.35,True,
+2026-08-22T19:55:51+00:00,PAPER,crypto,LTC,day_trading,SELL,53.060969,,310.074053984,52.728651,1.44,True,
